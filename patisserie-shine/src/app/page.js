@@ -8,7 +8,7 @@ import {
   ClipboardCheck, BarChart3, Users, Settings, Edit3, Save,
   ShoppingBag, Printer, Download, Filter, RefreshCw, Home,
   Building2, Phone, Mail, MapPin, Archive, Tag, Layers,
-  Grid3X3, ListFilter, SortAsc, SortDesc, Lock
+  Grid, ListFilter, SortAsc, SortDesc, Lock
 } from 'lucide-react';
 
 // ===================== CONFIGURATION SUPABASE =====================
@@ -709,7 +709,7 @@ const ProductManagement = ({ products, setProducts, onNotification }) => {
   };
 
   const tabs = [
-    { id: 'list', label: 'Liste des Produits', icon: Grid3X3, count: products.length },
+    { id: 'list', label: 'Liste des Produits', icon: Grid, count: products.length },
     { id: 'categories', label: 'Par Catégories', icon: Layers },
     { id: 'alerts', label: 'Alertes Stock', icon: AlertTriangle, count: products.filter(p => getStockStatus(p) !== 'normal').length }
   ];
