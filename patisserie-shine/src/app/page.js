@@ -1274,14 +1274,14 @@ const StockAnalysisComponent = ({ data, onNotification }) => {
           </div>
         </Card>
         
-        <Card className="p-4 bg-purple-50">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-purple-800">
-              {theoreticalAnalysis.filter(p => Math.abs(p.variance_percentage) > 10).length}
-            </div>
-            <div className="text-sm text-purple-600">Écarts > 10%</div>
-          </div>
-        </Card>
+       <Card>
+  <div>
+    <div className="text-2xl font-bold text-purple-800">
+      {theoreticalAnalysis.filter(p => Math.abs(p.variance_percentage) > 10).length}
+    </div>
+    <div className="text-sm text-purple-600">Écarts &gt; 10%</div>
+  </div>
+</Card>
       </div>
 
       {/* Tableau d'analyse */}
@@ -1542,5 +1542,6 @@ const PatisserieShineApp = () => {
     </div>
   );
 };
+
 
 export default PatisserieShineApp;
