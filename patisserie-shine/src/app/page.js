@@ -1,3 +1,4 @@
+"use client";
 import React, { useState, useEffect } from 'react';
 import { 
   ShoppingCart, Package, TrendingUp, Bell, Check, X, Plus, 
@@ -1545,3 +1546,4 @@ const PatisserieShineApp = () => {
 
 
 export default PatisserieShineApp;
+
