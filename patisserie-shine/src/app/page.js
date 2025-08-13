@@ -1,3 +1,4 @@
+"use client";
 import React, { useState, useEffect } from 'react';
 import { Plus, Users, Package, ShoppingCart, Factory, Calculator, Settings, Trash2, Edit, LogOut, Eye, EyeOff, Mail, Lock, ChefHat, TrendingUp, AlertTriangle, CheckCircle, Clock, BarChart3 } from 'lucide-react';
 
@@ -1423,3 +1424,4 @@ const PatisserieStockApp = () => {
 };
 
 export default PatisserieStockApp;
+
