@@ -1,1033 +1,919 @@
-"use client";
 import React, { useState, useEffect } from 'react';
-import { 
-  ShoppingCart, Package, TrendingUp, Bell, Check, X, Plus, 
-  LogOut, AlertTriangle, Search, Calendar, Clock, Star, 
-  ChefHat, Eye, Trash2, Send, FileText, 
-  Edit3, Save, Printer, Download, Home,
-  Archive, BarChart3, Users, Lock, ArrowUp, ArrowDown
-} from 'lucide-react';
+import { Plus, Users, Package, ShoppingCart, Factory, Calculator, Settings, Trash2, Edit } from 'lucide-react';
 
-// ===================== DONNÉES INITIALES =====================
-const PRODUCT_CATEGORIES = [
-  'Farines & Bases',
-  'Sucres & Édulcorants', 
-  'Produits Laitiers',
-  'Corps Gras',
-  'Agents Levants',
-  'Arômes & Parfums',
-  'Colorants',
-  'Chocolats',
-  'Œufs & Produits Frais',
-  'Fruits & Garnitures',
-  'Épices & Condiments',
-  'Emballages',
-  'Matériel Jetable',
-  'Boissons',
-  'Divers'
-];
-
-const SUPPLIERS = [
-  { id: 1, name: 'Fournisseur Principal', contact: '+226 XX XX XX XX', email: 'contact@fournisseur1.bf' },
-  { id: 2, name: 'Fournisseur Spécialisé', contact: '+226 XX XX XX XX', email: 'contact@fournisseur2.bf' },
-  { id: 3, name: 'Fournisseur Chocolat', contact: '+226 XX XX XX XX', email: 'contact@chocolat.bf' },
-  { id: 4, name: 'Fournisseur Frais', contact: '+226 XX XX XX XX', email: 'contact@frais.bf' }
-];
-
-const INITIAL_PRODUCTS = [
-  { id: 'PS1', reference: 'PS1', name: 'Farine Etalon', category: 'Farines & Bases', unit: 'kg', package_type: 'sac', package_size: 50, unit_price: 468, purchase_price: 23400, min_stock: 50, current_stock: 100, supplier_id: 1, supplier_name: 'Fournisseur Principal', status: 'active' },
-  { id: 'PS2', reference: 'PS2', name: 'Farine Pain complet', category: 'Farines & Bases', unit: 'kg', package_type: 'sac', package_size: 50, unit_price: 504, purchase_price: 25200, min_stock: 50, current_stock: 75, supplier_id: 1, supplier_name: 'Fournisseur Principal', status: 'active' },
-  { id: 'PS3', reference: 'PS3', name: 'Sucre', category: 'Sucres & Édulcorants', unit: 'kg', package_type: 'sac', package_size: 50, unit_price: 540, purchase_price: 27000, min_stock: 50, current_stock: 120, supplier_id: 1, supplier_name: 'Fournisseur Principal', status: 'active' },
-  { id: 'PS4', reference: 'PS4', name: 'Lait', category: 'Produits Laitiers', unit: 'kg', package_type: 'sac', package_size: 25, unit_price: 2440, purchase_price: 61000, min_stock: 25, current_stock: 30, supplier_id: 1, supplier_name: 'Fournisseur Principal', status: 'active' },
-  { id: 'PS5', reference: 'PS5', name: 'Huile', category: 'Corps Gras', unit: 'litre', package_type: 'bidon', package_size: 20, unit_price: 1088, purchase_price: 21750, min_stock: 20, current_stock: 25, supplier_id: 1, supplier_name: 'Fournisseur Principal', status: 'active' },
-  { id: 'PS6', reference: 'PS6', name: 'Lévure Boulangère', category: 'Agents Levants', unit: 'g', package_type: 'carton', package_size: 20, unit_price: 1050, purchase_price: 21000, min_stock: 10, current_stock: 5, supplier_id: 2, supplier_name: 'Fournisseur Spécialisé', status: 'active' },
-  { id: 'PS20', reference: 'PS20', name: 'Colorant rouge', category: 'Colorants', unit: 'litre', package_type: 'bidon', package_size: 1, unit_price: 10000, purchase_price: 10000, min_stock: 1, current_stock: 2, supplier_id: 2, supplier_name: 'Fournisseur Spécialisé', status: 'active' },
-  { id: 'PS25', reference: 'PS25', name: 'Chocolat Blanc', category: 'Chocolats', unit: 'g', package_type: 'sachet', package_size: 2500, unit_price: 7, purchase_price: 17500, min_stock: 1000, current_stock: 1500, supplier_id: 3, supplier_name: 'Fournisseur Chocolat', status: 'active' },
-  { id: 'PS26', reference: 'PS26', name: 'Chocolat Noir', category: 'Chocolats', unit: 'g', package_type: 'sachet', package_size: 2500, unit_price: 7, purchase_price: 17500, min_stock: 1000, current_stock: 800, supplier_id: 3, supplier_name: 'Fournisseur Chocolat', status: 'active' },
-  { id: 'PS37', reference: 'PS37', name: 'Plaquette d\'oeuf', category: 'Œufs & Produits Frais', unit: 'boule', package_type: 'plaquette', package_size: 30, unit_price: 103, purchase_price: 3100, min_stock: 30, current_stock: 25, supplier_id: 4, supplier_name: 'Fournisseur Frais', status: 'active' },
-  { id: 'PS110', reference: 'PS110', name: 'Beurre aya', category: 'Corps Gras', unit: 'g', package_type: 'carton', package_size: 40, unit_price: 413, purchase_price: 16500, min_stock: 20, current_stock: 35, supplier_id: 4, supplier_name: 'Fournisseur Frais', status: 'active' },
-  { id: 'PS111', reference: 'PS111', name: 'Beurre ambassador', category: 'Corps Gras', unit: 'g', package_type: 'carton', package_size: 40, unit_price: 1350, purchase_price: 54000, min_stock: 20, current_stock: 15, supplier_id: 4, supplier_name: 'Fournisseur Frais', status: 'active' }
-];
-
-const INITIAL_PURCHASES = [
-  {
-    id: 1,
-    number: 'BC-2024-001',
-    supplier_id: 1,
-    supplier_name: 'Fournisseur Principal',
-    order_date: '2024-01-15',
-    expected_delivery: '2024-01-18',
-    status: 'pending',
-    total_amount: 125600,
-    notes: 'Commande urgente pour réapprovisionnement',
-    created_by: 'admin',
-    items: [
-      { product_id: 'PS1', product_name: 'Farine Etalon', quantity: 2, unit_price: 23400, total: 46800 },
-      { product_id: 'PS3', product_name: 'Sucre', quantity: 1, unit_price: 27000, total: 27000 },
-      { product_id: 'PS4', product_name: 'Lait', quantity: 1, unit_price: 61000, total: 61000 }
-    ]
-  },
-  {
-    id: 2,
-    number: 'BC-2024-002',
-    supplier_id: 3,
-    supplier_name: 'Fournisseur Chocolat',
-    order_date: '2024-01-12',
-    expected_delivery: '2024-01-15',
-    delivery_date: '2024-01-15',
-    status: 'received',
-    total_amount: 35000,
-    notes: 'Chocolats pour production spéciale',
-    created_by: 'admin',
-    items: [
-      { product_id: 'PS25', product_name: 'Chocolat Blanc', quantity: 1, unit_price: 17500, total: 17500, quantity_received: 1 },
-      { product_id: 'PS26', product_name: 'Chocolat Noir', quantity: 1, unit_price: 17500, total: 17500, quantity_received: 1 }
-    ]
-  }
-];
-
-// ===================== HOOKS PERSONNALISÉS =====================
-const useLocalStorage = (key, defaultValue) => {
-  const [value, setValue] = useState(() => {
-    if (typeof window === 'undefined') return defaultValue;
-    try {
-      const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : defaultValue;
-    } catch (error) {
-      return defaultValue;
-    }
-  });
-
-  const setStoredValue = (newValue) => {
-    try {
-      setValue(newValue);
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(key, JSON.stringify(newValue));
-      }
-    } catch (error) {
-      console.error(`Error saving to localStorage:`, error);
-    }
-  };
-
-  return [value, setStoredValue];
-};
-
-const useAuth = () => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(false);
-
-  const signIn = async (username, password) => {
-    setLoading(true);
-    try {
-      if (username === 'admin' && password === 'admin123') {
-        const userData = {
-          id: '1',
-          username: 'admin',
-          name: 'Administrateur',
-          role: 'Propriétaire',
-          email: 'admin@patisserie-shine.bf'
-        };
-        setUser(userData);
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('user', JSON.stringify(userData));
-        }
-        return { success: true };
-      }
-      return { success: false, error: 'Identifiants incorrects' };
-    } catch (error) {
-      return { success: false, error: 'Erreur de connexion' };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const signOut = () => {
-    setUser(null);
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('user');
-    }
-  };
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedUser = localStorage.getItem('user');
-      if (savedUser) {
-        setUser(JSON.parse(savedUser));
-      }
-    }
-  }, []);
-
-  return { user, loading, signIn, signOut };
-};
-
-// ===================== COMPOSANTS UI =====================
-const Card = ({ children, className = '', hover = false }) => (
-  <div className={`bg-white rounded-xl shadow-sm border border-gray-100 ${hover ? 'hover:shadow-md transition-shadow duration-200' : ''} ${className}`}>
-    {children}
-  </div>
-);
-
-const Button = ({ children, onClick, variant = 'primary', size = 'md', disabled = false, className = '', loading = false, type = 'button' }) => {
+// Composants UI de base
+const Button = ({ children, onClick, variant = 'primary', className = '', disabled = false }) => {
+  const baseClasses = 'px-4 py-2 rounded-lg font-medium transition-colors duration-200';
   const variants = {
-    primary: 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg hover:shadow-xl',
-    secondary: 'bg-gray-500 hover:bg-gray-600 text-white',
-    success: 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white shadow-lg',
-    danger: 'bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white shadow-lg',
-    warning: 'bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-white shadow-lg',
-    outline: 'border-2 border-amber-500 text-amber-600 hover:bg-amber-50',
-    ghost: 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+    primary: 'bg-blue-600 text-white hover:bg-blue-700',
+    secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300',
+    danger: 'bg-red-600 text-white hover:bg-red-700',
+    success: 'bg-green-600 text-white hover:bg-green-700'
   };
-
-  const sizes = {
-    sm: 'px-3 py-1.5 text-sm',
-    md: 'px-4 py-2.5',
-    lg: 'px-6 py-3 text-lg'
-  };
-
+  
   return (
-    <button
-      type={type}
+    <button 
+      className={`${baseClasses} ${variants[variant]} ${className} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       onClick={onClick}
-      disabled={disabled || loading}
-      className={`${variants[variant]} ${sizes[size]} rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${className}`}
+      disabled={disabled}
     >
-      {loading ? (
-        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-      ) : null}
       {children}
     </button>
   );
 };
 
-const Input = ({ type = 'text', placeholder, value, onChange, className = '', icon, ...props }) => (
-  <div className="relative">
-    {icon && (
-      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-        {icon}
-      </div>
-    )}
+const Input = ({ label, value, onChange, type = 'text', placeholder, required = false }) => (
+  <div className="mb-4">
+    {label && <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>}
     <input
       type={type}
-      placeholder={placeholder}
       value={value}
-      onChange={onChange}
-      className={`w-full ${icon ? 'pl-10' : 'pl-4'} pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition-all ${className}`}
-      {...props}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      required={required}
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
     />
   </div>
 );
 
-const Select = ({ value, onChange, children, className = '', ...props }) => (
-  <select
-    value={value}
-    onChange={onChange}
-    className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition-all bg-white ${className}`}
-    {...props}
-  >
-    {children}
-  </select>
-);
-
-const Badge = ({ children, variant = 'default', size = 'sm' }) => {
-  const variants = {
-    default: 'bg-gray-100 text-gray-800',
-    success: 'bg-green-100 text-green-800',
-    warning: 'bg-yellow-100 text-yellow-800',
-    danger: 'bg-red-100 text-red-800',
-    info: 'bg-blue-100 text-blue-800',
-    purple: 'bg-purple-100 text-purple-800'
-  };
-
-  const sizes = {
-    sm: 'px-2 py-1 text-xs',
-    md: 'px-3 py-1 text-sm',
-    lg: 'px-4 py-2'
-  };
-
-  return (
-    <span className={`inline-flex items-center font-semibold rounded-full ${variants[variant]} ${sizes[size]}`}>
-      {children}
-    </span>
-  );
-};
-
-// ===================== COMPOSANTS PRINCIPAUX =====================
-
-const LoginForm = ({ onLogin, error, loading }) => {
-  const [credentials, setCredentials] = useState({ username: '', password: '' });
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    onLogin(credentials.username, credentials.password);
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md p-8 shadow-2xl">
-        <div className="text-center mb-8">
-          <div className="text-6xl mb-4">🧁</div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent mb-2">
-            Pâtisserie Shine
-          </h1>
-          <p className="text-gray-600">Système de Gestion Intégré</p>
-          <div className="w-20 h-1 bg-gradient-to-r from-amber-500 to-orange-500 mx-auto mt-4 rounded-full"></div>
-        </div>
-        
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-center text-sm">
-            <AlertTriangle className="h-4 w-4 mr-2 flex-shrink-0" />
-            {error}
-          </div>
-        )}
-        
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <Input
-            placeholder="Nom d'utilisateur"
-            value={credentials.username}
-            onChange={(e) => setCredentials({...credentials, username: e.target.value})}
-            disabled={loading}
-            icon={<Users className="h-4 w-4 text-gray-400" />}
-          />
-          
-          <Input
-            type="password"
-            placeholder="Mot de passe"
-            value={credentials.password}
-            onChange={(e) => setCredentials({...credentials, password: e.target.value})}
-            disabled={loading}
-            icon={<Lock className="h-4 w-4 text-gray-400" />}
-          />
-          
-          <Button
-            type="submit"
-            disabled={loading || !credentials.username || !credentials.password}
-            loading={loading}
-            className="w-full py-4"
-          >
-            Se connecter
-          </Button>
-        </form>
-        
-        <div className="mt-8 p-4 bg-amber-50 rounded-xl border border-amber-200">
-          <p className="text-xs text-amber-700 text-center">
-            <span className="font-medium">Démo:</span> admin / admin123
-          </p>
-        </div>
-      </Card>
-    </div>
-  );
-};
-
-const Navigation = ({ activeTab, onTabChange, user, onSignOut }) => {
-  const navItems = [
-    { id: 'dashboard', label: 'Tableau de bord', icon: Home },
-    { id: 'products', label: 'Produits', icon: Package },
-    { id: 'purchases', label: 'Achats', icon: ShoppingCart },
-    { id: 'stock', label: 'Stock', icon: Archive },
-    { id: 'production', label: 'Production', icon: ChefHat },
-    { id: 'reports', label: 'Rapports', icon: BarChart3 }
-  ];
-
-  return (
-    <nav className="bg-white shadow-lg border-b border-gray-200 sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex justify-between items-center h-16">
-          <div className="flex items-center space-x-8">
-            <div className="flex items-center space-x-3">
-              <span className="text-3xl">🧁</span>
-              <div>
-                <span className="text-xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
-                  Pâtisserie Shine
-                </span>
-                <div className="text-xs text-gray-500">Gestion Professionnelle</div>
-              </div>
-            </div>
-            
-            <div className="hidden lg:flex space-x-1">
-              {navItems.map(item => {
-                const Icon = item.icon;
-                
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => onTabChange(item.id)}
-                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      activeTab === item.id
-                        ? 'bg-gradient-to-r from-amber-100 to-orange-100 text-amber-800 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <div className="text-right">
-              <div className="text-sm font-medium text-gray-900">{user?.name}</div>
-              <div className="text-xs text-gray-500">{user?.role}</div>
-            </div>
-            <Button onClick={onSignOut} variant="outline" size="sm">
-              <LogOut className="h-4 w-4 mr-2" />
-              Déconnexion
-            </Button>
-          </div>
-        </div>
-      </div>
-    </nav>
-  );
-};
-
-const Dashboard = ({ products = [], purchases = [] }) => {
-  const stats = {
-    totalProducts: products.length,
-    lowStock: products.filter(p => p.current_stock <= p.min_stock).length,
-    criticalStock: products.filter(p => p.current_stock < (p.min_stock * 0.5)).length,
-    pendingOrders: purchases.filter(p => p.status === 'pending').length,
-    monthlyPurchases: purchases.filter(p => {
-      const orderDate = new Date(p.order_date);
-      const now = new Date();
-      return orderDate.getMonth() === now.getMonth() && orderDate.getFullYear() === now.getFullYear();
-    }).length,
-    totalValue: purchases.reduce((sum, p) => sum + p.total_amount, 0)
-  };
-
-  const lowStockProducts = products.filter(p => p.current_stock <= p.min_stock).slice(0, 5);
-  const recentPurchases = purchases.slice(0, 3);
-
-  return (
-    <div className="space-y-8">
-      <div className="text-center lg:text-left">
-        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2">
-          Tableau de bord
-        </h1>
-        <p className="text-gray-600">Vue d'ensemble de votre pâtisserie</p>
-      </div>
-      
-      {/* Métriques principales */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-        <Card className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200" hover>
-          <div className="text-center">
-            <Package className="h-8 w-8 text-blue-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-blue-800">{stats.totalProducts}</div>
-            <div className="text-sm text-blue-600">Produits</div>
-          </div>
-        </Card>
-        
-        <Card className="p-6 bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200" hover>
-          <div className="text-center">
-            <AlertTriangle className="h-8 w-8 text-yellow-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-yellow-800">{stats.lowStock}</div>
-            <div className="text-sm text-yellow-600">Stock Faible</div>
-          </div>
-        </Card>
-        
-        <Card className="p-6 bg-gradient-to-br from-red-50 to-red-100 border-red-200" hover>
-          <div className="text-center">
-            <AlertTriangle className="h-8 w-8 text-red-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-red-800">{stats.criticalStock}</div>
-            <div className="text-sm text-red-600">Stock Critique</div>
-          </div>
-        </Card>
-        
-        <Card className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200" hover>
-          <div className="text-center">
-            <ShoppingCart className="h-8 w-8 text-purple-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-purple-800">{stats.pendingOrders}</div>
-            <div className="text-sm text-purple-600">Commandes</div>
-          </div>
-        </Card>
-        
-        <Card className="p-6 bg-gradient-to-br from-green-50 to-green-100 border-green-200" hover>
-          <div className="text-center">
-            <TrendingUp className="h-8 w-8 text-green-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-green-800">{stats.monthlyPurchases}</div>
-            <div className="text-sm text-green-600">Ce mois</div>
-          </div>
-        </Card>
-        
-        <Card className="p-6 bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200" hover>
-          <div className="text-center">
-            <Star className="h-8 w-8 text-amber-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-amber-800">
-              {Math.round(stats.totalValue / 1000)}K
-            </div>
-            <div className="text-sm text-amber-600">Total CFA</div>
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Alertes stock */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-gray-800 flex items-center">
-              <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
-              Alertes Stock
-            </h3>
-            <Badge variant="danger">{stats.lowStock}</Badge>
-          </div>
-          
-          {lowStockProducts.length > 0 ? (
-            <div className="space-y-4">
-              {lowStockProducts.map(product => (
-                <div key={product.id} className="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-200">
-                  <div>
-                    <h4 className="font-medium text-red-900">{product.name}</h4>
-                    <p className="text-sm text-red-700">
-                      Stock: {product.current_stock} {product.unit} (Min: {product.min_stock})
-                    </p>
-                  </div>
-                  <Badge variant={product.current_stock < (product.min_stock * 0.5) ? 'danger' : 'warning'}>
-                    {product.current_stock < (product.min_stock * 0.5) ? 'Critique' : 'Faible'}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
-              <p>Aucune alerte stock</p>
-            </div>
-          )}
-        </Card>
-
-        {/* Commandes récentes */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-semibold text-gray-800 flex items-center">
-              <ShoppingCart className="h-5 w-5 text-blue-600 mr-2" />
-              Commandes Récentes
-            </h3>
-            <Badge variant="info">{recentPurchases.length}</Badge>
-          </div>
-          
-          {recentPurchases.length > 0 ? (
-            <div className="space-y-4">
-              {recentPurchases.map(purchase => (
-                <div key={purchase.id} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-gray-900">{purchase.number}</h4>
-                    <Badge variant={
-                      purchase.status === 'received' ? 'success' : 
-                      purchase.status === 'pending' ? 'warning' : 'info'
-                    }>
-                      {purchase.status === 'received' ? 'Reçu' : 
-                       purchase.status === 'pending' ? 'En attente' : purchase.status}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-gray-600">{purchase.supplier_name}</p>
-                  <p className="text-sm font-medium text-gray-900">{purchase.total_amount.toLocaleString()} CFA</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <ShoppingCart className="h-12 w-12 mx-auto mb-2 opacity-50" />
-              <p>Aucune commande récente</p>
-            </div>
-          )}
-        </Card>
-      </div>
-    </div>
-  );
-};
-
-const ProductManagement = ({ products, setProducts, onNotification }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [sortBy, setSortBy] = useState('name');
-  const [sortOrder, setSortOrder] = useState('asc');
-
-  const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         product.reference.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  }).sort((a, b) => {
-    let comparison = 0;
-    if (sortBy === 'name') {
-      comparison = a.name.localeCompare(b.name);
-    } else if (sortBy === 'stock') {
-      comparison = a.current_stock - b.current_stock;
-    } else if (sortBy === 'price') {
-      comparison = a.unit_price - b.unit_price;
-    }
-    return sortOrder === 'asc' ? comparison : -comparison;
-  });
-
-  const getStockStatus = (product) => {
-    if (product.current_stock <= product.min_stock * 0.5) return 'critical';
-    if (product.current_stock <= product.min_stock) return 'low';
-    return 'normal';
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-            <Package className="h-6 w-6 mr-3 text-blue-600" />
-            Gestion des Produits
-          </h2>
-          <p className="text-gray-600 text-sm">
-            {products.length} produit{products.length > 1 ? 's' : ''}
-          </p>
-        </div>
-        
-        <Button onClick={() => onNotification('info', 'Fonctionnalité en développement')}>
-          <Plus className="h-4 w-4 mr-2" />
-          Nouveau Produit
-        </Button>
-      </div>
-
-      {/* Filtres */}
-      <Card className="p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Input
-            placeholder="Rechercher un produit..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            icon={<Search className="h-4 w-4 text-gray-400" />}
-          />
-          
-          <Select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>
-            <option value="all">Toutes les catégories</option>
-            {PRODUCT_CATEGORIES.map(category => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </Select>
-          
-          <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-            <option value="name">Trier par nom</option>
-            <option value="stock">Trier par stock</option>
-            <option value="price">Trier par prix</option>
-          </Select>
-          
-          <Button 
-            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-            variant="outline"
-          >
-            {sortOrder === 'asc' ? <ArrowUp className="h-4 w-4 mr-2" /> : <ArrowDown className="h-4 w-4 mr-2" />}
-            {sortOrder === 'asc' ? 'Croissant' : 'Décroissant'}
-          </Button>
-        </div>
-      </Card>
-
-      {/* Liste des produits */}
-      <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Produit
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Catégorie
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Stock
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Prix
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Fournisseur
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredProducts.map(product => {
-                const stockStatus = getStockStatus(product);
-                
-                return (
-                  <tr key={product.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{product.name}</div>
-                        <div className="text-sm text-gray-500">{product.reference}</div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <Badge variant="info" size="sm">{product.category}</Badge>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <span className={`text-sm font-medium ${
-                          stockStatus === 'critical' ? 'text-red-600' :
-                          stockStatus === 'low' ? 'text-yellow-600' : 'text-green-600'
-                        }`}>
-                          {product.current_stock} {product.unit}
-                        </span>
-                        <span className="text-xs text-gray-500 ml-2">
-                          (Min: {product.min_stock})
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">
-                          {product.unit_price.toLocaleString()} CFA/{product.unit}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Achat: {product.purchase_price.toLocaleString()} CFA
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{product.supplier_name}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                      <Button 
-                        onClick={() => onNotification('info', 'Modification en développement')}
-                        variant="ghost" 
-                        size="sm"
-                      >
-                        <Edit3 className="h-4 w-4" />
-                      </Button>
-                      <Button 
-                        onClick={() => onNotification('info', 'Suppression en développement')}
-                        variant="ghost" 
-                        size="sm"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
-  );
-};
-
-const PurchaseManagement = ({ products, purchases, setPurchases, onNotification }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-
-  const filteredPurchases = purchases.filter(purchase => {
-    const matchesSearch = purchase.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         purchase.supplier_name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || purchase.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-            <ShoppingCart className="h-6 w-6 mr-3 text-blue-600" />
-            Gestion des Achats
-          </h2>
-          <p className="text-gray-600 text-sm">
-            {purchases.length} commande{purchases.length > 1 ? 's' : ''} • 
-            {purchases.filter(p => p.status === 'pending').length} en attente
-          </p>
-        </div>
-        
-        <Button onClick={() => onNotification('info', 'Création de commande en développement')}>
-          <Plus className="h-4 w-4 mr-2" />
-          Nouveau Bon de Commande
-        </Button>
-      </div>
-
-      {/* Filtres */}
-      <Card className="p-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Input
-            placeholder="Rechercher une commande..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            icon={<Search className="h-4 w-4 text-gray-400" />}
-          />
-          
-          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="all">Tous les statuts</option>
-            <option value="pending">En attente</option>
-            <option value="received">Reçues</option>
-            <option value="cancelled">Annulées</option>
-          </Select>
-          
-          <Button 
-            onClick={() => onNotification('info', 'Export en développement')}
-            variant="outline"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Exporter
-          </Button>
-        </div>
-      </Card>
-
-      {/* Liste des commandes */}
-      <div className="space-y-4">
-        {filteredPurchases.map(purchase => (
-          <Card key={purchase.id} className="p-6" hover>
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div className="flex-1">
-                <div className="flex items-center space-x-3 mb-3">
-                  <FileText className="h-5 w-5 text-gray-500" />
-                  <h3 className="text-lg font-semibold text-gray-900">{purchase.number}</h3>
-                  <Badge variant={
-                    purchase.status === 'received' ? 'success' : 
-                    purchase.status === 'pending' ? 'warning' : 
-                    purchase.status === 'cancelled' ? 'danger' : 'info'
-                  }>
-                    {purchase.status === 'received' ? 'Reçue' : 
-                     purchase.status === 'pending' ? 'En attente' : 
-                     purchase.status === 'cancelled' ? 'Annulée' : purchase.status}
-                  </Badge>
-                </div>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
-                  <div>
-                    <span className="font-medium text-gray-900">Fournisseur:</span>
-                    <div>{purchase.supplier_name}</div>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-900">Date commande:</span>
-                    <div>{new Date(purchase.order_date).toLocaleDateString('fr-FR')}</div>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-900">Livraison prévue:</span>
-                    <div>{purchase.expected_delivery ? new Date(purchase.expected_delivery).toLocaleDateString('fr-FR') : 'Non définie'}</div>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-900">Montant total:</span>
-                    <div className="text-lg font-semibold text-blue-600">
-                      {purchase.total_amount.toLocaleString()} CFA
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="mt-3">
-                  <span className="font-medium text-gray-900">Articles: </span>
-                  <span className="text-gray-600">{purchase.items?.length || 0} produit{(purchase.items?.length || 0) > 1 ? 's' : ''}</span>
-                  {purchase.notes && (
-                    <div className="mt-2 p-2 bg-gray-50 rounded text-sm text-gray-600">
-                      <strong>Notes:</strong> {purchase.notes}
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <div className="flex flex-wrap gap-2">
-                <Button 
-                  onClick={() => onNotification('info', 'Détails en développement')}
-                  variant="outline" 
-                  size="sm"
-                >
-                  <Eye className="h-4 w-4 mr-1" />
-                  Détails
-                </Button>
-                
-                <Button 
-                  onClick={() => onNotification('info', 'Impression en développement')}
-                  variant="outline" 
-                  size="sm"
-                >
-                  <Printer className="h-4 w-4 mr-1" />
-                  Imprimer
-                </Button>
-                
-                {purchase.status === 'pending' && (
-                  <>
-                    <Button 
-                      onClick={() => onNotification('success', 'Réception simulée')}
-                      variant="success" 
-                      size="sm"
-                    >
-                      <Check className="h-4 w-4 mr-1" />
-                      Réceptionner
-                    </Button>
-                    
-                    <Button 
-                      onClick={() => onNotification('warning', 'Annulation simulée')}
-                      variant="danger" 
-                      size="sm"
-                    >
-                      <X className="h-4 w-4 mr-1" />
-                      Annuler
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {filteredPurchases.length === 0 && (
-        <Card className="p-12 text-center">
-          <ShoppingCart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune commande trouvée</h3>
-          <p className="text-gray-600 mb-4">Commencez par créer votre première commande</p>
-          <Button onClick={() => onNotification('info', 'Création de commande en développement')}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nouvelle Commande
-          </Button>
-        </Card>
-      )}
-    </div>
-  );
-};
-
-const ModulePlaceholder = ({ title, icon: Icon, description }) => (
-  <div className="text-center py-12">
-    <Icon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-    <h3 className="text-xl font-medium text-gray-900 mb-2">{title}</h3>
-    <p className="text-gray-600">{description}</p>
+const Select = ({ label, value, onChange, options, placeholder }) => (
+  <div className="mb-4">
+    {label && <label className="block text-sm font-medium text-gray-700 mb-2">{label}</label>}
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+    >
+      {placeholder && <option value="">{placeholder}</option>}
+      {options.map((option, index) => (
+        <option key={index} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
   </div>
 );
 
-// Composant principal de l'application
-const PatisserieShineApp = () => {
-  const { user, loading, signIn, signOut } = useAuth();
-  const [products, setProducts] = useLocalStorage('products', INITIAL_PRODUCTS);
-  const [purchases, setPurchases] = useLocalStorage('purchases', INITIAL_PURCHASES);
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [notifications, setNotifications] = useState([]);
-
-  const showNotification = (type, message) => {
-    const id = Date.now();
-    setNotifications(prev => [...prev, { id, type, message }]);
-    setTimeout(() => {
-      setNotifications(prev => prev.filter(n => n.id !== id));
-    }, 5000);
-  };
-
-  const handleLogin = async (username, password) => {
-    const { success, error } = await signIn(username, password);
-    if (!success) {
-      showNotification('error', error);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Chargement...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <LoginForm 
-        onLogin={handleLogin} 
-        error={notifications.find(n => n.type === 'error')?.message} 
-        loading={loading}
-      />
-    );
-  }
-
+const Modal = ({ isOpen, onClose, title, children }) => {
+  if (!isOpen) return null;
+  
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navigation
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        user={user}
-        onSignOut={signOut}
-      />
-      
-      <main className="max-w-7xl mx-auto py-8 px-4">
-        {activeTab === 'dashboard' && (
-          <Dashboard products={products} purchases={purchases} />
-        )}
-        
-        {activeTab === 'products' && (
-          <ProductManagement 
-            products={products}
-            setProducts={setProducts}
-            onNotification={showNotification}
-          />
-        )}
-        
-        {activeTab === 'purchases' && (
-          <PurchaseManagement 
-            products={products}
-            purchases={purchases}
-            setPurchases={setPurchases}
-            onNotification={showNotification}
-          />
-        )}
-        
-        {activeTab === 'stock' && (
-          <ModulePlaceholder 
-            title="Gestion du Stock"
-            icon={Archive}
-            description="Module de gestion des mouvements de stock en cours de développement"
-          />
-        )}
-        
-        {activeTab === 'production' && (
-          <ModulePlaceholder 
-            title="Gestion de la Production"
-            icon={ChefHat}
-            description="Module de suivi de la production et des recettes en cours de développement"
-          />
-        )}
-        
-        {activeTab === 'reports' && (
-          <ModulePlaceholder 
-            title="Rapports et Analyses"
-            icon={BarChart3}
-            description="Module de génération de rapports et analyses en cours de développement"
-          />
-        )}
-      </main>
-
-      {/* Notifications */}
-      <div className="fixed bottom-4 right-4 z-50 space-y-2">
-        {notifications.map(notification => (
-          <div
-            key={notification.id}
-            className={`max-w-sm p-4 rounded-lg shadow-lg border flex items-center space-x-3 ${
-              notification.type === 'success' 
-                ? 'bg-green-50 border-green-200 text-green-800' 
-                : notification.type === 'info'
-                ? 'bg-blue-50 border-blue-200 text-blue-800'
-                : notification.type === 'warning'
-                ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
-                : 'bg-red-50 border-red-200 text-red-800'
-            }`}
-          >
-            {notification.type === 'success' ? (
-              <Check className="h-5 w-5 flex-shrink-0" />
-            ) : notification.type === 'info' ? (
-              <Bell className="h-5 w-5 flex-shrink-0" />
-            ) : notification.type === 'warning' ? (
-              <Clock className="h-5 w-5 flex-shrink-0" />
-            ) : (
-              <AlertTriangle className="h-5 w-5 flex-shrink-0" />
-            )}
-            <span className="text-sm font-medium">{notification.message}</span>
-            <button 
-              onClick={() => setNotifications(prev => prev.filter(n => n.id !== notification.id))}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ))}
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-bold">{title}</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
+        </div>
+        {children}
       </div>
     </div>
   );
 };
 
-export default PatisserieShineApp;
+// Application principale
+const PatisserieStockApp = () => {
+  const [activeTab, setActiveTab] = useState('stock');
+  const [currentUser, setCurrentUser] = useState({ id: 1, nom: 'Admin', role: 'admin' });
+  
+  // États pour les données
+  const [produits, setProduits] = useState([
+    { id: 1, nom: 'Farine T45', dateAchat: '2024-01-15', prixAchat: 25.50, quantite: 50, unite: 'kg', quantiteRestante: 45 },
+    { id: 2, nom: 'Levure fraîche', dateAchat: '2024-01-10', prixAchat: 3.20, quantite: 20, unite: 'pieces', quantiteRestante: 15 }
+  ]);
+  
+  const [demandes, setDemandes] = useState([
+    { id: 1, produitId: 1, produitNom: 'Farine T45', quantite: 5, destination: 'Production', statut: 'en_attente', date: '2024-01-16' }
+  ]);
+  
+  const [productions, setProductions] = useState([
+    { id: 1, produit: 'Croissants', quantite: 50, destination: 'Boutique', date: '2024-01-16', statut: 'terminé' }
+  ]);
+  
+  const [utilisateurs, setUtilisateurs] = useState([
+    { id: 1, nom: 'Admin Principal', email: 'admin@patisserie.com', role: 'admin' },
+    { id: 2, nom: 'Marie Dubois', email: 'marie@patisserie.com', role: 'employe_production' },
+    { id: 3, nom: 'Jean Martin', email: 'jean@patisserie.com', role: 'employe_boutique' }
+  ]);
+  
+  const [recettes, setRecettes] = useState([
+    { 
+      id: 1, 
+      nom: 'Pain', 
+      ingredients: [
+        { produitId: 1, produitNom: 'Farine T45', quantite: 2, unite: 'g' },
+        { produitId: 2, produitNom: 'Levure fraîche', quantite: 0.1, unite: 'pieces' }
+      ]
+    }
+  ]);
+  
+  const [unites, setUnites] = useState([
+    { value: 'kg', label: 'Kilogrammes' },
+    { value: 'pieces', label: 'Pièces' },
+    { value: 'cartons', label: 'Cartons' },
+    { value: 'litres', label: 'Litres' },
+    { value: 'bouteilles', label: 'Bouteilles' },
+    { value: 'bidons', label: 'Bidons' },
+    { value: 'g', label: 'Grammes' }
+  ]);
+
+  // États pour les modales
+  const [showAddProduit, setShowAddProduit] = useState(false);
+  const [showAddDemande, setShowAddDemande] = useState(false);
+  const [showAddProduction, setShowAddProduction] = useState(false);
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [showAddRecette, setShowAddRecette] = useState(false);
+  const [showAddUnite, setShowAddUnite] = useState(false);
+
+  // États pour les formulaires
+  const [formProduit, setFormProduit] = useState({
+    nom: '', dateAchat: '', prixAchat: '', quantite: '', unite: ''
+  });
+  
+  const [formDemande, setFormDemande] = useState({
+    produitId: '', quantite: '', destination: ''
+  });
+  
+  const [formProduction, setFormProduction] = useState({
+    produit: '', quantite: '', destination: 'Boutique'
+  });
+  
+  const [formUser, setFormUser] = useState({
+    nom: '', email: '', role: ''
+  });
+  
+  const [formRecette, setFormRecette] = useState({
+    nom: '', ingredients: [{ produitId: '', quantite: '', unite: 'g' }]
+  });
+  
+  const [newUnite, setNewUnite] = useState({ value: '', label: '' });
+
+  // Fonctions de gestion
+  const ajouterProduit = () => {
+    if (!formProduit.nom || !formProduit.dateAchat || !formProduit.prixAchat || !formProduit.quantite || !formProduit.unite) {
+      alert('Veuillez remplir tous les champs');
+      return;
+    }
+    
+    const nouveauProduit = {
+      id: produits.length + 1,
+      ...formProduit,
+      prixAchat: parseFloat(formProduit.prixAchat),
+      quantite: parseFloat(formProduit.quantite),
+      quantiteRestante: parseFloat(formProduit.quantite)
+    };
+    
+    setProduits([...produits, nouveauProduit]);
+    setFormProduit({ nom: '', dateAchat: '', prixAchat: '', quantite: '', unite: '' });
+    setShowAddProduit(false);
+  };
+
+  const ajouterDemande = () => {
+    if (!formDemande.produitId || !formDemande.quantite || !formDemande.destination) {
+      alert('Veuillez remplir tous les champs');
+      return;
+    }
+    
+    const produit = produits.find(p => p.id === parseInt(formDemande.produitId));
+    const nouvelleDemande = {
+      id: demandes.length + 1,
+      ...formDemande,
+      produitId: parseInt(formDemande.produitId),
+      produitNom: produit.nom,
+      quantite: parseFloat(formDemande.quantite),
+      statut: 'en_attente',
+      date: new Date().toISOString().split('T')[0]
+    };
+    
+    setDemandes([...demandes, nouvelleDemande]);
+    setFormDemande({ produitId: '', quantite: '', destination: '' });
+    setShowAddDemande(false);
+  };
+
+  const validerDemande = (demandeId) => {
+    const demande = demandes.find(d => d.id === demandeId);
+    const produit = produits.find(p => p.id === demande.produitId);
+    
+    if (produit.quantiteRestante >= demande.quantite) {
+      // Mettre à jour la quantité restante
+      setProduits(produits.map(p => 
+        p.id === demande.produitId 
+          ? { ...p, quantiteRestante: p.quantiteRestante - demande.quantite }
+          : p
+      ));
+      
+      // Mettre à jour le statut de la demande
+      setDemandes(demandes.map(d => 
+        d.id === demandeId 
+          ? { ...d, statut: 'validee' }
+          : d
+      ));
+    } else {
+      alert('Stock insuffisant !');
+    }
+  };
+
+  const ajouterProduction = () => {
+    if (!formProduction.produit || !formProduction.quantite) {
+      alert('Veuillez remplir tous les champs');
+      return;
+    }
+    
+    const nouvelleProduction = {
+      id: productions.length + 1,
+      ...formProduction,
+      quantite: parseFloat(formProduction.quantite),
+      date: new Date().toISOString().split('T')[0],
+      statut: 'terminé'
+    };
+    
+    setProductions([...productions, nouvelleProduction]);
+    setFormProduction({ produit: '', quantite: '', destination: 'Boutique' });
+    setShowAddProduction(false);
+  };
+
+  const ajouterUtilisateur = () => {
+    if (!formUser.nom || !formUser.email || !formUser.role) {
+      alert('Veuillez remplir tous les champs');
+      return;
+    }
+    
+    const nouvelUtilisateur = {
+      id: utilisateurs.length + 1,
+      ...formUser
+    };
+    
+    setUtilisateurs([...utilisateurs, nouvelUtilisateur]);
+    setFormUser({ nom: '', email: '', role: '' });
+    setShowAddUser(false);
+  };
+
+  const ajouterUnite = () => {
+    if (!newUnite.value || !newUnite.label) {
+      alert('Veuillez remplir tous les champs');
+      return;
+    }
+    
+    setUnites([...unites, newUnite]);
+    setNewUnite({ value: '', label: '' });
+    setShowAddUnite(false);
+  };
+
+  const ajouterRecette = () => {
+    if (!formRecette.nom || formRecette.ingredients.length === 0) {
+      alert('Veuillez remplir tous les champs');
+      return;
+    }
+    
+    const nouvelleRecette = {
+      id: recettes.length + 1,
+      ...formRecette,
+      ingredients: formRecette.ingredients.map(ing => ({
+        ...ing,
+        produitId: parseInt(ing.produitId),
+        produitNom: produits.find(p => p.id === parseInt(ing.produitId))?.nom || '',
+        quantite: parseFloat(ing.quantite)
+      }))
+    };
+    
+    setRecettes([...recettes, nouvelleRecette]);
+    setFormRecette({ nom: '', ingredients: [{ produitId: '', quantite: '', unite: 'g' }] });
+    setShowAddRecette(false);
+  };
+
+  const calculerConsommation = (recetteId, quantiteProduite) => {
+    const recette = recettes.find(r => r.id === recetteId);
+    if (!recette) return [];
+    
+    return recette.ingredients.map(ing => ({
+      ...ing,
+      quantiteConsommee: ing.quantite * quantiteProduite
+    }));
+  };
+
+  // Navigation tabs
+  const tabs = [
+    { id: 'stock', label: 'Stock', icon: Package },
+    { id: 'demandes', label: 'Demandes', icon: ShoppingCart },
+    { id: 'production', label: 'Production', icon: Factory },
+    { id: 'equipe', label: 'Équipe', icon: Users },
+    { id: 'recettes', label: 'Recettes', icon: Calculator },
+    { id: 'parametres', label: 'Paramètres', icon: Settings }
+  ];
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex justify-between items-center">
+            <h1 className="text-2xl font-bold text-gray-900">Gestion Stock Pâtisserie</h1>
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-gray-600">
+                Connecté en tant que: <strong>{currentUser.nom}</strong> ({currentUser.role})
+              </span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Navigation */}
+      <nav className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex space-x-8">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center space-x-2 py-4 px-2 border-b-2 font-medium text-sm ${
+                    activeTab === tab.id
+                      ? 'border-blue-500 text-blue-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <Icon size={18} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </nav>
+
+      {/* Contenu principal */}
+      <main className="max-w-7xl mx-auto px-4 py-8">
+        
+        {/* Onglet Stock */}
+        {activeTab === 'stock' && (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold">Gestion du Stock</h2>
+              <Button onClick={() => setShowAddProduit(true)}>
+                <Plus size={16} className="mr-2" />
+                Ajouter Produit
+              </Button>
+            </div>
+            
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produit</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date Achat</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prix</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantité Initiale</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantité Restante</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unité</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {produits.map((produit) => (
+                    <tr key={produit.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {produit.nom}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {produit.dateAchat}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {produit.prixAchat}€
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {produit.quantite}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <span className={produit.quantiteRestante < produit.quantite * 0.2 ? 'text-red-600 font-medium' : ''}>
+                          {produit.quantiteRestante}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {unites.find(u => u.value === produit.unite)?.label || produit.unite}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Onglet Demandes */}
+        {activeTab === 'demandes' && (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold">Demandes de Sortie</h2>
+              <Button onClick={() => setShowAddDemande(true)}>
+                <Plus size={16} className="mr-2" />
+                Nouvelle Demande
+              </Button>
+            </div>
+            
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produit</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantité</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Destination</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {demandes.map((demande) => (
+                    <tr key={demande.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {demande.produitNom}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {demande.quantite}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {demande.destination}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {demande.date}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          demande.statut === 'validee' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {demande.statut === 'validee' ? 'Validée' : 'En attente'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        {demande.statut === 'en_attente' && (
+                          <Button 
+                            variant="success" 
+                            onClick={() => validerDemande(demande.id)}
+                            className="text-xs py-1 px-2"
+                          >
+                            Valider
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Onglet Production */}
+        {activeTab === 'production' && (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold">Production</h2>
+              <Button onClick={() => setShowAddProduction(true)}>
+                <Plus size={16} className="mr-2" />
+                Nouvelle Production
+              </Button>
+            </div>
+            
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produit</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantité</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Destination</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {productions.map((production) => (
+                    <tr key={production.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {production.produit}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {production.quantite}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {production.destination}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {production.date}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                          {production.statut}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Onglet Équipe */}
+        {activeTab === 'equipe' && currentUser.role === 'admin' && (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold">Gestion de l'Équipe</h2>
+              <Button onClick={() => setShowAddUser(true)}>
+                <Plus size={16} className="mr-2" />
+                Nouvel Utilisateur
+              </Button>
+            </div>
+            
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nom</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rôle</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {utilisateurs.map((user) => (
+                    <tr key={user.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {user.nom}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {user.email}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          user.role === 'admin' ? 'bg-purple-100 text-purple-800' :
+                          user.role === 'employe_production' ? 'bg-blue-100 text-blue-800' :
+                          'bg-green-100 text-green-800'
+                        }`}>
+                          {user.role === 'admin' ? 'Administrateur' :
+                           user.role === 'employe_production' ? 'Employé Production' :
+                           'Employé Boutique'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Onglet Recettes */}
+        {activeTab === 'recettes' && (
+          <div>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-semibold">Recettes et Calculs</h2>
+              <Button onClick={() => setShowAddRecette(true)}>
+                <Plus size={16} className="mr-2" />
+                Nouvelle Recette
+              </Button>
+            </div>
+            
+            <div className="space-y-6">
+              {recettes.map((recette) => (
+                <div key={recette.id} className="bg-white rounded-lg shadow p-6">
+                  <h3 className="text-lg font-medium mb-4">{recette.nom}</h3>
+                  <div className="mb-4">
+                    <h4 className="font-medium text-gray-700 mb-2">Ingrédients pour 1 unité :</h4>
+                    <ul className="space-y-1">
+                      {recette.ingredients.map((ing, index) => (
+                        <li key={index} className="text-sm text-gray-600">
+                          • {ing.quantite} {ing.unite} de {ing.produitNom}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  
+                  <div className="border-t pt-4">
+                    <h4 className="font-medium text-gray-700 mb-2">Calculateur de consommation :</h4>
+                    <div className="flex items-center space-x-4">
+                      <input
+                        type="number"
+                        placeholder="Quantité produite"
+                        className="px-3 py-2 border border-gray-300 rounded-lg w-32"
+                        onChange={(e) => {
+                          const quantite = parseInt(e.target.value) || 0;
+                          if (quantite > 0) {
+                            const consommation = calculerConsommation(recette.id, quantite);
+                            console.log('Consommation calculée:', consommation);
+                          }
+                        }}
+                      />
+                      <span className="text-sm text-gray-600">unités</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Onglet Paramètres */}
+        {activeTab === 'parametres' && (
+          <div>
+            <h2 className="text-xl font-semibold mb-6">Paramètres</h2>
+            
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium">Unités de Mesure</h3>
+                <Button onClick={() => setShowAddUnite(true)} variant="secondary">
+                  <Plus size={16} className="mr-2" />
+                  Ajouter Unité
+                </Button>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {unites.map((unite, index) => (
+                  <div key={index} className="p-3 border border-gray-200 rounded-lg">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="font-medium">{unite.label}</span>
+                        <span className="text-gray-500 ml-2">({unite.value})</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Modales */}
+      
+      {/* Modale Ajouter Produit */}
+      <Modal isOpen={showAddProduit} onClose={() => setShowAddProduit(false)} title="Ajouter un Produit">
+        <Input
+          label="Nom du produit"
+          value={formProduit.nom}
+          onChange={(value) => setFormProduit({...formProduit, nom: value})}
+          required
+        />
+        <Input
+          label="Date d'achat"
+          type="date"
+          value={formProduit.dateAchat}
+          onChange={(value) => setFormProduit({...formProduit, dateAchat: value})}
+          required
+        />
+        <Input
+          label="Prix d'achat (€)"
+          type="number"
+          step="0.01"
+          value={formProduit.prixAchat}
+          onChange={(value) => setFormProduit({...formProduit, prixAchat: value})}
+          required
+        />
+        <Input
+          label="Quantité"
+          type="number"
+          step="0.01"
+          value={formProduit.quantite}
+          onChange={(value) => setFormProduit({...formProduit, quantite: value})}
+          required
+        />
+        <Select
+          label="Unité de mesure"
+          value={formProduit.unite}
+          onChange={(value) => setFormProduit({...formProduit, unite: value})}
+          options={unites}
+          placeholder="Choisir une unité"
+        />
+        
+        <div className="flex space-x-4 mt-6">
+          <Button onClick={ajouterProduit} className="flex-1">
+            Ajouter
+          </Button>
+          <Button variant="secondary" onClick={() => setShowAddProduit(false)} className="flex-1">
+            Annuler
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Modale Nouvelle Demande */}
+      <Modal isOpen={showAddDemande} onClose={() => setShowAddDemande(false)} title="Nouvelle Demande">
+        <Select
+          label="Produit"
+          value={formDemande.produitId}
+          onChange={(value) => setFormDemande({...formDemande, produitId: value})}
+          options={produits.map(p => ({ value: p.id, label: `${p.nom} (${p.quantiteRestante} ${unites.find(u => u.value === p.unite)?.label || p.unite} disponibles)` }))}
+          placeholder="Choisir un produit"
+        />
+        <Input
+          label="Quantité demandée"
+          type="number"
+          step="0.01"
+          value={formDemande.quantite}
+          onChange={(value) => setFormDemande({...formDemande, quantite: value})}
+          required
+        />
+        <Select
+          label="Destination"
+          value={formDemande.destination}
+          onChange={(value) => setFormDemande({...formDemande, destination: value})}
+          options={[
+            { value: 'Boutique', label: 'Boutique' },
+            { value: 'Production', label: 'Production' }
+          ]}
+          placeholder="Choisir la destination"
+        />
+        
+        <div className="flex space-x-4 mt-6">
+          <Button onClick={ajouterDemande} className="flex-1">
+            Créer la demande
+          </Button>
+          <Button variant="secondary" onClick={() => setShowAddDemande(false)} className="flex-1">
+            Annuler
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Modale Nouvelle Production */}
+      <Modal isOpen={showAddProduction} onClose={() => setShowAddProduction(false)} title="Nouvelle Production">
+        <Input
+          label="Produit fabriqué"
+          value={formProduction.produit}
+          onChange={(value) => setFormProduction({...formProduction, produit: value})}
+          placeholder="Ex: Croissants, Pain, Gâteaux..."
+          required
+        />
+        <Input
+          label="Quantité produite"
+          type="number"
+          value={formProduction.quantite}
+          onChange={(value) => setFormProduction({...formProduction, quantite: value})}
+          required
+        />
+        <Select
+          label="Destination"
+          value={formProduction.destination}
+          onChange={(value) => setFormProduction({...formProduction, destination: value})}
+          options={[
+            { value: 'Boutique', label: 'Boutique' }
+          ]}
+        />
+        
+        <div className="flex space-x-4 mt-6">
+          <Button onClick={ajouterProduction} className="flex-1">
+            Enregistrer
+          </Button>
+          <Button variant="secondary" onClick={() => setShowAddProduction(false)} className="flex-1">
+            Annuler
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Modale Nouvel Utilisateur */}
+      <Modal isOpen={showAddUser} onClose={() => setShowAddUser(false)} title="Nouvel Utilisateur">
+        <Input
+          label="Nom complet"
+          value={formUser.nom}
+          onChange={(value) => setFormUser({...formUser, nom: value})}
+          required
+        />
+        <Input
+          label="Email"
+          type="email"
+          value={formUser.email}
+          onChange={(value) => setFormUser({...formUser, email: value})}
+          required
+        />
+        <Select
+          label="Rôle"
+          value={formUser.role}
+          onChange={(value) => setFormUser({...formUser, role: value})}
+          options={[
+            { value: 'admin', label: 'Administrateur' },
+            { value: 'employe_production', label: 'Employé Production' },
+            { value: 'employe_boutique', label: 'Employé Boutique' }
+          ]}
+          placeholder="Choisir un rôle"
+        />
+        
+        <div className="flex space-x-4 mt-6">
+          <Button onClick={ajouterUtilisateur} className="flex-1">
+            Créer l'utilisateur
+          </Button>
+          <Button variant="secondary" onClick={() => setShowAddUser(false)} className="flex-1">
+            Annuler
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Modale Nouvelle Recette */}
+      <Modal isOpen={showAddRecette} onClose={() => setShowAddRecette(false)} title="Nouvelle Recette">
+        <Input
+          label="Nom de la recette"
+          value={formRecette.nom}
+          onChange={(value) => setFormRecette({...formRecette, nom: value})}
+          placeholder="Ex: Pain, Croissant..."
+          required
+        />
+        
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">Ingrédients</label>
+          {formRecette.ingredients.map((ingredient, index) => (
+            <div key={index} className="flex space-x-2 mb-2">
+              <Select
+                value={ingredient.produitId}
+                onChange={(value) => {
+                  const newIngredients = [...formRecette.ingredients];
+                  newIngredients[index].produitId = value;
+                  setFormRecette({...formRecette, ingredients: newIngredients});
+                }}
+                options={produits.map(p => ({ value: p.id, label: p.nom }))}
+                placeholder="Produit"
+              />
+              <Input
+                type="number"
+                step="0.01"
+                value={ingredient.quantite}
+                onChange={(value) => {
+                  const newIngredients = [...formRecette.ingredients];
+                  newIngredients[index].quantite = value;
+                  setFormRecette({...formRecette, ingredients: newIngredients});
+                }}
+                placeholder="Quantité"
+              />
+              <Select
+                value={ingredient.unite}
+                onChange={(value) => {
+                  const newIngredients = [...formRecette.ingredients];
+                  newIngredients[index].unite = value;
+                  setFormRecette({...formRecette, ingredients: newIngredients});
+                }}
+                options={unites}
+              />
+              <Button
+                variant="danger"
+                onClick={() => {
+                  const newIngredients = formRecette.ingredients.filter((_, i) => i !== index);
+                  setFormRecette({...formRecette, ingredients: newIngredients});
+                }}
+                className="px-2 py-1"
+              >
+                <Trash2 size={14} />
+              </Button>
+            </div>
+          ))}
+          
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setFormRecette({
+                ...formRecette,
+                ingredients: [...formRecette.ingredients, { produitId: '', quantite: '', unite: 'g' }]
+              });
+            }}
+            className="mt-2"
+          >
+            <Plus size={16} className="mr-1" />
+            Ajouter un ingrédient
+          </Button>
+        </div>
+        
+        <div className="flex space-x-4 mt-6">
+          <Button onClick={ajouterRecette} className="flex-1">
+            Créer la recette
+          </Button>
+          <Button variant="secondary" onClick={() => setShowAddRecette(false)} className="flex-1">
+            Annuler
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Modale Ajouter Unité */}
+      <Modal isOpen={showAddUnite} onClose={() => setShowAddUnite(false)} title="Nouvelle Unité de Mesure">
+        <Input
+          label="Code de l'unité"
+          value={newUnite.value}
+          onChange={(value) => setNewUnite({...newUnite, value: value})}
+          placeholder="Ex: sacs, pots..."
+          required
+        />
+        <Input
+          label="Libellé"
+          value={newUnite.label}
+          onChange={(value) => setNewUnite({...newUnite, label: value})}
+          placeholder="Ex: Sacs, Pots..."
+          required
+        />
+        
+        <div className="flex space-x-4 mt-6">
+          <Button onClick={ajouterUnite} className="flex-1">
+            Ajouter
+          </Button>
+          <Button variant="secondary" onClick={() => setShowAddUnite(false)} className="flex-1">
+            Annuler
+          </Button>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+export default PatisserieStockApp;
