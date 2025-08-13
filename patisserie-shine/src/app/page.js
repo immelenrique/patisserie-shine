@@ -2,49 +2,205 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Users, Package, ShoppingCart, Factory, Calculator, Settings, Trash2, Edit, LogOut, Eye, EyeOff, Mail, Lock, ChefHat, TrendingUp, AlertTriangle, CheckCircle, Clock, BarChart3 } from 'lucide-react';
 
-// Composants UI modernes
-const Button = ({ children, onClick, variant = 'primary', size = 'md', className = '', disabled = false, icon: Icon }) => {
-  const baseClasses = 'inline-flex items-center justify-center font-medium transition-all duration-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 active:scale-95';
+// Styles CSS inline pour assurer l'affichage
+const styles = `
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    line-height: 1.5;
+    color: #374151;
+    background-color: #f9fafb;
+  }
+  
+  .bg-gradient-to-r {
+    background-image: linear-gradient(to right, var(--tw-gradient-stops));
+  }
+  
+  .from-blue-600 {
+    --tw-gradient-from: #2563eb;
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(37, 99, 235, 0));
+  }
+  
+  .to-blue-700 {
+    --tw-gradient-to: #1d4ed8;
+  }
+  
+  .from-blue-50 {
+    --tw-gradient-from: #eff6ff;
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(239, 246, 255, 0));
+  }
+  
+  .to-purple-50 {
+    --tw-gradient-to: #faf5ff;
+  }
+  
+  .shadow-lg {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  }
+  
+  .shadow-xl {
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  }
+  
+  .rounded-xl {
+    border-radius: 0.75rem;
+  }
+  
+  .rounded-2xl {
+    border-radius: 1rem;
+  }
+  
+  .transition-all {
+    transition-property: all;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+  
+  .duration-200 {
+    transition-duration: 200ms;
+  }
+  
+  .duration-300 {
+    transition-duration: 300ms;
+  }
+  
+  .hover\\:scale-105:hover {
+    transform: scale(1.05);
+  }
+  
+  .active\\:scale-95:active {
+    transform: scale(0.95);
+  }
+  
+  .backdrop-blur-sm {
+    backdrop-filter: blur(4px);
+  }
+`;
+
+// Injection des styles
+if (typeof document !== 'undefined') {
+  const styleSheet = document.createElement('style');
+  styleSheet.textContent = styles;
+  document.head.appendChild(styleSheet);
+}
+
+// Composants UI modernes avec styles inline
+const Button = ({ children, onClick, variant = 'primary', size = 'md', className = '', disabled = false, icon: Icon, type = 'button' }) => {
+  const baseStyles = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontWeight: '500',
+    borderRadius: '0.75rem',
+    border: 'none',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    transition: 'all 0.2s ease',
+    opacity: disabled ? '0.5' : '1',
+    transform: 'scale(1)',
+    outline: 'none',
+    fontFamily: 'inherit'
+  };
   
   const variants = {
-    primary: 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 focus:ring-blue-500 shadow-lg hover:shadow-xl',
-    secondary: 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-gray-500 shadow-sm hover:shadow-md',
-    danger: 'bg-gradient-to-r from-red-600 to-red-700 text-white hover:from-red-700 hover:to-red-800 focus:ring-red-500 shadow-lg hover:shadow-xl',
-    success: 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:from-green-700 hover:to-green-800 focus:ring-green-500 shadow-lg hover:shadow-xl',
-    warning: 'bg-gradient-to-r from-yellow-500 to-yellow-600 text-white hover:from-yellow-600 hover:to-yellow-700 focus:ring-yellow-500 shadow-lg hover:shadow-xl',
-    ghost: 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:ring-gray-500'
+    primary: {
+      background: 'linear-gradient(to right, #2563eb, #1d4ed8)',
+      color: 'white',
+      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+    },
+    secondary: {
+      background: 'white',
+      color: '#374151',
+      border: '1px solid #d1d5db',
+      boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+    },
+    danger: {
+      background: 'linear-gradient(to right, #dc2626, #b91c1c)',
+      color: 'white',
+      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+    },
+    success: {
+      background: 'linear-gradient(to right, #059669, #047857)',
+      color: 'white',
+      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+    },
+    ghost: {
+      background: 'transparent',
+      color: '#6b7280',
+      border: 'none'
+    }
   };
   
   const sizes = {
-    sm: 'px-3 py-2 text-sm',
-    md: 'px-4 py-2.5 text-sm',
-    lg: 'px-6 py-3 text-base',
-    xl: 'px-8 py-4 text-lg'
+    sm: { padding: '0.5rem 0.75rem', fontSize: '0.875rem' },
+    md: { padding: '0.625rem 1rem', fontSize: '0.875rem' },
+    lg: { padding: '0.75rem 1.5rem', fontSize: '1rem' },
+    xl: { padding: '1rem 2rem', fontSize: '1.125rem' }
+  };
+  
+  const handleMouseEnter = (e) => {
+    if (!disabled) {
+      e.target.style.transform = 'scale(1.05)';
+      if (variant === 'primary') {
+        e.target.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1)';
+      }
+    }
+  };
+  
+  const handleMouseLeave = (e) => {
+    if (!disabled) {
+      e.target.style.transform = 'scale(1)';
+      if (variant === 'primary') {
+        e.target.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+      }
+    }
   };
   
   return (
     <button 
-      className={`${baseClasses} ${variants[variant]} ${sizes[size]} ${className}`}
+      type={type}
+      style={{...baseStyles, ...variants[variant], ...sizes[size]}}
       onClick={onClick}
       disabled={disabled}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={className}
     >
-      {Icon && <Icon size={size === 'sm' ? 16 : size === 'lg' ? 20 : 18} className="mr-2" />}
+      {Icon && <Icon size={size === 'sm' ? 16 : size === 'lg' ? 20 : 18} style={{marginRight: '0.5rem'}} />}
       {children}
     </button>
   );
 };
 
 const Input = ({ label, value, onChange, type = 'text', placeholder, required = false, icon: Icon, error }) => (
-  <div className="space-y-2">
+  <div style={{marginBottom: '1rem'}}>
     {label && (
-      <label className="block text-sm font-medium text-gray-700">
-        {label} {required && <span className="text-red-500">*</span>}
+      <label style={{
+        display: 'block',
+        fontSize: '0.875rem',
+        fontWeight: '500',
+        color: '#374151',
+        marginBottom: '0.5rem'
+      }}>
+        {label} {required && <span style={{color: '#ef4444'}}>*</span>}
       </label>
     )}
-    <div className="relative">
+    <div style={{position: 'relative'}}>
       {Icon && (
-        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-          <Icon className="h-5 w-5 text-gray-400" />
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '0.75rem',
+          transform: 'translateY(-50%)',
+          pointerEvents: 'none'
+        }}>
+          <Icon style={{width: '1.25rem', height: '1.25rem', color: '#9ca3af'}} />
         </div>
       )}
       <input
@@ -53,25 +209,69 @@ const Input = ({ label, value, onChange, type = 'text', placeholder, required = 
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         required={required}
-        className={`w-full ${Icon ? 'pl-10' : 'pl-4'} pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200 ${error ? 'border-red-500 focus:ring-red-500' : ''}`}
+        style={{
+          width: '100%',
+          paddingLeft: Icon ? '2.5rem' : '1rem',
+          paddingRight: '1rem',
+          paddingTop: '0.75rem',
+          paddingBottom: '0.75rem',
+          border: error ? '1px solid #ef4444' : '1px solid #d1d5db',
+          borderRadius: '0.75rem',
+          fontSize: '0.875rem',
+          transition: 'all 0.2s ease',
+          outline: 'none',
+          fontFamily: 'inherit'
+        }}
+        onFocus={(e) => {
+          e.target.style.borderColor = error ? '#ef4444' : '#2563eb';
+          e.target.style.boxShadow = error ? '0 0 0 3px rgba(239, 68, 68, 0.1)' : '0 0 0 3px rgba(37, 99, 235, 0.1)';
+        }}
+        onBlur={(e) => {
+          e.target.style.borderColor = '#d1d5db';
+          e.target.style.boxShadow = 'none';
+        }}
       />
     </div>
-    {error && <p className="text-sm text-red-600">{error}</p>}
+    {error && <p style={{fontSize: '0.875rem', color: '#ef4444', marginTop: '0.25rem'}}>{error}</p>}
   </div>
 );
 
 const Select = ({ label, value, onChange, options, placeholder, required = false, error }) => (
-  <div className="space-y-2">
+  <div style={{marginBottom: '1rem'}}>
     {label && (
-      <label className="block text-sm font-medium text-gray-700">
-        {label} {required && <span className="text-red-500">*</span>}
+      <label style={{
+        display: 'block',
+        fontSize: '0.875rem',
+        fontWeight: '500',
+        color: '#374151',
+        marginBottom: '0.5rem'
+      }}>
+        {label} {required && <span style={{color: '#ef4444'}}>*</span>}
       </label>
     )}
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
       required={required}
-      className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors duration-200 ${error ? 'border-red-500 focus:ring-red-500' : ''}`}
+      style={{
+        width: '100%',
+        padding: '0.75rem 1rem',
+        border: error ? '1px solid #ef4444' : '1px solid #d1d5db',
+        borderRadius: '0.75rem',
+        fontSize: '0.875rem',
+        transition: 'all 0.2s ease',
+        outline: 'none',
+        fontFamily: 'inherit',
+        backgroundColor: 'white'
+      }}
+      onFocus={(e) => {
+        e.target.style.borderColor = error ? '#ef4444' : '#2563eb';
+        e.target.style.boxShadow = error ? '0 0 0 3px rgba(239, 68, 68, 0.1)' : '0 0 0 3px rgba(37, 99, 235, 0.1)';
+      }}
+      onBlur={(e) => {
+        e.target.style.borderColor = '#d1d5db';
+        e.target.style.boxShadow = 'none';
+      }}
     >
       {placeholder && <option value="">{placeholder}</option>}
       {options.map((option, index) => (
@@ -80,7 +280,7 @@ const Select = ({ label, value, onChange, options, placeholder, required = false
         </option>
       ))}
     </select>
-    {error && <p className="text-sm text-red-600">{error}</p>}
+    {error && <p style={{fontSize: '0.875rem', color: '#ef4444', marginTop: '0.25rem'}}>{error}</p>}
   </div>
 );
 
@@ -88,27 +288,71 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
   if (!isOpen) return null;
   
   const sizes = {
-    sm: 'max-w-md',
-    md: 'max-w-lg',
-    lg: 'max-w-2xl',
-    xl: 'max-w-4xl'
+    sm: '28rem',
+    md: '32rem',
+    lg: '48rem',
+    xl: '64rem'
   };
   
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${sizes[size]} max-h-[90vh] overflow-y-auto transform transition-all duration-300 scale-100`}>
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-2xl">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold text-gray-900">{title}</h2>
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 50,
+      padding: '1rem'
+    }}>
+      <div style={{
+        backgroundColor: 'white',
+        borderRadius: '1rem',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+        width: '100%',
+        maxWidth: sizes[size],
+        maxHeight: '90vh',
+        overflow: 'auto'
+      }}>
+        <div style={{
+          position: 'sticky',
+          top: 0,
+          backgroundColor: 'white',
+          borderBottom: '1px solid #e5e7eb',
+          padding: '1.5rem',
+          borderRadius: '1rem 1rem 0 0'
+        }}>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+            <h2 style={{fontSize: '1.25rem', fontWeight: '700', color: '#111827', margin: 0}}>{title}</h2>
             <button 
-              onClick={onClose} 
-              className="text-gray-400 hover:text-gray-600 transition-colors duration-200 p-2 hover:bg-gray-100 rounded-lg"
+              onClick={onClose}
+              style={{
+                color: '#9ca3af',
+                background: 'none',
+                border: 'none',
+                fontSize: '1.5rem',
+                cursor: 'pointer',
+                padding: '0.5rem',
+                borderRadius: '0.5rem',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.color = '#6b7280';
+                e.target.style.backgroundColor = '#f3f4f6';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.color = '#9ca3af';
+                e.target.style.backgroundColor = 'transparent';
+              }}
             >
               ✕
             </button>
           </div>
         </div>
-        <div className="p-6">
+        <div style={{padding: '1.5rem'}}>
           {children}
         </div>
       </div>
@@ -116,35 +360,61 @@ const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
   );
 };
 
-const Card = ({ children, className = '', hover = true }) => (
-  <div className={`bg-white rounded-2xl shadow-lg border border-gray-100 ${hover ? 'hover:shadow-xl transition-shadow duration-300' : ''} ${className}`}>
+const Card = ({ children, className = '', hover = true, style = {} }) => (
+  <div 
+    style={{
+      backgroundColor: 'white',
+      borderRadius: '1rem',
+      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+      border: '1px solid #f3f4f6',
+      transition: hover ? 'all 0.3s ease' : 'none',
+      ...style
+    }}
+    onMouseEnter={hover ? (e) => {
+      e.target.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1)';
+    } : undefined}
+    onMouseLeave={hover ? (e) => {
+      e.target.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+    } : undefined}
+    className={className}
+  >
     {children}
   </div>
 );
 
 const StatCard = ({ title, value, change, icon: Icon, color = 'blue' }) => {
   const colors = {
-    blue: 'from-blue-500 to-blue-600',
-    green: 'from-green-500 to-green-600',
-    red: 'from-red-500 to-red-600',
-    yellow: 'from-yellow-500 to-yellow-600',
-    purple: 'from-purple-500 to-purple-600'
+    blue: 'linear-gradient(to right, #3b82f6, #2563eb)',
+    green: 'linear-gradient(to right, #10b981, #059669)',
+    red: 'linear-gradient(to right, #ef4444, #dc2626)',
+    yellow: 'linear-gradient(to right, #f59e0b, #d97706)',
+    purple: 'linear-gradient(to right, #8b5cf6, #7c3aed)'
   };
 
   return (
-    <Card className="p-6">
-      <div className="flex items-center justify-between">
+    <Card style={{padding: '1.5rem'}}>
+      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
         <div>
-          <p className="text-sm font-medium text-gray-600">{title}</p>
-          <p className="text-3xl font-bold text-gray-900">{value}</p>
+          <p style={{fontSize: '0.875rem', fontWeight: '500', color: '#6b7280', margin: '0 0 0.5rem 0'}}>{title}</p>
+          <p style={{fontSize: '1.875rem', fontWeight: '700', color: '#111827', margin: '0 0 0.5rem 0'}}>{value}</p>
           {change && (
-            <p className={`text-sm ${change.startsWith('+') ? 'text-green-600' : 'text-red-600'} flex items-center`}>
+            <p style={{
+              fontSize: '0.875rem',
+              color: change.startsWith('+') ? '#059669' : change.includes('Action') || change.includes('nécessaire') ? '#d97706' : '#059669',
+              display: 'flex',
+              alignItems: 'center',
+              margin: 0
+            }}>
               {change}
             </p>
           )}
         </div>
-        <div className={`p-3 rounded-2xl bg-gradient-to-r ${colors[color]}`}>
-          <Icon className="h-8 w-8 text-white" />
+        <div style={{
+          padding: '0.75rem',
+          borderRadius: '1rem',
+          background: colors[color]
+        }}>
+          <Icon style={{width: '2rem', height: '2rem', color: 'white'}} />
         </div>
       </div>
     </Card>
@@ -1424,4 +1694,3 @@ const PatisserieStockApp = () => {
 };
 
 export default PatisserieStockApp;
-
