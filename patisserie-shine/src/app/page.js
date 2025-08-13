@@ -1,3 +1,4 @@
+"use client";
 import React, { useState, useEffect } from 'react';
 import { 
   ShoppingCart, Package, TrendingUp, Bell, Check, X, Plus, 
@@ -7,7 +8,7 @@ import {
   ClipboardCheck, BarChart3, Users, Settings, Edit3, Save,
   ShoppingBag, Printer, Download, Filter, RefreshCw, Home,
   Building2, Phone, Mail, MapPin, Archive, Tag, Layers,
-  Grid3X3, ListFilter, SortAsc, SortDesc
+  Grid3X3, ListFilter, SortAsc, SortDesc, Lock
 } from 'lucide-react';
 
 // ===================== CONFIGURATION SUPABASE =====================
