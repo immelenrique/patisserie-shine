@@ -178,7 +178,7 @@ const Button = ({ children, onClick, variant = 'primary', size = 'md', className
   );
 };
 
-const Input = ({ label, value, onChange, type = 'text', placeholder, required = false, icon: Icon, error }) => (
+const Input = ({ label, value, onChange, type = 'text', placeholder,inputProps, required = false, icon: Icon, error }) => (
   <div style={{marginBottom: '1rem'}}>
     {label && (
       <label style={{
@@ -204,24 +204,25 @@ const Input = ({ label, value, onChange, type = 'text', placeholder, required = 
         </div>
       )}
       <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        required={required}
-        style={{
-          width: '100%',
-          paddingLeft: Icon ? '2.5rem' : '1rem',
-          paddingRight: '1rem',
-          paddingTop: '0.75rem',
-          paddingBottom: '0.75rem',
-          border: error ? '1px solid #ef4444' : '1px solid #d1d5db',
-          borderRadius: '0.75rem',
-          fontSize: '0.875rem',
-          transition: 'all 0.2s ease',
-          outline: 'none',
-          fontFamily: 'inherit'
-        }}
+  type={type}
+  value={value}
+  onChange={(e) => onChange(e.target.value)}
+  placeholder={placeholder}
+  required={required}
+  {...inputProps}  // <-- ajoute cette ligne
+  style={{
+    width: '100%',
+    paddingLeft: Icon ? '2.5rem' : '1rem',
+    paddingRight: '1rem',
+    paddingTop: '0.75rem',
+    paddingBottom: '0.75rem',
+    border: error ? '1px solid #ef4444' : '1px solid #d1d5db',
+    borderRadius: '0.75rem',
+    fontSize: '0.875rem',
+    transition: 'all 0.2s ease',
+    outline: 'none',
+    fontFamily: 'inherit'
+  }}
         onFocus={(e) => {
           e.target.style.borderColor = error ? '#ef4444' : '#2563eb';
           e.target.style.boxShadow = error ? '0 0 0 3px rgba(239, 68, 68, 0.1)' : '0 0 0 3px rgba(37, 99, 235, 0.1)';
@@ -486,7 +487,7 @@ const LoginPage = ({ onLogin }) => {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  autocomplete="current-password"
+                  inputProps={{ autocomplete: "current-password" }}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
@@ -1697,6 +1698,7 @@ const PatisserieStockApp = () => {
 };
 
 export default PatisserieStockApp;
+
 
 
 
