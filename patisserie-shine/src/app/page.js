@@ -487,7 +487,7 @@ const LoginPage = ({ onLogin }) => {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  inputProps={{ autoComplete: "current-password" }}
+                  autoComplete: "current-password" 
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
@@ -1698,6 +1698,7 @@ const PatisserieStockApp = () => {
 };
 
 export default PatisserieStockApp;
+
 
 
 
