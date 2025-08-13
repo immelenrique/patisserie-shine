@@ -468,6 +468,7 @@ const LoginPage = ({ onLogin }) => {
               value={email}
               onChange={setEmail}
               placeholder="votre@email.com"
+              autocomplete="username"
               icon={Mail}
               required
               error={error}
@@ -1695,4 +1696,5 @@ const PatisserieStockApp = () => {
 };
 
 export default PatisserieStockApp;
+
 
