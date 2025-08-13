@@ -5,466 +5,230 @@ import {
   LogOut, AlertTriangle, Search, Calendar, Clock, Star, 
   ChefHat, Menu, Cake, Eye, Trash2, Send, FileText, Store, 
   Factory, Scale, Target, Calculator, DollarSign, Truck,
-  ClipboardCheck, BarChart3, Users, Settings
+  ClipboardCheck, BarChart3, Users, Settings, Edit3, Save,
+  ShoppingBag, Printer, Download, Filter, RefreshCw, Home,
+  Building2, Phone, Mail, MapPin, Archive, Tag, Layers,
+  Grid3X3, ListFilter, SortAsc, SortDesc
 } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
 
-// Configuration Supabase
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'your-supabase-url';
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'your-supabase-key';
-const supabase = createClient(supabaseUrl, supabaseKey);
-
-// ===================== SERVICES =====================
-const authService = {
-  async signIn(username, password) {
-    try {
-      const email = `${username}@shine.local`;
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      return { data, error: null };
-    } catch (error) {
-      return { data: null, error: error.message };
-    }
-  },
-
-  async getCurrentUser() {
-    try {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      return { user, error };
-    } catch (error) {
-      return { user: null, error: error.message };
-    }
-  },
-
-  async getProfile(userId) {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-      return { profile: data, error };
-    } catch (error) {
-      return { profile: null, error: error.message };
-    }
-  }
+// ===================== CONFIGURATION SUPABASE =====================
+const SUPABASE_CONFIG = {
+  url: process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://your-project.supabase.co',
+  key: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'your-anon-key'
 };
 
-const dataService = {
-  // Produits
-  async getProducts() {
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .order('name');
-    return { data: data || [], error };
+// ===================== DONNÉES INITIALES =====================
+const PRODUCT_CATEGORIES = [
+  'Farines & Bases',
+  'Sucres & Édulcorants', 
+  'Produits Laitiers',
+  'Corps Gras',
+  'Agents Levants',
+  'Arômes & Parfums',
+  'Colorants',
+  'Chocolats',
+  'Œufs & Produits Frais',
+  'Fruits & Garnitures',
+  'Épices & Condiments',
+  'Emballages',
+  'Matériel Jetable',
+  'Boissons',
+  'Divers'
+];
+
+const SUPPLIERS = [
+  { id: 1, name: 'Fournisseur Principal', contact: '+226 XX XX XX XX', email: 'contact@fournisseur1.bf' },
+  { id: 2, name: 'Fournisseur Spécialisé', contact: '+226 XX XX XX XX', email: 'contact@fournisseur2.bf' },
+  { id: 3, name: 'Fournisseur Chocolat', contact: '+226 XX XX XX XX', email: 'contact@chocolat.bf' },
+  { id: 4, name: 'Fournisseur Frais', contact: '+226 XX XX XX XX', email: 'contact@frais.bf' }
+];
+
+const INITIAL_PRODUCTS = [
+  { id: 'PS1', reference: 'PS1', name: 'Farine Etalon', category: 'Farines & Bases', unit: 'kg', package_type: 'sac', package_size: 50, unit_price: 468, purchase_price: 23400, min_stock: 50, current_stock: 100, supplier_id: 1, supplier_name: 'Fournisseur Principal', status: 'active' },
+  { id: 'PS2', reference: 'PS2', name: 'Farine Pain complet', category: 'Farines & Bases', unit: 'kg', package_type: 'sac', package_size: 50, unit_price: 504, purchase_price: 25200, min_stock: 50, current_stock: 75, supplier_id: 1, supplier_name: 'Fournisseur Principal', status: 'active' },
+  { id: 'PS3', reference: 'PS3', name: 'Sucre', category: 'Sucres & Édulcorants', unit: 'kg', package_type: 'sac', package_size: 50, unit_price: 540, purchase_price: 27000, min_stock: 50, current_stock: 120, supplier_id: 1, supplier_name: 'Fournisseur Principal', status: 'active' },
+  { id: 'PS4', reference: 'PS4', name: 'Lait', category: 'Produits Laitiers', unit: 'kg', package_type: 'sac', package_size: 25, unit_price: 2440, purchase_price: 61000, min_stock: 25, current_stock: 30, supplier_id: 1, supplier_name: 'Fournisseur Principal', status: 'active' },
+  { id: 'PS5', reference: 'PS5', name: 'Huile', category: 'Corps Gras', unit: 'litre', package_type: 'bidon', package_size: 20, unit_price: 1088, purchase_price: 21750, min_stock: 20, current_stock: 25, supplier_id: 1, supplier_name: 'Fournisseur Principal', status: 'active' },
+  { id: 'PS6', reference: 'PS6', name: 'Lévure Boulangère', category: 'Agents Levants', unit: 'g', package_type: 'carton', package_size: 20, unit_price: 1050, purchase_price: 21000, min_stock: 10, current_stock: 5, supplier_id: 2, supplier_name: 'Fournisseur Spécialisé', status: 'active' },
+  { id: 'PS20', reference: 'PS20', name: 'Colorant rouge', category: 'Colorants', unit: 'litre', package_type: 'bidon', package_size: 1, unit_price: 10000, purchase_price: 10000, min_stock: 1, current_stock: 2, supplier_id: 2, supplier_name: 'Fournisseur Spécialisé', status: 'active' },
+  { id: 'PS25', reference: 'PS25', name: 'Chocolat Blanc', category: 'Chocolats', unit: 'g', package_type: 'sachet', package_size: 2500, unit_price: 7, purchase_price: 17500, min_stock: 1000, current_stock: 1500, supplier_id: 3, supplier_name: 'Fournisseur Chocolat', status: 'active' },
+  { id: 'PS26', reference: 'PS26', name: 'Chocolat Noir', category: 'Chocolats', unit: 'g', package_type: 'sachet', package_size: 2500, unit_price: 7, purchase_price: 17500, min_stock: 1000, current_stock: 800, supplier_id: 3, supplier_name: 'Fournisseur Chocolat', status: 'active' },
+  { id: 'PS37', reference: 'PS37', name: 'Plaquette d\'oeuf', category: 'Œufs & Produits Frais', unit: 'boule', package_type: 'plaquette', package_size: 30, unit_price: 103, purchase_price: 3100, min_stock: 30, current_stock: 25, supplier_id: 4, supplier_name: 'Fournisseur Frais', status: 'active' },
+  { id: 'PS110', reference: 'PS110', name: 'Beurre aya', category: 'Corps Gras', unit: 'g', package_type: 'carton', package_size: 40, unit_price: 413, purchase_price: 16500, min_stock: 20, current_stock: 35, supplier_id: 4, supplier_name: 'Fournisseur Frais', status: 'active' },
+  { id: 'PS111', reference: 'PS111', name: 'Beurre ambassador', category: 'Corps Gras', unit: 'g', package_type: 'carton', package_size: 40, unit_price: 1350, purchase_price: 54000, min_stock: 20, current_stock: 15, supplier_id: 4, supplier_name: 'Fournisseur Frais', status: 'active' }
+];
+
+const INITIAL_PURCHASES = [
+  {
+    id: 1,
+    number: 'BC-2024-001',
+    supplier_id: 1,
+    supplier_name: 'Fournisseur Principal',
+    order_date: '2024-01-15',
+    expected_delivery: '2024-01-18',
+    status: 'pending',
+    total_amount: 125600,
+    notes: 'Commande urgente pour réapprovisionnement',
+    created_by: 'admin',
+    items: [
+      { product_id: 'PS1', product_name: 'Farine Etalon', quantity: 2, unit_price: 23400, total: 46800 },
+      { product_id: 'PS3', product_name: 'Sucre', quantity: 1, unit_price: 27000, total: 27000 },
+      { product_id: 'PS4', product_name: 'Lait', quantity: 1, unit_price: 61000, total: 61000 }
+    ]
   },
-
-  async updateProductStock(productId, newStock) {
-    const { data, error } = await supabase
-      .from('products')
-      .update({ stock: newStock, updated_at: new Date().toISOString() })
-      .eq('id', productId)
-      .select()
-      .single();
-    return { data, error };
-  },
-
-  // Achats
-  async getPurchases() {
-    const { data, error } = await supabase
-      .from('purchases')
-      .select(`
-        *,
-        items:purchase_items(*)
-      `)
-      .order('created_at', { ascending: false });
-    return { data: data || [], error };
-  },
-
-  async createPurchase(purchaseData, items) {
-    try {
-      // Créer l'achat
-      const { data: purchase, error: purchaseError } = await supabase
-        .from('purchases')
-        .insert(purchaseData)
-        .select()
-        .single();
-      
-      if (purchaseError) throw purchaseError;
-
-      // Ajouter les items
-      const itemsToInsert = items.map(item => ({
-        ...item,
-        purchase_id: purchase.id
-      }));
-
-      const { error: itemsError } = await supabase
-        .from('purchase_items')
-        .insert(itemsToInsert);
-
-      if (itemsError) throw itemsError;
-      
-      return { data: purchase, error: null };
-    } catch (error) {
-      return { data: null, error: error.message };
-    }
-  },
-
-  async receivePurchase(purchaseId, receivedItems) {
-    try {
-      // Mettre à jour les quantités reçues
-      for (const item of receivedItems) {
-        await supabase
-          .from('purchase_items')
-          .update({ quantity_received: item.quantity_received })
-          .eq('id', item.id);
-      }
-
-      // Marquer l'achat comme reçu
-      const { data, error } = await supabase
-        .from('purchases')
-        .update({ 
-          status: 'received',
-          delivery_date: new Date().toISOString().split('T')[0],
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', purchaseId)
-        .select()
-        .single();
-
-      return { data, error };
-    } catch (error) {
-      return { data: null, error: error.message };
-    }
-  },
-
-  // Demandes de stock
-  async getStockRequests() {
-    const { data, error } = await supabase
-      .from('stock_requests')
-      .select(`
-        *,
-        items:stock_request_items(*)
-      `)
-      .order('created_at', { ascending: false });
-    return { data: data || [], error };
-  },
-
-  async createStockRequest(requestData, items) {
-    try {
-      const { data: request, error: requestError } = await supabase
-        .from('stock_requests')
-        .insert(requestData)
-        .select()
-        .single();
-
-      if (requestError) throw requestError;
-
-      const itemsToInsert = items.map(item => ({
-        ...item,
-        request_id: request.id
-      }));
-
-      const { error: itemsError } = await supabase
-        .from('stock_request_items')
-        .insert(itemsToInsert);
-
-      if (itemsError) throw itemsError;
-      
-      return { data: request, error: null };
-    } catch (error) {
-      return { data: null, error: error.message };
-    }
-  },
-
-  async validateStockRequest(requestId, status, validatedBy, validatedByName, approvedQuantities = {}) {
-    try {
-      // Mettre à jour la demande
-      const { data: request, error: requestError } = await supabase
-        .from('stock_requests')
-        .update({
-          status,
-          validated_by: validatedBy,
-          validated_by_name: validatedByName,
-          validated_at: new Date().toISOString()
-        })
-        .eq('id', requestId)
-        .select()
-        .single();
-
-      if (requestError) throw requestError;
-
-      // Si approuvé, mettre à jour les quantités et déduire du stock
-      if (status === 'approved') {
-        for (const [itemId, approvedQty] of Object.entries(approvedQuantities)) {
-          await supabase
-            .from('stock_request_items')
-            .update({ quantity_approved: approvedQty })
-            .eq('id', itemId);
-        }
-      }
-
-      return { data: request, error: null };
-    } catch (error) {
-      return { data: null, error: error.message };
-    }
-  },
-
-  // Recettes
-  async getRecipes() {
-    const { data, error } = await supabase
-      .from('recipes')
-      .select(`
-        *,
-        ingredients:recipe_ingredients(*)
-      `)
-      .eq('is_active', true)
-      .order('name');
-    return { data: data || [], error };
-  },
-
-  async createRecipe(recipeData, ingredients) {
-    try {
-      const { data: recipe, error: recipeError } = await supabase
-        .from('recipes')
-        .insert(recipeData)
-        .select()
-        .single();
-
-      if (recipeError) throw recipeError;
-
-      const ingredientsToInsert = ingredients.map(ing => ({
-        ...ing,
-        recipe_id: recipe.id
-      }));
-
-      const { error: ingredientsError } = await supabase
-        .from('recipe_ingredients')
-        .insert(ingredientsToInsert);
-
-      if (ingredientsError) throw ingredientsError;
-      
-      return { data: recipe, error: null };
-    } catch (error) {
-      return { data: null, error: error.message };
-    }
-  },
-
-  // Production
-  async getProductionBatches() {
-    const { data, error } = await supabase
-      .from('production_batches')
-      .select('*')
-      .order('created_at', { ascending: false });
-    return { data: data || [], error };
-  },
-
-  async createProductionBatch(batchData) {
-    const { data, error } = await supabase
-      .from('production_batches')
-      .insert(batchData)
-      .select()
-      .single();
-    return { data, error };
-  },
-
-  async recordProductionUsage(batchId, ingredientUsage) {
-    const usageToInsert = ingredientUsage.map(usage => ({
-      ...usage,
-      batch_id: batchId
-    }));
-
-    const { data, error } = await supabase
-      .from('production_ingredient_usage')
-      .insert(usageToInsert);
-    return { data, error };
-  },
-
-  // Produits finis
-  async getFinishedProducts() {
-    const { data, error } = await supabase
-      .from('finished_products_journal')
-      .select('*')
-      .order('created_at', { ascending: false });
-    return { data: data || [], error };
-  },
-
-  async createFinishedProduct(productData) {
-    const { data, error } = await supabase
-      .from('finished_products_journal')
-      .insert(productData)
-      .select()
-      .single();
-    return { data, error };
-  },
-
-  // Analyses
-  async getStockAnalysis() {
-    const { data, error } = await supabase
-      .from('stock_analysis')
-      .select('*')
-      .order('name');
-    return { data: data || [], error };
+  {
+    id: 2,
+    number: 'BC-2024-002',
+    supplier_id: 3,
+    supplier_name: 'Fournisseur Chocolat',
+    order_date: '2024-01-12',
+    expected_delivery: '2024-01-15',
+    delivery_date: '2024-01-15',
+    status: 'received',
+    total_amount: 35000,
+    notes: 'Chocolats pour production spéciale',
+    created_by: 'admin',
+    items: [
+      { product_id: 'PS25', product_name: 'Chocolat Blanc', quantity: 1, unit_price: 17500, total: 17500, quantity_received: 1 },
+      { product_id: 'PS26', product_name: 'Chocolat Noir', quantity: 1, unit_price: 17500, total: 17500, quantity_received: 1 }
+    ]
   }
+];
+
+// ===================== HOOKS PERSONNALISÉS =====================
+const useLocalStorage = (key, defaultValue) => {
+  const [value, setValue] = useState(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : defaultValue;
+    } catch (error) {
+      return defaultValue;
+    }
+  });
+
+  const setStoredValue = (newValue) => {
+    try {
+      setValue(newValue);
+      window.localStorage.setItem(key, JSON.stringify(newValue));
+    } catch (error) {
+      console.error(`Error saving to localStorage:`, error);
+    }
+  };
+
+  return [value, setStoredValue];
 };
 
-// ===================== HOOKS =====================
 const useAuth = () => {
   const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    initializeAuth();
-  }, []);
-
-  const initializeAuth = async () => {
-    try {
-      const { user: currentUser } = await authService.getCurrentUser();
-      if (currentUser) {
-        setUser(currentUser);
-        const { profile } = await authService.getProfile(currentUser.id);
-        setProfile(profile);
-      }
-    } catch (error) {
-      console.error('Erreur authentification:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const signIn = async (username, password) => {
-    const { data, error } = await authService.signIn(username, password);
-    if (!error) {
-      await initializeAuth();
-    }
-    return { data, error };
-  };
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
-  };
-
-  return { user, profile, loading, signIn, signOut };
-};
-
-const useData = () => {
-  const [products, setProducts] = useState([]);
-  const [purchases, setPurchases] = useState([]);
-  const [stockRequests, setStockRequests] = useState([]);
-  const [recipes, setRecipes] = useState([]);
-  const [productionBatches, setProductionBatches] = useState([]);
-  const [finishedProducts, setFinishedProducts] = useState([]);
-  const [stockAnalysis, setStockAnalysis] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const loadAllData = async () => {
+  const signIn = async (username, password) => {
     setLoading(true);
     try {
-      const [
-        productsRes,
-        purchasesRes,
-        requestsRes,
-        recipesRes,
-        batchesRes,
-        finishedRes,
-        analysisRes
-      ] = await Promise.all([
-        dataService.getProducts(),
-        dataService.getPurchases(),
-        dataService.getStockRequests(),
-        dataService.getRecipes(),
-        dataService.getProductionBatches(),
-        dataService.getFinishedProducts(),
-        dataService.getStockAnalysis()
-      ]);
-
-      setProducts(productsRes.data);
-      setPurchases(purchasesRes.data);
-      setStockRequests(requestsRes.data);
-      setRecipes(recipesRes.data);
-      setProductionBatches(batchesRes.data);
-      setFinishedProducts(finishedRes.data);
-      setStockAnalysis(analysisRes.data);
+      // Simulation d'authentification
+      if (username === 'admin' && password === 'admin123') {
+        const userData = {
+          id: '1',
+          username: 'admin',
+          name: 'Administrateur',
+          role: 'Propriétaire',
+          email: 'admin@patisserie-shine.bf'
+        };
+        setUser(userData);
+        localStorage.setItem('user', JSON.stringify(userData));
+        return { success: true };
+      }
+      return { success: false, error: 'Identifiants incorrects' };
     } catch (error) {
-      console.error('Erreur chargement:', error);
+      return { success: false, error: 'Erreur de connexion' };
     } finally {
       setLoading(false);
     }
   };
 
-  return {
-    products, setProducts,
-    purchases, setPurchases,
-    stockRequests, setStockRequests,
-    recipes, setRecipes,
-    productionBatches, setProductionBatches,
-    finishedProducts, setFinishedProducts,
-    stockAnalysis, setStockAnalysis,
-    loading,
-    loadAllData
+  const signOut = () => {
+    setUser(null);
+    localStorage.removeItem('user');
   };
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+  }, []);
+
+  return { user, loading, signIn, signOut };
 };
 
 // ===================== COMPOSANTS UI =====================
-const Card = ({ children, className = '' }) => (
-  <div className={`bg-white rounded-xl shadow-sm border border-gray-100 ${className}`}>
+const Card = ({ children, className = '', hover = false }) => (
+  <div className={`bg-white rounded-xl shadow-sm border border-gray-100 ${hover ? 'hover:shadow-md transition-shadow duration-200' : ''} ${className}`}>
     {children}
   </div>
 );
 
-const Button = ({ children, onClick, variant = 'primary', size = 'md', disabled = false, className = '' }) => {
+const Button = ({ children, onClick, variant = 'primary', size = 'md', disabled = false, className = '', loading = false }) => {
   const variants = {
-    primary: 'bg-amber-500 hover:bg-amber-600 text-white',
+    primary: 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg hover:shadow-xl',
     secondary: 'bg-gray-500 hover:bg-gray-600 text-white',
-    success: 'bg-green-500 hover:bg-green-600 text-white',
-    danger: 'bg-red-500 hover:bg-red-600 text-white',
-    warning: 'bg-orange-500 hover:bg-orange-600 text-white'
+    success: 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white shadow-lg',
+    danger: 'bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white shadow-lg',
+    warning: 'bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-white shadow-lg',
+    outline: 'border-2 border-amber-500 text-amber-600 hover:bg-amber-50',
+    ghost: 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
   };
 
   const sizes = {
-    sm: 'px-3 py-1 text-sm',
-    md: 'px-4 py-2',
-    lg: 'px-6 py-3'
+    sm: 'px-3 py-1.5 text-sm',
+    md: 'px-4 py-2.5',
+    lg: 'px-6 py-3 text-lg'
   };
 
   return (
     <button
       onClick={onClick}
-      disabled={disabled}
-      className={`${variants[variant]} ${sizes[size]} rounded-lg font-medium transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${className}`}
+      disabled={disabled || loading}
+      className={`${variants[variant]} ${sizes[size]} rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${className}`}
     >
+      {loading ? (
+        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+      ) : null}
       {children}
     </button>
   );
 };
 
-const Input = ({ type = 'text', placeholder, value, onChange, className = '', ...props }) => (
-  <input
-    type={type}
-    placeholder={placeholder}
-    value={value}
-    onChange={onChange}
-    className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition-all ${className}`}
-    {...props}
-  />
+const Input = ({ type = 'text', placeholder, value, onChange, className = '', icon, ...props }) => (
+  <div className="relative">
+    {icon && (
+      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+        {icon}
+      </div>
+    )}
+    <input
+      type={type}
+      placeholder={placeholder}
+      value={value}
+      onChange={onChange}
+      className={`w-full ${icon ? 'pl-10' : 'pl-4'} pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition-all ${className}`}
+      {...props}
+    />
+  </div>
 );
 
 const Select = ({ value, onChange, children, className = '', ...props }) => (
   <select
     value={value}
     onChange={onChange}
-    className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-amber-500 ${className}`}
+    className={`w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 transition-all bg-white ${className}`}
     {...props}
   >
     {children}
   </select>
 );
 
-const Badge = ({ children, variant = 'default' }) => {
+const Badge = ({ children, variant = 'default', size = 'sm' }) => {
   const variants = {
     default: 'bg-gray-100 text-gray-800',
     success: 'bg-green-100 text-green-800',
@@ -474,25 +238,96 @@ const Badge = ({ children, variant = 'default' }) => {
     purple: 'bg-purple-100 text-purple-800'
   };
 
+  const sizes = {
+    sm: 'px-2 py-1 text-xs',
+    md: 'px-3 py-1 text-sm',
+    lg: 'px-4 py-2'
+  };
+
   return (
-    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${variants[variant]}`}>
+    <span className={`inline-flex items-center font-semibold rounded-full ${variants[variant]} ${sizes[size]}`}>
       {children}
     </span>
   );
 };
+
+const Modal = ({ isOpen, onClose, title, children, size = 'md' }) => {
+  if (!isOpen) return null;
+
+  const sizes = {
+    sm: 'max-w-md',
+    md: 'max-w-2xl',
+    lg: 'max-w-4xl',
+    xl: 'max-w-6xl'
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className={`bg-white rounded-xl shadow-2xl ${sizes[size]} w-full max-h-[90vh] overflow-hidden`}>
+        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+          <h3 className="text-xl font-semibold text-gray-900">{title}</h3>
+          <Button onClick={onClose} variant="ghost" size="sm">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="overflow-y-auto max-h-[calc(90vh-80px)]">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Tabs = ({ tabs, activeTab, onTabChange }) => (
+  <div className="border-b border-gray-200">
+    <nav className="flex space-x-8">
+      {tabs.map(tab => (
+        <button
+          key={tab.id}
+          onClick={() => onTabChange(tab.id)}
+          className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors relative ${
+            activeTab === tab.id
+              ? 'border-amber-500 text-amber-600'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <div className="flex items-center space-x-2">
+            {tab.icon && <tab.icon className="h-4 w-4" />}
+            <span>{tab.label}</span>
+            {tab.count !== undefined && (
+              <span className={`px-2 py-0.5 rounded-full text-xs ${
+                activeTab === tab.id ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600'
+              }`}>
+                {tab.count}
+              </span>
+            )}
+          </div>
+        </button>
+      ))}
+    </nav>
+  </div>
+);
 
 // ===================== COMPOSANTS PRINCIPAUX =====================
 
 const LoginForm = ({ onLogin, error, loading }) => {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
 
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onLogin(credentials.username, credentials.password);
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-100 flex items-center justify-center p-4">
-      <Card className="w-full max-w-sm p-6">
+    <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md p-8 shadow-2xl">
         <div className="text-center mb-8">
-          <div className="text-5xl mb-4">🧁</div>
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Pâtisserie Shine</h1>
-          <p className="text-gray-600 text-sm">Gestion Achats & Production</p>
+          <div className="text-6xl mb-4">🧁</div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent mb-2">
+            Pâtisserie Shine
+          </h1>
+          <p className="text-gray-600">Système de Gestion Intégré</p>
+          <div className="w-20 h-1 bg-gradient-to-r from-amber-500 to-orange-500 mx-auto mt-4 rounded-full"></div>
         </div>
         
         {error && (
@@ -502,13 +337,13 @@ const LoginForm = ({ onLogin, error, loading }) => {
           </div>
         )}
         
-        <div className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-6">
           <Input
             placeholder="Nom d'utilisateur"
             value={credentials.username}
             onChange={(e) => setCredentials({...credentials, username: e.target.value})}
-            onKeyPress={(e) => e.key === 'Enter' && onLogin(credentials.username, credentials.password)}
             disabled={loading}
+            icon={<Users className="h-4 w-4 text-gray-400" />}
           />
           
           <Input
@@ -516,22 +351,23 @@ const LoginForm = ({ onLogin, error, loading }) => {
             placeholder="Mot de passe"
             value={credentials.password}
             onChange={(e) => setCredentials({...credentials, password: e.target.value})}
-            onKeyPress={(e) => e.key === 'Enter' && onLogin(credentials.username, credentials.password)}
             disabled={loading}
+            icon={<Lock className="h-4 w-4 text-gray-400" />}
           />
           
           <Button
-            onClick={() => onLogin(credentials.username, credentials.password)}
-            disabled={loading}
+            type="submit"
+            disabled={loading || !credentials.username || !credentials.password}
+            loading={loading}
             className="w-full py-4"
           >
-            {loading ? 'Connexion...' : 'Se connecter'}
+            Se connecter
           </Button>
-        </div>
+        </form>
         
-        <div className="mt-6 p-4 bg-amber-50 rounded-xl">
-          <p className="text-xs text-amber-700">
-            Demo: proprietaire / admin123
+        <div className="mt-8 p-4 bg-amber-50 rounded-xl border border-amber-200">
+          <p className="text-xs text-amber-700 text-center">
+            <span className="font-medium">Démo:</span> admin / admin123
           </p>
         </div>
       </Card>
@@ -539,833 +375,30 @@ const LoginForm = ({ onLogin, error, loading }) => {
   );
 };
 
-const Dashboard = ({ data, profile }) => {
-  const { products, purchases, stockRequests, stockAnalysis } = data;
-  
-  const stats = {
-    productsCount: products.length,
-    lowStockCount: stockAnalysis.filter(p => p.stock_status === 'critical').length,
-    pendingPurchases: purchases.filter(p => p.status === 'pending').length,
-    pendingRequests: stockRequests.filter(r => r.status === 'pending').length,
-    monthlyPurchaseValue: purchases
-      .filter(p => new Date(p.created_at).getMonth() === new Date().getMonth())
-      .reduce((sum, p) => sum + (p.total_amount || 0), 0)
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="text-center md:text-left">
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Tableau de bord</h1>
-        <p className="text-gray-600 text-sm">Bienvenue {profile?.full_name} - Suivi complet</p>
-      </div>
-      
-      {/* Métriques principales */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
-        <Card className="p-4 bg-blue-50">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-blue-800">{stats.productsCount}</div>
-            <div className="text-sm text-blue-600">Produits</div>
-          </div>
-        </Card>
-        
-        <Card className="p-4 bg-red-50">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-red-800">{stats.lowStockCount}</div>
-            <div className="text-sm text-red-600">Alertes Stock</div>
-          </div>
-        </Card>
-        
-        <Card className="p-4 bg-orange-50">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-orange-800">{stats.pendingPurchases}</div>
-            <div className="text-sm text-orange-600">Achats en cours</div>
-          </div>
-        </Card>
-        
-        <Card className="p-4 bg-purple-50">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-purple-800">{stats.pendingRequests}</div>
-            <div className="text-sm text-purple-600">Demandes</div>
-          </div>
-        </Card>
-        
-        <Card className="p-4 bg-green-50">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-green-800">
-              {Math.round(stats.monthlyPurchaseValue / 1000)}K
-            </div>
-            <div className="text-sm text-green-600">Achats mois (CFA)</div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Alertes critiques */}
-      {stats.lowStockCount > 0 && (
-        <Card className="border-l-4 border-red-400 p-6">
-          <div className="flex items-center mb-4">
-            <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
-            <h3 className="text-lg font-semibold text-red-800">Stock Critique</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {stockAnalysis
-              .filter(p => p.stock_status === 'critical')
-              .slice(0, 6)
-              .map(product => (
-                <div key={product.id} className="bg-red-50 p-4 rounded-lg">
-                  <h4 className="font-medium text-red-900">{product.name}</h4>
-                  <p className="text-sm text-red-700">
-                    Stock: {product.current_stock} {product.unit} 
-                    (Min: {product.min_stock})
-                  </p>
-                </div>
-              ))}
-          </div>
-        </Card>
-      )}
-
-      {/* Demandes en attente */}
-      {stats.pendingRequests > 0 && (
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">
-            Demandes en attente ({stats.pendingRequests})
-          </h3>
-          <div className="space-y-3">
-            {stockRequests
-              .filter(r => r.status === 'pending')
-              .slice(0, 5)
-              .map(request => (
-                <div key={request.id} className="flex justify-between items-center p-3 bg-orange-50 rounded-lg">
-                  <div>
-                    <p className="font-medium">{request.employee_name}</p>
-                    <p className="text-sm text-gray-600">
-                      {request.destination} • {request.items?.length || 0} produits
-                    </p>
-                  </div>
-                  <Badge variant="warning">{request.urgency}</Badge>
-                </div>
-              ))}
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-};
-
-const PurchaseManagement = ({ data, onNotification, onReload }) => {
-  const { products, purchases } = data;
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [showReceiveModal, setShowReceiveModal] = useState(false);
-  const [selectedPurchase, setSelectedPurchase] = useState(null);
-  
-  const [newPurchase, setNewPurchase] = useState({
-    supplier: '',
-    purchase_date: new Date().toISOString().split('T')[0],
-    notes: '',
-    items: []
-  });
-
-  const [newItem, setNewItem] = useState({
-    product_id: '',
-    quantity_ordered: '',
-    unit_price: ''
-  });
-
-  const addItemToPurchase = () => {
-    if (!newItem.product_id || !newItem.quantity_ordered || !newItem.unit_price) {
-      onNotification('error', 'Tous les champs sont requis');
-      return;
-    }
-
-    const product = products.find(p => p.id === newItem.product_id);
-    if (!product) return;
-
-    const item = {
-      product_id: product.id,
-      product_name: product.name,
-      quantity_ordered: parseFloat(newItem.quantity_ordered),
-      unit_price: parseFloat(newItem.unit_price),
-      unit: product.unit,
-      tempId: Date.now()
-    };
-
-    setNewPurchase(prev => ({
-      ...prev,
-      items: [...prev.items, item]
-    }));
-
-    setNewItem({ product_id: '', quantity_ordered: '', unit_price: '' });
-  };
-
-  const createPurchase = async () => {
-    if (!newPurchase.supplier || newPurchase.items.length === 0) {
-      onNotification('error', 'Fournisseur et au moins un produit requis');
-      return;
-    }
-
-    try {
-      const purchaseData = {
-        purchase_number: `ACH-${Date.now()}`,
-        supplier: newPurchase.supplier,
-        purchase_date: newPurchase.purchase_date,
-        total_amount: newPurchase.items.reduce((sum, item) => 
-          sum + (item.quantity_ordered * item.unit_price), 0),
-        notes: newPurchase.notes,
-        created_by: 'current-user-id', // À remplacer par l'ID réel
-        created_by_name: 'Utilisateur' // À remplacer par le nom réel
-      };
-
-      const { error } = await dataService.createPurchase(purchaseData, newPurchase.items);
-      
-      if (error) {
-        onNotification('error', error);
-      } else {
-        onNotification('success', 'Commande créée avec succès');
-        setShowCreateForm(false);
-        setNewPurchase({ supplier: '', purchase_date: new Date().toISOString().split('T')[0], notes: '', items: [] });
-        onReload();
-      }
-    } catch (error) {
-      onNotification('error', 'Erreur lors de la création');
-    }
-  };
-
-  const receivePurchase = async (receivedItems) => {
-    if (!selectedPurchase) return;
-
-    try {
-      const { error } = await dataService.receivePurchase(selectedPurchase.id, receivedItems);
-      
-      if (error) {
-        onNotification('error', error);
-      } else {
-        onNotification('success', 'Réception enregistrée avec succès');
-        setShowReceiveModal(false);
-        setSelectedPurchase(null);
-        onReload();
-      }
-    } catch (error) {
-      onNotification('error', 'Erreur lors de la réception');
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-            <ShoppingCart className="h-6 w-6 mr-3 text-blue-600" />
-            Gestion des Achats
-          </h2>
-          <p className="text-gray-600 text-sm">
-            {purchases.length} commande{purchases.length > 1 ? 's' : ''}
-          </p>
-        </div>
-        
-        <Button onClick={() => setShowCreateForm(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Nouvelle Commande
-        </Button>
-      </div>
-
-      {/* Liste des achats */}
-      <div className="space-y-4">
-        {purchases.map(purchase => (
-          <Card key={purchase.id} className="p-6">
-            <div className="flex justify-between items-start">
-              <div className="flex-1">
-                <div className="flex items-center space-x-3 mb-2">
-                  <Truck className="h-5 w-5 text-gray-500" />
-                  <h3 className="text-lg font-semibold">{purchase.purchase_number}</h3>
-                  <Badge variant={
-                    purchase.status === 'received' ? 'success' : 
-                    purchase.status === 'pending' ? 'warning' : 'danger'
-                  }>
-                    {purchase.status}
-                  </Badge>
-                </div>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
-                  <div>
-                    <strong>Fournisseur:</strong> {purchase.supplier}
-                  </div>
-                  <div>
-                    <strong>Date:</strong> {new Date(purchase.purchase_date).toLocaleDateString('fr-FR')}
-                  </div>
-                  <div>
-                    <strong>Montant:</strong> {purchase.total_amount?.toLocaleString()} CFA
-                  </div>
-                  <div>
-                    <strong>Articles:</strong> {purchase.items?.length || 0}
-                  </div>
-                </div>
-                
-                {purchase.notes && (
-                  <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
-                    {purchase.notes}
-                  </div>
-                )}
-              </div>
-              
-              <div className="flex space-x-2">
-                {purchase.status === 'pending' && (
-                  <Button 
-                    onClick={() => {
-                      setSelectedPurchase(purchase);
-                      setShowReceiveModal(true);
-                    }}
-                    variant="success" 
-                    size="sm"
-                  >
-                    <Check className="h-4 w-4 mr-1" />
-                    Réceptionner
-                  </Button>
-                )}
-                
-                <Button variant="secondary" size="sm">
-                  <Eye className="h-4 w-4 mr-1" />
-                  Détails
-                </Button>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      {/* Modal création commande */}
-      {showCreateForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-semibold">Nouvelle commande d'achat</h3>
-                <Button onClick={() => setShowCreateForm(false)} variant="secondary" size="sm">
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-              
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Fournisseur *
-                    </label>
-                    <Input
-                      placeholder="Nom du fournisseur"
-                      value={newPurchase.supplier}
-                      onChange={(e) => setNewPurchase({...newPurchase, supplier: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Date de commande
-                    </label>
-                    <Input
-                      type="date"
-                      value={newPurchase.purchase_date}
-                      onChange={(e) => setNewPurchase({...newPurchase, purchase_date: e.target.value})}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Notes
-                  </label>
-                  <textarea
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-amber-500"
-                    rows="3"
-                    placeholder="Notes sur la commande..."
-                    value={newPurchase.notes}
-                    onChange={(e) => setNewPurchase({...newPurchase, notes: e.target.value})}
-                  />
-                </div>
-
-                {/* Ajout de produits */}
-                <div className="border-t pt-6">
-                  <h4 className="font-semibold mb-4">Ajouter des produits</h4>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                    <Select
-                      value={newItem.product_id}
-                      onChange={(e) => setNewItem({...newItem, product_id: e.target.value})}
-                    >
-                      <option value="">Sélectionner produit</option>
-                      {products.map(product => (
-                        <option key={product.id} value={product.id}>
-                          {product.name} ({product.unit})
-                        </option>
-                      ))}
-                    </Select>
-                    
-                    <Input
-                      type="number"
-                      placeholder="Quantité"
-                      value={newItem.quantity_ordered}
-                      onChange={(e) => setNewItem({...newItem, quantity_ordered: e.target.value})}
-                      step="0.01"
-                    />
-                    
-                    <Input
-                      type="number"
-                      placeholder="Prix unitaire (CFA)"
-                      value={newItem.unit_price}
-                      onChange={(e) => setNewItem({...newItem, unit_price: e.target.value})}
-                    />
-                    
-                    <Button onClick={addItemToPurchase} className="w-full">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Ajouter
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Liste des produits ajoutés */}
-                {newPurchase.items.length > 0 && (
-                  <div className="border-t pt-6">
-                    <h4 className="font-semibold mb-4">
-                      Produits commandés ({newPurchase.items.length})
-                    </h4>
-                    
-                    <div className="space-y-2">
-                      {newPurchase.items.map(item => (
-                        <div key={item.tempId} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                          <div>
-                            <span className="font-medium">{item.product_name}</span>
-                            <div className="text-sm text-gray-600">
-                              {item.quantity_ordered} {item.unit} × {item.unit_price} CFA 
-                              = {(item.quantity_ordered * item.unit_price).toLocaleString()} CFA
-                            </div>
-                          </div>
-                          <Button 
-                            onClick={() => setNewPurchase(prev => ({
-                              ...prev,
-                              items: prev.items.filter(i => i.tempId !== item.tempId)
-                            }))}
-                            variant="danger" 
-                            size="sm"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                    
-                    <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                      <div className="text-lg font-semibold text-blue-800">
-                        Total: {newPurchase.items.reduce((sum, item) => 
-                          sum + (item.quantity_ordered * item.unit_price), 0
-                        ).toLocaleString()} CFA
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex justify-end space-x-3 pt-6 border-t">
-                  <Button onClick={() => setShowCreateForm(false)} variant="secondary">
-                    Annuler
-                  </Button>
-                  <Button onClick={createPurchase} disabled={newPurchase.items.length === 0}>
-                    <Send className="h-4 w-4 mr-2" />
-                    Créer la commande
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {purchases.length === 0 && (
-        <Card className="p-12 text-center">
-          <ShoppingCart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-500 mb-2">Aucune commande d'achat</p>
-          <Button onClick={() => setShowCreateForm(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Première commande
-          </Button>
-        </Card>
-      )}
-    </div>
-  );
-};
-
-const ProductionTracking = ({ data, onNotification, onReload }) => {
-  const { recipes, productionBatches, stockAnalysis } = data;
-  const [activeTab, setActiveTab] = useState('batches');
-
-  // Calcul de capacité de production
-  const calculateProductionCapacity = (recipe) => {
-    if (!recipe.ingredients || !stockAnalysis) return 0;
-    
-    let maxBatches = Infinity;
-    
-    recipe.ingredients.forEach(ingredient => {
-      const stockItem = stockAnalysis.find(s => s.name === ingredient.product_name);
-      if (stockItem) {
-        const possibleBatches = Math.floor(stockItem.current_stock / ingredient.quantity_needed);
-        maxBatches = Math.min(maxBatches, possibleBatches);
-      } else {
-        maxBatches = 0;
-      }
-    });
-    
-    return maxBatches === Infinity ? 0 : maxBatches;
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-            <ChefHat className="h-6 w-6 mr-3 text-purple-600" />
-            Suivi de Production
-          </h2>
-          <p className="text-gray-600 text-sm">
-            {recipes.length} recette{recipes.length > 1 ? 's' : ''} • 
-            {productionBatches.length} lot{productionBatches.length > 1 ? 's' : ''}
-          </p>
-        </div>
-      </div>
-
-      {/* Onglets */}
-      <div className="border-b border-gray-200">
-        <nav className="flex space-x-8">
-          {[
-            { id: 'batches', label: 'Lots de Production', count: productionBatches.length },
-            { id: 'capacity', label: 'Capacité de Production' },
-            { id: 'recipes', label: 'Recettes', count: recipes.length }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === tab.id
-                  ? 'border-amber-500 text-amber-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab.label} {tab.count && `(${tab.count})`}
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      {/* Onglet Lots de Production */}
-      {activeTab === 'batches' && (
-        <div className="space-y-4">
-          {productionBatches.map(batch => (
-            <Card key={batch.id} className="p-6">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <Factory className="h-5 w-5 text-gray-500" />
-                    <h3 className="text-lg font-semibold">{batch.batch_number}</h3>
-                    <Badge variant={
-                      batch.status === 'completed' ? 'success' : 
-                      batch.status === 'in_progress' ? 'info' : 'warning'
-                    }>
-                      {batch.status}
-                    </Badge>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
-                    <div>
-                      <strong>Recette:</strong> {batch.recipe_name}
-                    </div>
-                    <div>
-                      <strong>Quantité:</strong> {batch.quantity_produced}/{batch.quantity_planned} {batch.unit}
-                    </div>
-                    <div>
-                      <strong>Destination:</strong> {batch.destination}
-                    </div>
-                    <div>
-                      <strong>Employé:</strong> {batch.employee_name}
-                    </div>
-                  </div>
-                  
-                  {batch.notes && (
-                    <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
-                      {batch.notes}
-                    </div>
-                  )}
-                </div>
-                
-                <div className="flex space-x-2">
-                  <Button variant="secondary" size="sm">
-                    <Eye className="h-4 w-4 mr-1" />
-                    Détails
-                  </Button>
-                  
-                  {batch.status === 'completed' && (
-                    <Button variant="success" size="sm">
-                      <ClipboardCheck className="h-4 w-4 mr-1" />
-                      Valider
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Onglet Capacité de Production */}
-      {activeTab === 'capacity' && (
-        <div className="space-y-4">
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold mb-4">Capacité de Production par Recette</h3>
-            <div className="space-y-4">
-              {recipes.map(recipe => {
-                const capacity = calculateProductionCapacity(recipe);
-                const maxUnits = capacity * recipe.yield_quantity;
-                
-                return (
-                  <div key={recipe.id} className="border rounded-lg p-4">
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <h4 className="font-medium text-gray-900">{recipe.name}</h4>
-                        <p className="text-sm text-gray-600">{recipe.category}</p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-lg font-bold text-blue-600">
-                          {capacity} lots
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          = {maxUnits} {recipe.yield_unit}
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {capacity === 0 && (
-                      <div className="bg-red-50 p-3 rounded mt-3">
-                        <p className="text-xs font-medium text-red-800 mb-2">
-                          Production impossible - ingrédients manquants
-                        </p>
-                      </div>
-                    )}
-                    
-                    {capacity > 0 && capacity < 5 && (
-                      <div className="bg-orange-50 p-3 rounded mt-3">
-                        <p className="text-xs font-medium text-orange-800">
-                          Capacité limitée - réapprovisionnement recommandé
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* Onglet Recettes */}
-      {activeTab === 'recipes' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {recipes.map(recipe => {
-            const capacity = calculateProductionCapacity(recipe);
-            
-            return (
-              <Card key={recipe.id} className="p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{recipe.name}</h3>
-                    <p className="text-sm text-gray-600">{recipe.category}</p>
-                  </div>
-                  <Badge variant={capacity > 0 ? 'success' : 'danger'}>
-                    {capacity > 0 ? 'Disponible' : 'Indisponible'}
-                  </Badge>
-                </div>
-                
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between text-sm">
-                    <span>Rendement:</span>
-                    <span className="font-medium">{recipe.yield_quantity} {recipe.yield_unit}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span>Ingrédients:</span>
-                    <span className="font-medium">{recipe.ingredients?.length || 0}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span>Lots possibles:</span>
-                    <span className={`font-medium ${capacity > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {capacity}
-                    </span>
-                  </div>
-                </div>
-                
-                <div className="flex space-x-2">
-                  <Button variant="secondary" size="sm" className="flex-1">
-                    <Eye className="h-4 w-4 mr-1" />
-                    Voir
-                  </Button>
-                  <Button disabled={capacity === 0} size="sm" className="flex-1">
-                    <Plus className="h-4 w-4 mr-1" />
-                    Produire
-                  </Button>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const StockAnalysisComponent = ({ data, onNotification }) => {
-  const { stockAnalysis, finishedProducts } = data;
-  
-  // Calculer l'écart théorique
-  const theoreticalAnalysis = stockAnalysis.map(product => {
-    const theoreticalUsage = finishedProducts
-      .filter(fp => fp.product_name === product.name)
-      .reduce((sum, fp) => sum + (fp.quantity_produced || 0), 0);
-    
-    return {
-      ...product,
-      theoretical_usage: theoreticalUsage,
-      variance: product.current_stock - (product.current_stock - theoreticalUsage),
-      variance_percentage: theoreticalUsage > 0 ? 
-        ((product.current_stock - (product.current_stock - theoreticalUsage)) / product.current_stock) * 100 : 0
-    };
-  });
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-            <BarChart3 className="h-6 w-6 mr-3 text-green-600" />
-            Analyse des Stocks
-          </h2>
-          <p className="text-gray-600 text-sm">
-            Comparaison stock réel vs stock théorique après production
-          </p>
-        </div>
-      </div>
-
-      {/* Métriques de synthèse */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="p-4 bg-blue-50">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-blue-800">
-              {stockAnalysis.filter(p => p.stock_status === 'normal').length}
-            </div>
-            <div className="text-sm text-blue-600">Stock Normal</div>
-          </div>
-        </Card>
-        
-        <Card className="p-4 bg-orange-50">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-orange-800">
-              {stockAnalysis.filter(p => p.stock_status === 'low').length}
-            </div>
-            <div className="text-sm text-orange-600">Stock Faible</div>
-          </div>
-        </Card>
-        
-        <Card className="p-4 bg-red-50">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-red-800">
-              {stockAnalysis.filter(p => p.stock_status === 'critical').length}
-            </div>
-            <div className="text-sm text-red-600">Stock Critique</div>
-          </div>
-        </Card>
-        
-       <Card>
-  <div>
-    <div className="text-2xl font-bold text-purple-800">
-      {theoreticalAnalysis.filter(p => Math.abs(p.variance_percentage) > 10).length}
-    </div>
-    <div className="text-sm text-purple-600">Écarts &gt; 10%</div>
-  </div>
-</Card>
-      </div>
-
-      {/* Tableau d'analyse */}
-      <Card>
-        <div className="px-6 py-4 border-b">
-          <h3 className="text-lg font-semibold text-gray-800">Analyse Détaillée</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="p-3 text-left">Produit</th>
-                <th className="p-3 text-left">Catégorie</th>
-                <th className="p-3 text-left">Stock Actuel</th>
-                <th className="p-3 text-left">Usage Théorique</th>
-                <th className="p-3 text-left">Stock Théorique</th>
-                <th className="p-3 text-left">Écart</th>
-                <th className="p-3 text-left">Statut</th>
-              </tr>
-            </thead>
-            <tbody>
-              {theoreticalAnalysis.map(product => (
-                <tr key={product.id} className="border-t hover:bg-gray-50">
-                  <td className="p-3 font-medium">{product.name}</td>
-                  <td className="p-3 text-sm">{product.category}</td>
-                  <td className="p-3">
-                    <span className={`font-medium ${
-                      product.stock_status === 'critical' ? 'text-red-600' :
-                      product.stock_status === 'low' ? 'text-orange-600' : 'text-green-600'
-                    }`}>
-                      {product.current_stock} {product.unit}
-                    </span>
-                  </td>
-                  <td className="p-3">{product.theoretical_usage.toFixed(1)} {product.unit}</td>
-                  <td className="p-3">{product.theoretical_remaining.toFixed(1)} {product.unit}</td>
-                  <td className="p-3">
-                    <span className={`font-medium ${
-                      Math.abs(product.variance_percentage) > 10 ? 'text-red-600' : 'text-green-600'
-                    }`}>
-                      {product.variance_percentage.toFixed(1)}%
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    <Badge variant={
-                      product.stock_status === 'critical' ? 'danger' :
-                      product.stock_status === 'low' ? 'warning' : 'success'
-                    }>
-                      {product.stock_status}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-    </div>
-  );
-};
-
-const Navigation = ({ activeTab, onTabChange, profile, onSignOut }) => {
+const Navigation = ({ activeTab, onTabChange, user, onSignOut }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   const navItems = [
-    { id: 'dashboard', label: 'Tableau de bord', icon: BarChart3 },
+    { id: 'dashboard', label: 'Tableau de bord', icon: Home },
+    { id: 'products', label: 'Produits', icon: Package },
     { id: 'purchases', label: 'Achats', icon: ShoppingCart },
-    { id: 'requests', label: 'Demandes Stock', icon: Bell },
+    { id: 'stock', label: 'Stock', icon: Archive },
     { id: 'production', label: 'Production', icon: ChefHat },
-    { id: 'analysis', label: 'Analyse Stocks', icon: TrendingUp }
+    { id: 'reports', label: 'Rapports', icon: BarChart3 }
   ];
 
   return (
-    <nav className="bg-white shadow-sm border-b border-gray-200">
+    <nav className="bg-white shadow-lg border-b border-gray-200 sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center space-x-8">
             <div className="flex items-center space-x-3">
               <span className="text-3xl">🧁</span>
               <div>
-                <span className="text-xl font-bold bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">
+                <span className="text-xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
                   Pâtisserie Shine
                 </span>
-                <div className="text-xs text-gray-500">Gestion Complète</div>
+                <div className="text-xs text-gray-500">Gestion Professionnelle</div>
               </div>
             </div>
             
@@ -1379,7 +412,7 @@ const Navigation = ({ activeTab, onTabChange, profile, onSignOut }) => {
                     onClick={() => onTabChange(item.id)}
                     className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                       activeTab === item.id
-                        ? 'bg-amber-100 text-amber-800 shadow-sm'
+                        ? 'bg-gradient-to-r from-amber-100 to-orange-100 text-amber-800 shadow-sm'
                         : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
                     }`}
                   >
@@ -1393,10 +426,10 @@ const Navigation = ({ activeTab, onTabChange, profile, onSignOut }) => {
 
           <div className="flex items-center space-x-4">
             <div className="text-right">
-              <div className="text-sm font-medium text-gray-900">{profile?.full_name}</div>
-              <div className="text-xs text-gray-500">{profile?.role}</div>
+              <div className="text-sm font-medium text-gray-900">{user?.name}</div>
+              <div className="text-xs text-gray-500">{user?.role}</div>
             </div>
-            <Button onClick={onSignOut} variant="secondary" size="sm">
+            <Button onClick={onSignOut} variant="outline" size="sm">
               <LogOut className="h-4 w-4 mr-2" />
               Déconnexion
             </Button>
@@ -1407,143 +440,823 @@ const Navigation = ({ activeTab, onTabChange, profile, onSignOut }) => {
   );
 };
 
-// ===================== COMPOSANT PRINCIPAL =====================
-const PatisserieShineApp = () => {
-  const { user, profile, loading, signIn, signOut } = useAuth();
-  const data = useData();
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-
-  useEffect(() => {
-    if (user && profile) {
-      data.loadAllData();
-    }
-  }, [user, profile]);
-
-  useEffect(() => {
-    if (error || success) {
-      const timer = setTimeout(() => {
-        setError('');
-        setSuccess('');
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [error, success]);
-
-  const handleLogin = async (username, password) => {
-    const { error } = await signIn(username, password);
-    if (error) {
-      setError(error);
-    }
+const Dashboard = ({ products = [], purchases = [] }) => {
+  const stats = {
+    totalProducts: products.length,
+    lowStock: products.filter(p => p.current_stock <= p.min_stock).length,
+    criticalStock: products.filter(p => p.current_stock < (p.min_stock * 0.5)).length,
+    pendingOrders: purchases.filter(p => p.status === 'pending').length,
+    monthlyPurchases: purchases.filter(p => {
+      const orderDate = new Date(p.order_date);
+      const now = new Date();
+      return orderDate.getMonth() === now.getMonth() && orderDate.getFullYear() === now.getFullYear();
+    }).length,
+    totalValue: purchases.reduce((sum, p) => sum + p.total_amount, 0)
   };
 
-  const handleNotification = (type, message) => {
-    if (type === 'error') setError(message);
-    if (type === 'success') setSuccess(message);
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Chargement...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user || !profile) {
-    return (
-      <LoginForm 
-        onLogin={handleLogin} 
-        error={error} 
-        loading={loading}
-      />
-    );
-  }
+  const lowStockProducts = products.filter(p => p.current_stock <= p.min_stock).slice(0, 5);
+  const recentPurchases = purchases.slice(0, 3);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navigation
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        profile={profile}
-        onSignOut={signOut}
-      />
+    <div className="space-y-8">
+      <div className="text-center lg:text-left">
+        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2">
+          Tableau de bord
+        </h1>
+        <p className="text-gray-600">Vue d'ensemble de votre pâtisserie</p>
+      </div>
       
-      <main className="max-w-7xl mx-auto py-6 px-4">
-        {activeTab === 'dashboard' && (
-          <Dashboard data={data} profile={profile} />
-        )}
-        
-        {activeTab === 'purchases' && (
-          <PurchaseManagement 
-            data={data} 
-            onNotification={handleNotification}
-            onReload={data.loadAllData}
-          />
-        )}
-        
-        {activeTab === 'requests' && (
-          <div className="space-y-6">
-            <div className="text-center">
-              <h2 className="text-2xl font-bold text-gray-800 mb-4">Demandes de Stock</h2>
-              <p className="text-gray-600">Module en cours de développement</p>
-            </div>
+      {/* Métriques principales */}
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+        <Card className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200" hover>
+          <div className="text-center">
+            <Package className="h-8 w-8 text-blue-600 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-blue-800">{stats.totalProducts}</div>
+            <div className="text-sm text-blue-600">Produits</div>
           </div>
-        )}
+        </Card>
         
-        {activeTab === 'production' && (
-          <ProductionTracking 
-            data={data} 
-            onNotification={handleNotification}
-            onReload={data.loadAllData}
-          />
-        )}
+        <Card className="p-6 bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200" hover>
+          <div className="text-center">
+            <AlertTriangle className="h-8 w-8 text-yellow-600 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-yellow-800">{stats.lowStock}</div>
+            <div className="text-sm text-yellow-600">Stock Faible</div>
+          </div>
+        </Card>
         
-        {activeTab === 'analysis' && (
-          <StockAnalysisComponent 
-            data={data} 
-            onNotification={handleNotification}
-          />
-        )}
-      </main>
+        <Card className="p-6 bg-gradient-to-br from-red-50 to-red-100 border-red-200" hover>
+          <div className="text-center">
+            <AlertTriangle className="h-8 w-8 text-red-600 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-red-800">{stats.criticalStock}</div>
+            <div className="text-sm text-red-600">Stock Critique</div>
+          </div>
+        </Card>
+        
+        <Card className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200" hover>
+          <div className="text-center">
+            <ShoppingCart className="h-8 w-8 text-purple-600 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-purple-800">{stats.pendingOrders}</div>
+            <div className="text-sm text-purple-600">Commandes</div>
+          </div>
+        </Card>
+        
+        <Card className="p-6 bg-gradient-to-br from-green-50 to-green-100 border-green-200" hover>
+          <div className="text-center">
+            <TrendingUp className="h-8 w-8 text-green-600 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-green-800">{stats.monthlyPurchases}</div>
+            <div className="text-sm text-green-600">Ce mois</div>
+          </div>
+        </Card>
+        
+        <Card className="p-6 bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200" hover>
+          <div className="text-center">
+            <DollarSign className="h-8 w-8 text-amber-600 mx-auto mb-2" />
+            <div className="text-2xl font-bold text-amber-800">
+              {Math.round(stats.totalValue / 1000)}K
+            </div>
+            <div className="text-sm text-amber-600">Total CFA</div>
+          </div>
+        </Card>
+      </div>
 
-      {/* Notifications */}
-      {(error || success) && (
-        <div className="fixed bottom-4 right-4 z-50 max-w-sm">
-          {error && (
-            <div className="bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg mb-2 flex items-center">
-              <AlertTriangle className="h-5 w-5 mr-2 flex-shrink-0" />
-              <span className="text-sm">{error}</span>
-              <button 
-                onClick={() => setError('')}
-                className="ml-2 text-white hover:text-red-200"
-              >
-                <X className="h-4 w-4" />
-              </button>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Alertes stock */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold text-gray-800 flex items-center">
+              <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
+              Alertes Stock
+            </h3>
+            <Badge variant="danger">{stats.lowStock}</Badge>
+          </div>
+          
+          {lowStockProducts.length > 0 ? (
+            <div className="space-y-4">
+              {lowStockProducts.map(product => (
+                <div key={product.id} className="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-200">
+                  <div>
+                    <h4 className="font-medium text-red-900">{product.name}</h4>
+                    <p className="text-sm text-red-700">
+                      Stock: {product.current_stock} {product.unit} (Min: {product.min_stock})
+                    </p>
+                  </div>
+                  <Badge variant={product.current_stock < (product.min_stock * 0.5) ? 'danger' : 'warning'}>
+                    {product.current_stock < (product.min_stock * 0.5) ? 'Critique' : 'Faible'}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>Aucune alerte stock</p>
             </div>
           )}
-          {success && (
-            <div className="bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center">
-              <Check className="h-5 w-5 mr-2 flex-shrink-0" />
-              <span className="text-sm">{success}</span>
-              <button 
-                onClick={() => setSuccess('')}
-                className="ml-2 text-white hover:text-green-200"
-              >
-                <X className="h-4 w-4" />
-              </button>
+        </Card>
+
+        {/* Commandes récentes */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold text-gray-800 flex items-center">
+              <ShoppingCart className="h-5 w-5 text-blue-600 mr-2" />
+              Commandes Récentes
+            </h3>
+            <Badge variant="info">{recentPurchases.length}</Badge>
+          </div>
+          
+          {recentPurchases.length > 0 ? (
+            <div className="space-y-4">
+              {recentPurchases.map(purchase => (
+                <div key={purchase.id} className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-medium text-gray-900">{purchase.number}</h4>
+                    <Badge variant={
+                      purchase.status === 'received' ? 'success' : 
+                      purchase.status === 'pending' ? 'warning' : 'info'
+                    }>
+                      {purchase.status === 'received' ? 'Reçu' : 
+                       purchase.status === 'pending' ? 'En attente' : purchase.status}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-gray-600">{purchase.supplier_name}</p>
+                  <p className="text-sm font-medium text-gray-900">{purchase.total_amount.toLocaleString()} CFA</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <ShoppingCart className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>Aucune commande récente</p>
             </div>
           )}
-        </div>
-      )}
+        </Card>
+      </div>
     </div>
   );
 };
 
+const ProductManagement = ({ products, setProducts, onNotification }) => {
+  const [activeTab, setActiveTab] = useState('list');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [sortBy, setSortBy] = useState('name');
+  const [sortOrder, setSortOrder] = useState('asc');
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
+  
+  const [newProduct, setNewProduct] = useState({
+    reference: '',
+    name: '',
+    category: '',
+    unit: 'kg',
+    package_type: 'sac',
+    package_size: '',
+    unit_price: '',
+    purchase_price: '',
+    min_stock: '',
+    current_stock: '',
+    supplier_id: '',
+    status: 'active'
+  });
 
-export default PatisserieShineApp;
+  const resetForm = () => {
+    setNewProduct({
+      reference: '',
+      name: '',
+      category: '',
+      unit: 'kg',
+      package_type: 'sac',
+      package_size: '',
+      unit_price: '',
+      purchase_price: '',
+      min_stock: '',
+      current_stock: '',
+      supplier_id: '',
+      status: 'active'
+    });
+    setEditingProduct(null);
+  };
 
+  const filteredProducts = products
+    .filter(product => {
+      const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           product.reference.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
+      return matchesSearch && matchesCategory;
+    })
+    .sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'name') {
+        comparison = a.name.localeCompare(b.name);
+      } else if (sortBy === 'stock') {
+        comparison = a.current_stock - b.current_stock;
+      } else if (sortBy === 'price') {
+        comparison = a.unit_price - b.unit_price;
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+  const categoryCounts = PRODUCT_CATEGORIES.reduce((acc, category) => {
+    acc[category] = products.filter(p => p.category === category).length;
+    return acc;
+  }, {});
+
+  const handleSaveProduct = () => {
+    if (!newProduct.name || !newProduct.category || !newProduct.unit_price) {
+      onNotification('error', 'Veuillez remplir tous les champs obligatoires');
+      return;
+    }
+
+    if (editingProduct) {
+      setProducts(products.map(p => 
+        p.id === editingProduct.id 
+          ? { ...newProduct, id: editingProduct.id }
+          : p
+      ));
+      onNotification('success', 'Produit modifié avec succès');
+    } else {
+      const productData = {
+        ...newProduct,
+        id: `PS${products.length + 1}`,
+        reference: newProduct.reference || `PS${products.length + 1}`,
+        supplier_name: SUPPLIERS.find(s => s.id == newProduct.supplier_id)?.name || ''
+      };
+      setProducts([...products, productData]);
+      onNotification('success', 'Produit ajouté avec succès');
+    }
+
+    setShowProductModal(false);
+    resetForm();
+  };
+
+  const handleEditProduct = (product) => {
+    setNewProduct(product);
+    setEditingProduct(product);
+    setShowProductModal(true);
+  };
+
+  const handleDeleteProduct = (productId) => {
+    if (confirm('Êtes-vous sûr de vouloir supprimer ce produit ?')) {
+      setProducts(products.filter(p => p.id !== productId));
+      onNotification('success', 'Produit supprimé avec succès');
+    }
+  };
+
+  const getStockStatus = (product) => {
+    if (product.current_stock <= product.min_stock * 0.5) return 'critical';
+    if (product.current_stock <= product.min_stock) return 'low';
+    return 'normal';
+  };
+
+  const tabs = [
+    { id: 'list', label: 'Liste des Produits', icon: Grid3X3, count: products.length },
+    { id: 'categories', label: 'Par Catégories', icon: Layers },
+    { id: 'alerts', label: 'Alertes Stock', icon: AlertTriangle, count: products.filter(p => getStockStatus(p) !== 'normal').length }
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+            <Package className="h-6 w-6 mr-3 text-blue-600" />
+            Gestion des Produits
+          </h2>
+          <p className="text-gray-600 text-sm">
+            {products.length} produit{products.length > 1 ? 's' : ''} • {Object.keys(categoryCounts).length} catégorie{Object.keys(categoryCounts).length > 1 ? 's' : ''}
+          </p>
+        </div>
+        
+        <Button onClick={() => setShowProductModal(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Nouveau Produit
+        </Button>
+      </div>
+
+      <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* Filtres */}
+      <Card className="p-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Input
+            placeholder="Rechercher un produit..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            icon={<Search className="h-4 w-4 text-gray-400" />}
+          />
+          
+          <Select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>
+            <option value="all">Toutes les catégories</option>
+            {PRODUCT_CATEGORIES.map(category => (
+              <option key={category} value={category}>
+                {category} ({categoryCounts[category] || 0})
+              </option>
+            ))}
+          </Select>
+          
+          <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            <option value="name">Trier par nom</option>
+            <option value="stock">Trier par stock</option>
+            <option value="price">Trier par prix</option>
+          </Select>
+          
+          <Button 
+            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+            variant="outline"
+          >
+            {sortOrder === 'asc' ? <SortAsc className="h-4 w-4 mr-2" /> : <SortDesc className="h-4 w-4 mr-2" />}
+            {sortOrder === 'asc' ? 'Croissant' : 'Décroissant'}
+          </Button>
+        </div>
+      </Card>
+
+      {/* Contenu des onglets */}
+      {activeTab === 'list' && (
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Produit
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Catégorie
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Stock
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Prix
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Fournisseur
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredProducts.map(product => {
+                  const stockStatus = getStockStatus(product);
+                  
+                  return (
+                    <tr key={product.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">{product.name}</div>
+                          <div className="text-sm text-gray-500">{product.reference}</div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <Badge variant="info" size="sm">{product.category}</Badge>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <span className={`text-sm font-medium ${
+                            stockStatus === 'critical' ? 'text-red-600' :
+                            stockStatus === 'low' ? 'text-yellow-600' : 'text-green-600'
+                          }`}>
+                            {product.current_stock} {product.unit}
+                          </span>
+                          <span className="text-xs text-gray-500 ml-2">
+                            (Min: {product.min_stock})
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">
+                            {product.unit_price.toLocaleString()} CFA/{product.unit}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Achat: {product.purchase_price.toLocaleString()} CFA
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{product.supplier_name}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                        <Button onClick={() => handleEditProduct(product)} variant="ghost" size="sm">
+                          <Edit3 className="h-4 w-4" />
+                        </Button>
+                        <Button onClick={() => handleDeleteProduct(product.id)} variant="ghost" size="sm">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {activeTab === 'categories' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {PRODUCT_CATEGORIES.map(category => {
+            const categoryProducts = products.filter(p => p.category === category);
+            const lowStockCount = categoryProducts.filter(p => getStockStatus(p) !== 'normal').length;
+            
+            return (
+              <Card key={category} className="p-6" hover>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-gray-900">{category}</h3>
+                  <Badge variant="default">{categoryProducts.length}</Badge>
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Total produits:</span>
+                    <span className="font-medium">{categoryProducts.length}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Alertes stock:</span>
+                    <span className={`font-medium ${lowStockCount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {lowStockCount}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Valeur stock:</span>
+                    <span className="font-medium">
+                      {categoryProducts.reduce((sum, p) => sum + (p.current_stock * p.unit_price), 0).toLocaleString()} CFA
+                    </span>
+                  </div>
+                </div>
+                
+                <Button 
+                  onClick={() => {
+                    setSelectedCategory(category);
+                    setActiveTab('list');
+                  }}
+                  variant="outline" 
+                  size="sm" 
+                  className="w-full mt-4"
+                >
+                  Voir les produits
+                </Button>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {activeTab === 'alerts' && (
+        <div className="space-y-4">
+          {products.filter(p => getStockStatus(p) !== 'normal').map(product => {
+            const stockStatus = getStockStatus(product);
+            
+            return (
+              <Card key={product.id} className={`p-6 border-l-4 ${
+                stockStatus === 'critical' ? 'border-red-500 bg-red-50' : 'border-yellow-500 bg-yellow-50'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <AlertTriangle className={`h-5 w-5 ${
+                        stockStatus === 'critical' ? 'text-red-600' : 'text-yellow-600'
+                      }`} />
+                      <h3 className="text-lg font-semibold text-gray-900">{product.name}</h3>
+                      <Badge variant={stockStatus === 'critical' ? 'danger' : 'warning'}>
+                        {stockStatus === 'critical' ? 'Stock critique' : 'Stock faible'}
+                      </Badge>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-600">Stock actuel:</span>
+                        <div className={`font-medium ${
+                          stockStatus === 'critical' ? 'text-red-600' : 'text-yellow-600'
+                        }`}>
+                          {product.current_stock} {product.unit}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Stock minimum:</span>
+                        <div className="font-medium text-gray-900">
+                          {product.min_stock} {product.unit}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">À commander:</span>
+                        <div className="font-medium text-blue-600">
+                          {Math.max(0, product.min_stock * 2 - product.current_stock)} {product.unit}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Fournisseur:</span>
+                        <div className="font-medium text-gray-900">
+                          {product.supplier_name}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex space-x-2">
+                    <Button variant="outline" size="sm">
+                      <ShoppingCart className="h-4 w-4 mr-1" />
+                      Commander
+                    </Button>
+                    <Button onClick={() => handleEditProduct(product)} variant="ghost" size="sm">
+                      <Edit3 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+          
+          {products.filter(p => getStockStatus(p) !== 'normal').length === 0 && (
+            <Card className="p-12 text-center">
+              <Check className="h-12 w-12 text-green-500 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune alerte stock</h3>
+              <p className="text-gray-600">Tous vos produits ont un stock suffisant</p>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Modal Produit */}
+      <Modal 
+        isOpen={showProductModal} 
+        onClose={() => {
+          setShowProductModal(false);
+          resetForm();
+        }} 
+        title={editingProduct ? 'Modifier le produit' : 'Nouveau produit'}
+        size="lg"
+      >
+        <div className="p-6 space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Référence *
+              </label>
+              <Input
+                placeholder="PS001"
+                value={newProduct.reference}
+                onChange={(e) => setNewProduct({...newProduct, reference: e.target.value})}
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nom du produit *
+              </label>
+              <Input
+                placeholder="Nom du produit"
+                value={newProduct.name}
+                onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Catégorie *
+              </label>
+              <Select
+                value={newProduct.category}
+                onChange={(e) => setNewProduct({...newProduct, category: e.target.value})}
+              >
+                <option value="">Sélectionner une catégorie</option>
+                {PRODUCT_CATEGORIES.map(category => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </Select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Fournisseur
+              </label>
+              <Select
+                value={newProduct.supplier_id}
+                onChange={(e) => setNewProduct({...newProduct, supplier_id: e.target.value})}
+              >
+                <option value="">Sélectionner un fournisseur</option>
+                {SUPPLIERS.map(supplier => (
+                  <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Unité *
+              </label>
+              <Select
+                value={newProduct.unit}
+                onChange={(e) => setNewProduct({...newProduct, unit: e.target.value})}
+              >
+                <option value="kg">Kilogramme (kg)</option>
+                <option value="g">Gramme (g)</option>
+                <option value="litre">Litre</option>
+                <option value="ml">Millilitre (ml)</option>
+                <option value="pièce">Pièce</option>
+                <option value="boule">Boule</option>
+                <option value="sac">Sac</option>
+                <option value="carton">Carton</option>
+              </Select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Type d'emballage
+              </label>
+              <Select
+                value={newProduct.package_type}
+                onChange={(e) => setNewProduct({...newProduct, package_type: e.target.value})}
+              >
+                <option value="sac">Sac</option>
+                <option value="carton">Carton</option>
+                <option value="bidon">Bidon</option>
+                <option value="sachet">Sachet</option>
+                <option value="plaquette">Plaquette</option>
+                <option value="boite">Boîte</option>
+              </Select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Taille emballage
+              </label>
+              <Input
+                type="number"
+                placeholder="50"
+                value={newProduct.package_size}
+                onChange={(e) => setNewProduct({...newProduct, package_size: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Prix unitaire (CFA) *
+              </label>
+              <Input
+                type="number"
+                placeholder="1000"
+                value={newProduct.unit_price}
+                onChange={(e) => setNewProduct({...newProduct, unit_price: e.target.value})}
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Prix d'achat (CFA)
+              </label>
+              <Input
+                type="number"
+                placeholder="50000"
+                value={newProduct.purchase_price}
+                onChange={(e) => setNewProduct({...newProduct, purchase_price: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Stock minimum *
+              </label>
+              <Input
+                type="number"
+                placeholder="10"
+                value={newProduct.min_stock}
+                onChange={(e) => setNewProduct({...newProduct, min_stock: e.target.value})}
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Stock actuel
+              </label>
+              <Input
+                type="number"
+                placeholder="100"
+                value={newProduct.current_stock}
+                onChange={(e) => setNewProduct({...newProduct, current_stock: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-6 border-t">
+            <Button 
+              onClick={() => {
+                setShowProductModal(false);
+                resetForm();
+              }} 
+              variant="secondary"
+            >
+              Annuler
+            </Button>
+            <Button onClick={handleSaveProduct}>
+              <Save className="h-4 w-4 mr-2" />
+              {editingProduct ? 'Modifier' : 'Ajouter'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+const PurchaseManagement = ({ products, purchases, setPurchases, onNotification }) => {
+  const [activeTab, setActiveTab] = useState('orders');
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [showReceiveModal, setShowReceiveModal] = useState(false);
+  const [selectedPurchase, setSelectedPurchase] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  
+  const [newOrder, setNewOrder] = useState({
+    supplier_id: '',
+    expected_delivery: '',
+    notes: '',
+    items: []
+  });
+
+  const [newItem, setNewItem] = useState({
+    product_id: '',
+    quantity: '',
+    unit_price: ''
+  });
+
+  const resetOrderForm = () => {
+    setNewOrder({
+      supplier_id: '',
+      expected_delivery: '',
+      notes: '',
+      items: []
+    });
+    setNewItem({
+      product_id: '',
+      quantity: '',
+      unit_price: ''
+    });
+  };
+
+  const addItemToOrder = () => {
+    if (!newItem.product_id || !newItem.quantity || !newItem.unit_price) {
+      onNotification('error', 'Tous les champs sont requis');
+      return;
+    }
+
+    const product = products.find(p => p.id === newItem.product_id);
+    if (!product) return;
+
+    const item = {
+      product_id: product.id,
+      product_name: product.name,
+      quantity: parseFloat(newItem.quantity),
+      unit_price: parseFloat(newItem.unit_price),
+      total: parseFloat(newItem.quantity) * parseFloat(newItem.unit_price),
+      unit: product.unit,
+      tempId: Date.now()
+    };
+
+    setNewOrder(prev => ({
+      ...prev,
+      items: [...prev.items, item]
+    }));
+
+    setNewItem({ product_id: '', quantity: '', unit_price: '' });
+  };
+
+  const removeItemFromOrder = (tempId) => {
+    setNewOrder(prev => ({
+      ...prev,
+      items: prev.items.filter(item => item.tempId !== tempId)
+    }));
+  };
+
+  const createOrder = () => {
+    if (!newOrder.supplier_id || newOrder.items.length === 0) {
+      onNotification('error', 'Fournisseur et au moins un produit requis');
+      return;
+    }
+
+    const supplier = SUPPLIERS.find(s => s.id == newOrder.supplier_id);
+    const orderData = {
+      id: purchases.length + 1,
+      number: `BC-2024-${String(purchases.length + 1).padStart(3, '0')}`,
+      supplier_id: parseInt(newOrder.supplier_id),
+      supplier_name: supplier.name,
+      order_date: new Date().toISOString().split('T')[0],
+      expected_delivery: newOrder.expected_delivery,
+      status: 'pending',
+      total_amount: newOrder.items.reduce((sum, item) => sum + item.total, 0),
+      notes: newOrder.notes,
+      created_by: 'admin',
+      items: newOrder.items.map(item => ({
+        product_id: item.product_id,
+        product_name: item.product_name,
+        quantity: item.quantity,
