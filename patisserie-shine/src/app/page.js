@@ -462,17 +462,18 @@ const LoginPage = ({ onLogin }) => {
 
         <Card className="p-8">
           <form onSubmit={handleLogin} className="space-y-6">
-            <Input
-              label="Email"
-              type="email"
-              value={email}
-              onChange={setEmail}
-              placeholder="votre@email.com"
-              autocomplete="username"
-              icon={Mail}
-              required
-              error={error}
-            />
+           <Input
+  label="Email"
+  type="email"
+  value={email}
+  onChange={setEmail}
+  placeholder="votre@email.com"
+  icon={Mail}
+  required
+  error={error}
+  inputProps={{ autocomplete: "username" }} // <-- IMPORTANT
+/>
+
 
             <div className="space-y-2">
               <label className="block text-sm font-medium text-gray-700">
@@ -1696,5 +1697,6 @@ const PatisserieStockApp = () => {
 };
 
 export default PatisserieStockApp;
+
 
 
