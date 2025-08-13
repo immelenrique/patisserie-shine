@@ -1,4 +1,3 @@
-"use client";
 import React, { useState, useEffect } from 'react';
 import { 
   ShoppingCart, Package, TrendingUp, Bell, Check, X, Plus, 
@@ -1260,3 +1259,449 @@ const PurchaseManagement = ({ products, purchases, setPurchases, onNotification 
         product_id: item.product_id,
         product_name: item.product_name,
         quantity: item.quantity,
+        unit_price: item.unit_price,
+        total: item.total
+      }))
+    };
+
+    setPurchases([orderData, ...purchases]);
+    onNotification('success', 'Bon de commande créé avec succès');
+    setShowOrderModal(false);
+    resetOrderForm();
+  };
+
+  const receiveOrder = (receivedItems) => {
+    if (!selectedPurchase) return;
+
+    const updatedPurchase = {
+      ...selectedPurchase,
+      status: 'received',
+      delivery_date: new Date().toISOString().split('T')[0],
+      items: selectedPurchase.items.map(item => {
+        const receivedItem = receivedItems.find(ri => ri.product_id === item.product_id);
+        return {
+          ...item,
+          quantity_received: receivedItem ? receivedItem.quantity_received : item.quantity
+        };
+      })
+    };
+
+    setPurchases(purchases.map(p => 
+      p.id === selectedPurchase.id ? updatedPurchase : p
+    ));
+
+    onNotification('success', 'Réception enregistrée avec succès');
+    setShowReceiveModal(false);
+    setSelectedPurchase(null);
+  };
+
+  const filteredPurchases = purchases.filter(purchase => {
+    const matchesSearch = purchase.number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         purchase.supplier_name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || purchase.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const tabs = [
+    { id: 'orders', label: 'Bons de Commande', icon: FileText, count: purchases.length },
+    { id: 'pending', label: 'En Attente', icon: Clock, count: purchases.filter(p => p.status === 'pending').length },
+    { id: 'received', label: 'Reçues', icon: Check, count: purchases.filter(p => p.status === 'received').length }
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+            <ShoppingCart className="h-6 w-6 mr-3 text-blue-600" />
+            Gestion des Achats
+          </h2>
+          <p className="text-gray-600 text-sm">
+            {purchases.length} commande{purchases.length > 1 ? 's' : ''} • 
+            {purchases.filter(p => p.status === 'pending').length} en attente
+          </p>
+        </div>
+        
+        <Button onClick={() => setShowOrderModal(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Nouveau Bon de Commande
+        </Button>
+      </div>
+
+      <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* Filtres */}
+      <Card className="p-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Input
+            placeholder="Rechercher une commande..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            icon={<Search className="h-4 w-4 text-gray-400" />}
+          />
+          
+          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="all">Tous les statuts</option>
+            <option value="pending">En attente</option>
+            <option value="received">Reçues</option>
+            <option value="cancelled">Annulées</option>
+          </Select>
+          
+          <Button variant="outline">
+            <Download className="h-4 w-4 mr-2" />
+            Exporter
+          </Button>
+        </div>
+      </Card>
+
+      {/* Liste des commandes */}
+      <div className="space-y-4">
+        {filteredPurchases.map(purchase => (
+          <Card key={purchase.id} className="p-6" hover>
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center space-x-3 mb-3">
+                  <FileText className="h-5 w-5 text-gray-500" />
+                  <h3 className="text-lg font-semibold text-gray-900">{purchase.number}</h3>
+                  <Badge variant={
+                    purchase.status === 'received' ? 'success' : 
+                    purchase.status === 'pending' ? 'warning' : 
+                    purchase.status === 'cancelled' ? 'danger' : 'info'
+                  }>
+                    {purchase.status === 'received' ? 'Reçue' : 
+                     purchase.status === 'pending' ? 'En attente' : 
+                     purchase.status === 'cancelled' ? 'Annulée' : purchase.status}
+                  </Badge>
+                </div>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
+                  <div>
+                    <span className="font-medium text-gray-900">Fournisseur:</span>
+                    <div>{purchase.supplier_name}</div>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-900">Date commande:</span>
+                    <div>{new Date(purchase.order_date).toLocaleDateString('fr-FR')}</div>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-900">Livraison prévue:</span>
+                    <div>{purchase.expected_delivery ? new Date(purchase.expected_delivery).toLocaleDateString('fr-FR') : 'Non définie'}</div>
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-900">Montant total:</span>
+                    <div className="text-lg font-semibold text-blue-600">
+                      {purchase.total_amount.toLocaleString()} CFA
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mt-3">
+                  <span className="font-medium text-gray-900">Articles: </span>
+                  <span className="text-gray-600">{purchase.items?.length || 0} produit{(purchase.items?.length || 0) > 1 ? 's' : ''}</span>
+                  {purchase.notes && (
+                    <div className="mt-2 p-2 bg-gray-50 rounded text-sm text-gray-600">
+                      <strong>Notes:</strong> {purchase.notes}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm">
+                  <Eye className="h-4 w-4 mr-1" />
+                  Détails
+                </Button>
+                
+                <Button variant="outline" size="sm">
+                  <Printer className="h-4 w-4 mr-1" />
+                  Imprimer
+                </Button>
+                
+                {purchase.status === 'pending' && (
+                  <Button 
+                    onClick={() => {
+                      setSelectedPurchase(purchase);
+                      setShowReceiveModal(true);
+                    }}
+                    variant="success" 
+                    size="sm"
+                  >
+                    <Truck className="h-4 w-4 mr-1" />
+                    Réceptionner
+                  </Button>
+                )}
+                
+                {purchase.status === 'pending' && (
+                  <Button variant="danger" size="sm">
+                    <X className="h-4 w-4 mr-1" />
+                    Annuler
+                  </Button>
+                )}
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {filteredPurchases.length === 0 && (
+        <Card className="p-12 text-center">
+          <ShoppingCart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Aucune commande trouvée</h3>
+          <p className="text-gray-600 mb-4">Commencez par créer votre première commande</p>
+          <Button onClick={() => setShowOrderModal(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nouvelle Commande
+          </Button>
+        </Card>
+      )}
+
+      {/* Modal Nouveau Bon de Commande */}
+      <Modal 
+        isOpen={showOrderModal} 
+        onClose={() => {
+          setShowOrderModal(false);
+          resetOrderForm();
+        }} 
+        title="Nouveau Bon de Commande"
+        size="xl"
+      >
+        <div className="p-6 space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Fournisseur *
+              </label>
+              <Select
+                value={newOrder.supplier_id}
+                onChange={(e) => setNewOrder({...newOrder, supplier_id: e.target.value})}
+              >
+                <option value="">Sélectionner un fournisseur</option>
+                {SUPPLIERS.map(supplier => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Livraison prévue
+              </label>
+              <Input
+                type="date"
+                value={newOrder.expected_delivery}
+                onChange={(e) => setNewOrder({...newOrder, expected_delivery: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Notes
+            </label>
+            <textarea
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200"
+              rows="3"
+              placeholder="Notes sur la commande..."
+              value={newOrder.notes}
+              onChange={(e) => setNewOrder({...newOrder, notes: e.target.value})}
+            />
+          </div>
+
+          {/* Ajout d'articles */}
+          <div className="border-t pt-6">
+            <h4 className="text-lg font-semibold mb-4">Ajouter des articles</h4>
+            
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <Select
+                value={newItem.product_id}
+                onChange={(e) => {
+                  const product = products.find(p => p.id === e.target.value);
+                  setNewItem({
+                    ...newItem, 
+                    product_id: e.target.value,
+                    unit_price: product ? product.purchase_price || product.unit_price : ''
+                  });
+                }}
+              >
+                <option value="">Sélectionner un produit</option>
+                {products.map(product => (
+                  <option key={product.id} value={product.id}>
+                    {product.name} ({product.unit})
+                  </option>
+                ))}
+              </Select>
+              
+              <Input
+                type="number"
+                placeholder="Quantité"
+                value={newItem.quantity}
+                onChange={(e) => setNewItem({...newItem, quantity: e.target.value})}
+                step="0.01"
+              />
+              
+              <Input
+                type="number"
+                placeholder="Prix unitaire (CFA)"
+                value={newItem.unit_price}
+                onChange={(e) => setNewItem({...newItem, unit_price: e.target.value})}
+              />
+              
+              <Button onClick={addItemToOrder} className="w-full">
+                <Plus className="h-4 w-4 mr-2" />
+                Ajouter
+              </Button>
+            </div>
+          </div>
+
+          {/* Articles ajoutés */}
+          {newOrder.items.length > 0 && (
+            <div className="border-t pt-6">
+              <h4 className="text-lg font-semibold mb-4">
+                Articles commandés ({newOrder.items.length})
+              </h4>
+              
+              <div className="space-y-3">
+                {newOrder.items.map(item => (
+                  <div key={item.tempId} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-900">{item.product_name}</div>
+                      <div className="text-sm text-gray-600">
+                        {item.quantity} {item.unit} × {item.unit_price.toLocaleString()} CFA = 
+                        <span className="font-medium text-blue-600 ml-1">
+                          {item.total.toLocaleString()} CFA
+                        </span>
+                      </div>
+                    </div>
+                    <Button 
+                      onClick={() => removeItemFromOrder(item.tempId)}
+                      variant="danger" 
+                      size="sm"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-semibold text-blue-900">Total de la commande:</span>
+                  <span className="text-2xl font-bold text-blue-600">
+                    {newOrder.items.reduce((sum, item) => sum + item.total, 0).toLocaleString()} CFA
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end space-x-3 pt-6 border-t">
+            <Button 
+              onClick={() => {
+                setShowOrderModal(false);
+                resetOrderForm();
+              }} 
+              variant="secondary"
+            >
+              Annuler
+            </Button>
+            <Button 
+              onClick={createOrder} 
+              disabled={!newOrder.supplier_id || newOrder.items.length === 0}
+            >
+              <Send className="h-4 w-4 mr-2" />
+              Créer le Bon de Commande
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Réception */}
+      <Modal 
+        isOpen={showReceiveModal} 
+        onClose={() => {
+          setShowReceiveModal(false);
+          setSelectedPurchase(null);
+        }} 
+        title={`Réception - ${selectedPurchase?.number}`}
+        size="lg"
+      >
+        {selectedPurchase && (
+          <ReceiveOrderForm 
+            purchase={selectedPurchase}
+            onReceive={receiveOrder}
+            onCancel={() => {
+              setShowReceiveModal(false);
+              setSelectedPurchase(null);
+            }}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+};
+
+const ReceiveOrderForm = ({ purchase, onReceive, onCancel }) => {
+  const [receivedItems, setReceivedItems] = useState(
+    purchase.items.map(item => ({
+      ...item,
+      quantity_received: item.quantity
+    }))
+  );
+
+  const updateReceivedQuantity = (productId, quantity) => {
+    setReceivedItems(items => 
+      items.map(item => 
+        item.product_id === productId 
+          ? { ...item, quantity_received: parseFloat(quantity) || 0 }
+          : item
+      )
+    );
+  };
+
+  const handleReceive = () => {
+    onReceive(receivedItems);
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+        <h4 className="font-semibold text-blue-900 mb-2">Informations de la commande</h4>
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <span className="font-medium">Fournisseur:</span> {purchase.supplier_name}
+          </div>
+          <div>
+            <span className="font-medium">Date commande:</span> {new Date(purchase.order_date).toLocaleDateString('fr-FR')}
+          </div>
+          <div>
+            <span className="font-medium">Montant:</span> {purchase.total_amount.toLocaleString()} CFA
+          </div>
+          <div>
+            <span className="font-medium">Articles:</span> {purchase.items.length}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h4 className="font-semibold text-gray-900 mb-4">Quantités reçues</h4>
+        <div className="space-y-4">
+          <div className="text-center py-8 text-gray-500">
+            <p>Composant en cours de développement</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-end space-x-3 pt-6 border-t">
+        <Button onClick={onCancel} variant="secondary">
+          Annuler
+        </Button>
+        <Button onClick={handleReceive} variant="success">
+          <Check className="h-4 w-4 mr-2" />
+          Confirmer la Réception
+        </Button>
+      </div>
+    </div>
+  );
+};
