@@ -524,13 +524,13 @@ export const uniteService = {
 
 // ===================== SERVICES STOCK ATELIER =====================
 export const stockAtelierService = {
-  // Récupérer le stock atelier (stock réel = transféré - utilisé)
+  // Récupérer l'état du stock atelier (stock initial - stock utilisé)
   async getStockAtelier() {
     try {
       const { data, error } = await supabase
-        .from('vue_stock_atelier')
+        .from('vue_stock_atelier_usage')
         .select('*')
-        .order('nom')
+        .order('nom_produit')
       
       if (error) {
         console.error('Erreur getStockAtelier:', error)
@@ -544,45 +544,67 @@ export const stockAtelierService = {
     }
   },
 
-  // Transférer vers l'atelier
-  async transfererVersAtelier(produitId, quantite) {
+  // Obtenir l'historique des consommations par production
+  async getHistoriqueConsommations() {
     try {
-      const { data, error } = await supabase.rpc('transferer_vers_atelier', {
-        p_produit_id: produitId,
-        p_quantite: quantite,
-        p_transfere_par: (await supabase.auth.getUser()).data.user?.id
-      })
-
+      const { data, error } = await supabase
+        .from('vue_consommations_atelier')
+        .select('*')
+        .order('date_production', { ascending: false })
+      
       if (error) {
-        console.error('Erreur transfert:', error)
-        return { success: false, error: error.message }
+        console.error('Erreur getHistoriqueConsommations:', error)
+        return { consommations: [], error: error.message }
       }
-
-      return { success: true, error: null }
+      
+      return { consommations: data || [], error: null }
     } catch (error) {
-      console.error('Erreur dans transfererVersAtelier:', error)
-      return { success: false, error: error.message }
+      console.error('Erreur dans getHistoriqueConsommations:', error)
+      return { consommations: [], error: error.message }
     }
   },
 
-  // Obtenir l'historique des transferts
-  async getHistoriqueTransferts() {
+  // Obtenir le détail des consommations par produit
+  async getConsommationsParProduit(produitId, limit = 20) {
     try {
-      const { data, error } = await supabase.rpc('get_transferts_atelier')
+      const { data, error } = await supabase
+        .from('vue_consommations_detail')
+        .select('*')
+        .eq('produit_id', produitId)
+        .order('date_production', { ascending: false })
+        .limit(limit)
       
       if (error) {
-        console.error('Erreur getHistoriqueTransferts:', error)
-        return { transferts: [], error: error.message }
+        console.error('Erreur getConsommationsParProduit:', error)
+        return { consommations: [], error: error.message }
       }
       
-      return { transferts: data || [], error: null }
+      return { consommations: data || [], error: null }
     } catch (error) {
-      console.error('Erreur dans getHistoriqueTransferts:', error)
-      return { transferts: [], error: error.message }
+      console.error('Erreur dans getConsommationsParProduit:', error)
+      return { consommations: [], error: error.message }
+    }
+  },
+
+  // Calculer les statistiques de consommation
+  async getStatistiquesConsommation(periode = '30 days') {
+    try {
+      const { data, error } = await supabase.rpc('get_stats_consommation_atelier', {
+        p_periode: periode
+      })
+      
+      if (error) {
+        console.error('Erreur getStatistiquesConsommation:', error)
+        return { stats: null, error: error.message }
+      }
+      
+      return { stats: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans getStatistiquesConsommation:', error)
+      return { stats: null, error: error.message }
     }
   }
 }
-
 // ===================== SERVICES RECETTES =====================
 export const recetteService = {
   // Récupérer toutes les recettes
@@ -824,3 +846,4 @@ export const utils = {
 }
 
 export default supabase
+
