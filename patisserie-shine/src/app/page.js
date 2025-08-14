@@ -472,7 +472,7 @@ const LoginPage = ({ onLogin }) => {
   icon={Mail}
   required
   error={error}
-  inputProps={{ autoComplete: "username" }} // <-- IMPORTANT
+  inputProps={{ autoComplete: "username" }}
 />
 
 
@@ -487,7 +487,7 @@ const LoginPage = ({ onLogin }) => {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  autoComplete: "current-password" 
+                  autoComplete="current-password"
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
@@ -1698,6 +1698,7 @@ const PatisserieStockApp = () => {
 };
 
 export default PatisserieStockApp;
+
 
 
 
