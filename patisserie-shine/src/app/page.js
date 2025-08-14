@@ -27,7 +27,7 @@ import {
   DollarSign,
   Calculator
 } from 'lucide-react';
-
+import { Warehouse, ArrowRightLeft, ShoppingBasket } from 'lucide-react';
 // Import des services Supabase
 import { 
   authService, 
@@ -1680,13 +1680,15 @@ const PatisserieShineApp = () => {
 
   // Navigation tabs
   const tabs = [
-    { id: 'dashboard', label: 'Tableau de Bord', icon: Home },
-    { id: 'stock', label: 'Stock', icon: Package, badge: stats?.produits_stock_critique },
-    { id: 'demandes', label: 'Demandes', icon: ShoppingCart, badge: stats?.demandes_en_attente },
-    { id: 'production', label: 'Production', icon: ChefHat },
-    { id: 'unites', label: 'Unités', icon: Calculator, adminOnly: true },
-    { id: 'equipe', label: 'Équipe', icon: Users, adminOnly: true }
-  ];
+  { id: 'dashboard', label: 'Tableau de Bord', icon: Home },
+  { id: 'stock', label: 'Stock Principal', icon: Package },
+  { id: 'stock-atelier', label: 'Stock Atelier', icon: Warehouse, adminOnly: true },
+  { id: 'recettes', label: 'Recettes', icon: ChefHat, adminOnly: true },
+  { id: 'demandes', label: 'Demandes', icon: ShoppingCart },
+  { id: 'production', label: 'Production', icon: ChefHat },
+  { id: 'unites', label: 'Unités', icon: Calculator, adminOnly: true },
+  { id: 'equipe', label: 'Équipe', icon: Users, adminOnly: true }
+];
 
   const visibleTabs = tabs.filter(tab => !tab.adminOnly || currentUser?.role === 'admin');
 
@@ -1821,6 +1823,13 @@ const PatisserieShineApp = () => {
         {activeTab === 'equipe' && currentUser.role === 'admin' && (
           <TeamManager currentUser={currentUser} />
         )}
+         {activeTab === 'stock-atelier' && currentUser.role === 'admin' && (
+  <StockAtelierManager currentUser={currentUser} />
+)}
+
+{activeTab === 'recettes' && currentUser.role === 'admin' && (
+  <RecettesManager currentUser={currentUser} />
+)}
       </main>
 
       {/* Footer */}
@@ -1848,3 +1857,4 @@ const PatisserieShineApp = () => {
 };
 
 export default PatisserieShineApp;
+
