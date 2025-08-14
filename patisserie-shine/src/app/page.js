@@ -1,5 +1,5 @@
-
 "use client";
+
 import React, { useState, useEffect } from 'react';
 import { 
   ChefHat, 
@@ -375,7 +375,7 @@ const Dashboard = ({ stats, loading }) => {
   );
 };
 
-// Composant Stock
+// Composant Stock Principal
 const StockManager = ({ currentUser }) => {
   const [products, setProducts] = useState([]);
   const [unites, setUnites] = useState([]);
@@ -517,7 +517,7 @@ const StockManager = ({ currentUser }) => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Gestion du Stock</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Stock Principal</h2>
           <p className="text-gray-600">Suivi des matières premières et inventaire</p>
         </div>
         <div className="flex space-x-3">
