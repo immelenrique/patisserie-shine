@@ -382,7 +382,7 @@ const StockManager = ({ currentUser }) => {
     quantite: '',
     quantite_restante: '',
     unite_id: ''
-  });
+  })};
 
   useEffect(() => {
     loadData();
@@ -1845,5 +1845,6 @@ const UnitesManager = ({ currentUser }) => {
   );
 };
 export default PatisserieShineApp;
+
 
 
