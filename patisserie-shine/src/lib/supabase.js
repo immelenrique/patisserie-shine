@@ -154,6 +154,34 @@ export const productService = {
     }
   },
 
+  // Mettre à jour un produit
+  async update(productId, productData) {
+    try {
+      const { data, error } = await supabase
+        .from('produits')
+        .update({
+          ...productData,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', productId)
+        .select(`
+          *,
+          unite:unites(id, code, libelle)
+        `)
+        .single()
+      
+      if (error) {
+        console.error('Erreur update produit:', error)
+        return { product: null, error: error.message }
+      }
+      
+      return { product: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans update produit:', error)
+      return { product: null, error: error.message }
+    }
+  },
+
   // Mettre à jour le stock
   async updateStock(productId, newStock) {
     try {
