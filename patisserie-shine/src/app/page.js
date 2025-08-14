@@ -2112,7 +2112,8 @@ const StockAtelierManager = ({ currentUser }) => {
             </div>
           </Card>
         </div>
-      )}
+        )}
+};
 
       {activeTab === 'consommations' && (
         <Card className="overflow-hidden">
@@ -2596,4 +2597,5 @@ const RecettesManager = ({ currentUser }) => {
   );
 };
 export default PatisserieShineApp;
+
 
