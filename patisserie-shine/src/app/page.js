@@ -277,14 +277,20 @@ const LoginPage = ({ onLogin }) => {
 };
 
 // Composant Dashboard
-const Dashboard = ({ stats, loading }) => {
-  const calculatedStats = {
-    totalProduits: stats?.total_produits || 0,
-    stockCritique: stats?.produits_stock_critique || 0,
-    demandesEnAttente: stats?.demandes_en_attente || 0,
-    productionsJour: stats?.productions_jour || 0,
-    utilisateursActifs: stats?.utilisateurs_actifs || 0
-  };
+// Dans les tabs de navigation
+const tabs = [
+  { id: 'dashboard', label: 'Tableau de Bord', icon: Home },
+  { id: 'stock', label: 'Stock', icon: Package },
+  { id: 'demandes', label: 'Demandes', icon: ShoppingCart },
+  { id: 'production', label: 'Production', icon: ChefHat },
+  { id: 'unites', label: 'Unités', icon: Calculator, adminOnly: true }, // Nouveau
+  { id: 'equipe', label: 'Équipe', icon: Users, adminOnly: true }
+];
+
+// Dans le contenu principal
+{activeTab === 'unites' && currentUser.role === 'admin' && (
+  <UnitesManager currentUser={currentUser} />
+)};
 
   return (
     <div className="space-y-8">
@@ -1839,4 +1845,5 @@ const UnitesManager = ({ currentUser }) => {
   );
 };
 export default PatisserieShineApp;
+
 
