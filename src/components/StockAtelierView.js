@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { stockAtelierService, productService, utils } from '@/lib/supabase';
-import { Package, ArrowRight, AlertTriangle, Clock, TrendingUp, TrendingDown } from 'lucide-react';
+import { Package, ArrowRight, AlertTriangle, Clock, TrendingUp, TrendingDown, Warehouse } from 'lucide-react';
 
 export default function StockAtelierView() {
   const [stockAtelier, setStockAtelier] = useState([]);
@@ -35,6 +35,7 @@ export default function StockAtelierView() {
       setStockAtelier(stockResult.stock);
       setProduits(produitsResult.products);
       setTransferts(transfertsResult.transferts);
+      setError('');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -60,17 +61,24 @@ export default function StockAtelierView() {
       setShowTransferModal(false);
       setSelectedProduit('');
       setQuantiteTransfert('');
+      setError('');
       loadData();
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const getStockStatus = (stockReel, quantiteDisponible) => {
-    if (stockReel <= 0) return { status: 'rupture', color: 'text-red-600', bg: 'bg-red-50' };
-    if (stockReel <= quantiteDisponible * 0.2) return { status: 'critique', color: 'text-orange-600', bg: 'bg-orange-50' };
-    if (stockReel <= quantiteDisponible * 0.5) return { status: 'faible', color: 'text-yellow-600', bg: 'bg-yellow-50' };
-    return { status: 'normal', color: 'text-green-600', bg: 'bg-green-50' };
+  const getStockStatusInfo = (statut) => {
+    switch (statut) {
+      case 'rupture':
+        return { color: 'text-red-600', bg: 'bg-red-50', label: 'Rupture' };
+      case 'critique':
+        return { color: 'text-orange-600', bg: 'bg-orange-50', label: 'Critique' };
+      case 'faible':
+        return { color: 'text-yellow-600', bg: 'bg-yellow-50', label: 'Faible' };
+      default:
+        return { color: 'text-green-600', bg: 'bg-green-50', label: 'Normal' };
+    }
   };
 
   if (loading) {
@@ -87,8 +95,11 @@ export default function StockAtelierView() {
       {/* En-tête */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Stock Atelier</h1>
-          <p className="text-gray-600">Gestion du stock disponible dans l'atelier de production</p>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center">
+            <Warehouse className="w-8 h-8 text-orange-600 mr-3" />
+            Stock Atelier
+          </h1>
+          <p className="text-gray-600">Stock réel disponible dans l'atelier (transféré - utilisé)</p>
         </div>
         <button
           onClick={() => setShowTransferModal(true)}
@@ -119,6 +130,7 @@ export default function StockAtelierView() {
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
+            <Package className="w-4 h-4 inline mr-2" />
             Stock Disponible
           </button>
           <button
@@ -129,6 +141,7 @@ export default function StockAtelierView() {
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
+            <Clock className="w-4 h-4 inline mr-2" />
             Historique Transferts
           </button>
         </nav>
@@ -156,7 +169,7 @@ export default function StockAtelierView() {
                 <div className="ml-3">
                   <p className="text-sm font-medium text-gray-500">Stock critique</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {stockAtelier.filter(s => getStockStatus(s.stock_reel, s.quantite_disponible).status === 'critique').length}
+                    {stockAtelier.filter(s => s.statut_stock === 'critique' || s.statut_stock === 'rupture').length}
                   </p>
                 </div>
               </div>
@@ -165,7 +178,7 @@ export default function StockAtelierView() {
               <div className="flex items-center">
                 <TrendingUp className="w-8 h-8 text-green-600" />
                 <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-500">Stock total</p>
+                  <p className="text-sm font-medium text-gray-500">Stock disponible</p>
                   <p className="text-2xl font-bold text-gray-900">
                     {utils.formatNumber(stockAtelier.reduce((sum, s) => sum + s.quantite_disponible, 0), 1)}
                   </p>
@@ -176,7 +189,7 @@ export default function StockAtelierView() {
               <div className="flex items-center">
                 <TrendingDown className="w-8 h-8 text-orange-600" />
                 <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-500">Stock réservé</p>
+                  <p className="text-sm font-medium text-gray-500">Stock utilisé</p>
                   <p className="text-2xl font-bold text-gray-900">
                     {utils.formatNumber(stockAtelier.reduce((sum, s) => sum + s.quantite_reservee, 0), 1)}
                   </p>
@@ -187,13 +200,19 @@ export default function StockAtelierView() {
 
           {/* Tableau du stock */}
           <div className="card">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Stock Atelier Actuel</h3>
+              <div className="text-sm text-gray-500">
+                Stock réel = Stock disponible - Stock utilisé
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
                   <tr>
                     <th>Produit</th>
                     <th>Stock Disponible</th>
-                    <th>Stock Réservé</th>
+                    <th>Stock Utilisé</th>
                     <th>Stock Réel</th>
                     <th>Unité</th>
                     <th>Statut</th>
@@ -204,22 +223,31 @@ export default function StockAtelierView() {
                   {stockAtelier.length === 0 ? (
                     <tr>
                       <td colSpan="7" className="text-center py-8 text-gray-500">
+                        <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                         Aucun stock dans l'atelier
+                        <br />
+                        <span className="text-sm">Transférez des produits depuis le stock principal</span>
                       </td>
                     </tr>
                   ) : (
                     stockAtelier.map((stock) => {
-                      const statusInfo = getStockStatus(stock.stock_reel, stock.quantite_disponible);
+                      const statusInfo = getStockStatusInfo(stock.statut_stock);
                       return (
                         <tr key={stock.id}>
-                          <td className="font-medium">{stock.produit?.nom}</td>
-                          <td>{utils.formatNumber(stock.quantite_disponible, 1)}</td>
-                          <td>{utils.formatNumber(stock.quantite_reservee, 1)}</td>
-                          <td className="font-semibold">{utils.formatNumber(stock.stock_reel, 1)}</td>
-                          <td>{stock.produit?.unite?.label}</td>
+                          <td className="font-medium">{stock.nom_produit}</td>
+                          <td className="text-blue-600 font-semibold">
+                            {utils.formatNumber(stock.quantite_disponible, 1)}
+                          </td>
+                          <td className="text-orange-600">
+                            {utils.formatNumber(stock.quantite_reservee, 1)}
+                          </td>
+                          <td className="font-bold text-lg">
+                            {utils.formatNumber(stock.stock_reel, 1)}
+                          </td>
+                          <td>{stock.unite}</td>
                           <td>
                             <span className={`badge ${statusInfo.bg} ${statusInfo.color}`}>
-                              {statusInfo.status}
+                              {statusInfo.label}
                             </span>
                           </td>
                           <td>{utils.formatDateTime(stock.derniere_maj)}</td>
@@ -236,7 +264,10 @@ export default function StockAtelierView() {
 
       {activeTab === 'transferts' && (
         <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Historique des Transferts</h3>
+          <h3 className="text-lg font-semibold mb-4 flex items-center">
+            <Clock className="w-5 h-5 mr-2" />
+            Historique des Transferts
+          </h3>
           <div className="overflow-x-auto">
             <table className="table">
               <thead>
@@ -252,6 +283,7 @@ export default function StockAtelierView() {
                 {transferts.length === 0 ? (
                   <tr>
                     <td colSpan="5" className="text-center py-8 text-gray-500">
+                      <Clock className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                       Aucun transfert enregistré
                     </td>
                   </tr>
@@ -261,14 +293,16 @@ export default function StockAtelierView() {
                       <td>{utils.formatDateTime(transfert.created_at)}</td>
                       <td className="font-medium">{transfert.produit?.nom}</td>
                       <td>
-                        {utils.formatNumber(transfert.quantite_transferee, 1)} {transfert.produit?.unite?.label}
+                        <span className="font-semibold text-blue-600">
+                          {utils.formatNumber(transfert.quantite_transferee, 1)} {transfert.produit?.unite?.label}
+                        </span>
                       </td>
                       <td>{transfert.transfere_par_profile?.nom}</td>
                       <td>
                         <span className={`badge ${
                           transfert.statut === 'effectue' ? 'badge-success' : 'badge-error'
                         }`}>
-                          {transfert.statut}
+                          {transfert.statut === 'effectue' ? 'Effectué' : 'Annulé'}
                         </span>
                       </td>
                     </tr>
@@ -284,11 +318,14 @@ export default function StockAtelierView() {
       {showTransferModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">Transférer vers l'atelier</h3>
+            <h3 className="text-lg font-semibold mb-4 flex items-center">
+              <ArrowRight className="w-5 h-5 mr-2 text-orange-600" />
+              Transférer vers l'atelier
+            </h3>
             <form onSubmit={handleTransfert} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Produit
+                  Produit à transférer
                 </label>
                 <select
                   value={selectedProduit}
@@ -320,16 +357,27 @@ export default function StockAtelierView() {
                   placeholder="0.0"
                   required
                 />
+                {selectedProduit && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    Stock disponible: {utils.formatNumber(
+                      produits.find(p => p.id === parseInt(selectedProduit))?.quantite_restante || 0, 1
+                    )} {produits.find(p => p.id === parseInt(selectedProduit))?.unite?.label}
+                  </p>
+                )}
               </div>
               <div className="flex justify-end space-x-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => setShowTransferModal(false)}
+                  onClick={() => {
+                    setShowTransferModal(false);
+                    setError('');
+                  }}
                   className="btn-secondary"
                 >
                   Annuler
                 </button>
                 <button type="submit" className="btn-primary">
+                  <ArrowRight className="w-4 h-4" />
                   Transférer
                 </button>
               </div>

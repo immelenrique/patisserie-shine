@@ -2,37 +2,28 @@
 // ==========================================
 // SERVICES POUR STOCK ATELIER
 // ==========================================
-// ===================== SERVICES STOCK ATELIER =====================
-// À ajouter à la fin de votre fichier lib/supabase.js
 
 export const stockAtelierService = {
-  // Récupérer le stock atelier réel (transféré - utilisé)
+  // Récupérer le stock atelier avec calcul du stock réel
   async getStockAtelier() {
     try {
       const { data, error } = await supabase
-        .from('stock_atelier')
+        .from('vue_stock_atelier')
         .select(`
           *,
-          produit:produits(
-            id,
+          produit:produits!vue_stock_atelier_produit_id_fkey(
             nom,
-            unite:unites(label)
+            unite:unites!produits_unite_id_fkey(label)
           )
         `)
-        .order('produit(nom)');
+        .order('nom_produit');
       
       if (error) {
         console.error('Erreur getStockAtelier:', error);
         return { stock: [], error: error.message };
       }
       
-      // Calculer le stock réel disponible
-      const stockReel = (data || []).map(item => ({
-        ...item,
-        stock_reel: item.quantite_disponible - item.quantite_reservee
-      }));
-      
-      return { stock: stockReel, error: null };
+      return { stock: data || [], error: null };
     } catch (error) {
       console.error('Erreur dans getStockAtelier:', error);
       return { stock: [], error: error.message };
@@ -44,26 +35,8 @@ export const stockAtelierService = {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
-      // Vérifier le stock disponible du produit
-      const { data: produit, error: produitError } = await supabase
-        .from('produits')
-        .select('quantite_restante, nom')
-        .eq('id', produitId)
-        .single();
-      
-      if (produitError) {
-        return { success: false, error: produitError.message };
-      }
-      
-      if (produit.quantite_restante < quantite) {
-        return { 
-          success: false, 
-          error: `Stock insuffisant. Disponible: ${produit.quantite_restante}` 
-        };
-      }
-      
       // Effectuer le transfert
-      const { data, error } = await supabase.rpc('effectuer_transfert_atelier', {
+      const { data, error } = await supabase.rpc('transferer_vers_atelier', {
         p_produit_id: produitId,
         p_quantite: quantite,
         p_transfere_par: user?.id
@@ -112,13 +85,12 @@ export const recetteService = {
   async getAll() {
     try {
       const { data, error } = await supabase
-        .from('recettes')
+        .from('vue_recettes_cout')
         .select(`
           *,
-          ingredient:produits!recettes_produit_ingredient_id_fkey(
-            id,
+          ingredient:produits!vue_recettes_cout_produit_ingredient_id_fkey(
             nom,
-            unite:unites(label)
+            unite:unites!produits_unite_id_fkey(label)
           )
         `)
         .order('nom_produit');
@@ -138,20 +110,14 @@ export const recetteService = {
   // Récupérer les produits disponibles pour les recettes (groupés par nom)
   async getProduitsRecettes() {
     try {
-      const { data, error } = await supabase
-        .from('recettes')
-        .select('nom_produit')
-        .order('nom_produit');
+      const { data, error } = await supabase.rpc('get_produits_recettes');
       
       if (error) {
         console.error('Erreur getProduitsRecettes:', error);
         return { produits: [], error: error.message };
       }
       
-      // Éliminer les doublons
-      const produitsUniques = [...new Set((data || []).map(r => r.nom_produit))];
-      
-      return { produits: produitsUniques, error: null };
+      return { produits: (data || []).map(item => item.nom_produit), error: null };
     } catch (error) {
       console.error('Erreur dans getProduitsRecettes:', error);
       return { produits: [], error: error.message };
@@ -163,7 +129,6 @@ export const recetteService = {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       
-      const { data, error } = await supabase
         .from('recettes')
         .insert({
           nom_produit: recetteData.nom_produit,
@@ -185,60 +150,42 @@ export const recetteService = {
         return { recette: null, error: error.message };
       }
 
-      return { recette: data, error: null };
-    } catch (error) {
-      console.error('Erreur dans create recette:', error);
-      return { recette: null, error: error.message };
-    }
-  },
-
-  // Obtenir les ingrédients nécessaires pour une recette
-  async getIngredientsRecette(nomProduit) {
-    try {
-      const { data, error } = await supabase
-        .from('recettes')
+      // Utiliser la fonction qui gère automatiquement la consommation des ingrédients
+      const { data, error } = await supabase.rpc('creer_production_avec_consommation', {
+        p_nom_produit: productionData.produit,
+        p_quantite: productionData.quantite,
+        p_destination: productionData.destination || 'Boutique',
+        p_date_production: productionData.date_production || new Date().toISOString().split('T')[0],
+        p_producteur_id: user?.id
+      });
+      
+      if (error) {
+        console.error('Erreur vérification ingrédients:', error);
+        return { disponible: false, details: [], error: error.message };
+      }
+      
+      // Récupérer la production créée avec ses détails
+      const { data: production, error: fetchError } = await supabase
+        .from('productions')
         .select(`
           *,
-          ingredient:produits!recettes_produit_ingredient_id_fkey(
-            id,
-            nom,
-            quantite_restante,
-            unite:unites(label)
-          )
+          producteur:profiles!productions_producteur_id_fkey(nom)
         `)
-        .eq('nom_produit', nomProduit);
-
-      if (error) {
-        console.error('Erreur getIngredientsRecette:', error);
-        return { ingredients: [], error: error.message };
+        .eq('id', data)
+        .single();
+      
+      if (fetchError) {
+        console.error('Erreur fetch production:', fetchError);
+        return { production: null, error: fetchError.message };
       }
-
-      return { ingredients: data || [], error: null };
-    } catch (error) {
-      console.error('Erreur dans getIngredientsRecette:', error);
-      return { ingredients: [], error: error.message };
-    }
-  },
-
-  // Vérifier la disponibilité des ingrédients pour une production
-  async verifierDisponibiliteIngredients(nomProduit, quantiteAPproduire) {
-    try {
-      const { ingredients, error } = await this.getIngredientsRecette(nomProduit);
       
-      if (error) return { disponible: false, details: [], error };
-      
-      const details = ingredients.map(ing => {
-        const quantiteNecessaire = ing.quantite_necessaire * quantiteAProduite;
-        const stockAtelier = ing.ingredient?.stock_atelier || 0;
-        
-        return {
-          ingredient: ing.ingredient.nom,
-          quantite_necessaire: quantiteNecessaire,
-          stock_disponible: stockAtelier,
-          suffisant: stockAtelier >= quantiteNecessaire,
-          unite: ing.ingredient.unite?.label || ''
-        };
-      });
+      return { production, error: null };
+        ingredient: item.ingredient_nom,
+        quantite_necessaire: item.quantite_necessaire,
+        stock_disponible: item.stock_disponible,
+        suffisant: item.suffisant,
+        unite: item.unite
+      }));
       
       const disponible = details.every(d => d.suffisant);
       
