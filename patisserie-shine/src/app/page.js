@@ -1632,7 +1632,7 @@ const PatisserieShineApp = () => {
             <div className="flex items-center space-x-4 text-sm text-gray-500">
               <span>Version 2.0.0</span>
               <span>•</span>
-              <span>Made in Côte d'Ivoire 🇨🇮</span>
+              <span>Burkina Faso</span>
             </div>
           </div>
         </div>
@@ -1642,3 +1642,4 @@ const PatisserieShineApp = () => {
 };
 
 export default PatisserieShineApp;
+
