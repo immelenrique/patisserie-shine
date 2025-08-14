@@ -602,7 +602,7 @@ export const utils = {
       maximumFractionDigits: decimals
     }).format(number || 0)
   }
-},
+}
 // ==========================================
 // SERVICES POUR STOCK ATELIER
 // ==========================================
@@ -721,4 +721,5 @@ export const recetteService = {
 };
 
 export default supabase
+
 
