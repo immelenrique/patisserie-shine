@@ -1,87 +1,251 @@
-// ===================== SERVICES PRODUCTION =====================
-export const productionService = {
-   // Récupérer toutes les productions
-   async getAll() {
-     try {
-       const { data, error } = await supabase
-         .from('productions')
-         .select(`
-           *,
-           producteur:profiles!productions_producteur_id_fkey(nom)
-         `)
-         .order('created_at', { ascending: false })
-       
-       if (error) {
-         console.error('Erreur getAll productions:', error)
-         return { productions: [], error: error.message }
-       }
-       
-       return { productions: data || [], error: null }
-     } catch (error) {
-       console.error('Erreur dans getAll productions:', error)
-       return { productions: [], error: error.message }
-     }
-   },
+@@ .. @@
+// ==========================================
+// SERVICES POUR STOCK ATELIER
+// ==========================================
+// ===================== SERVICES STOCK ATELIER =====================
+// À ajouter à la fin de votre fichier lib/supabase.js
 
-   // Créer une nouvelle production
-   async create(productionData) {
-     try {
-       const { data: { user } } = await supabase.auth.getUser()
-       
-      // Vérifier la disponibilité des ingrédients
-      const { disponible, details, error: verificationError } = await recetteService.verifierDisponibiliteIngredients(
-        productionData.produit,
-        productionData.quantite
-      );
+export const stockAtelierService = {
+  // Récupérer le stock atelier réel (transféré - utilisé)
+  async getStockAtelier() {
+    try {
+      const { data, error } = await supabase
+        .from('stock_atelier')
+        .select(`
+          *,
+          produit:produits(
+            id,
+            nom,
+            unite:unites(label)
+          )
+        `)
+        .order('produit(nom)');
       
-      if (verificationError) {
-        return { production: null, error: verificationError };
+      if (error) {
+        console.error('Erreur getStockAtelier:', error);
+        return { stock: [], error: error.message };
       }
       
-      if (!disponible) {
-        const ingredientsManquants = details
-          .filter(d => !d.suffisant)
-          .map(d => `${d.ingredient}: ${d.quantite_necessaire} ${d.unite} (disponible: ${d.stock_disponible})`)
-          .join(', ');
-        
+      // Calculer le stock réel disponible
+      const stockReel = (data || []).map(item => ({
+        ...item,
+        stock_reel: item.quantite_disponible - item.quantite_reservee
+      }));
+      
+      return { stock: stockReel, error: null };
+    } catch (error) {
+      console.error('Erreur dans getStockAtelier:', error);
+      return { stock: [], error: error.message };
+    }
+  },
+
+  // Transférer vers l'atelier
+  async transfererVersAtelier(produitId, quantite) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Vérifier le stock disponible du produit
+      const { data: produit, error: produitError } = await supabase
+        .from('produits')
+        .select('quantite_restante, nom')
+        .eq('id', produitId)
+        .single();
+      
+      if (produitError) {
+        return { success: false, error: produitError.message };
+      }
+      
+      if (produit.quantite_restante < quantite) {
         return { 
-          production: null, 
-          error: `Ingrédients insuffisants: ${ingredientsManquants}` 
+          success: false, 
+          error: `Stock insuffisant. Disponible: ${produit.quantite_restante}` 
         };
       }
       
-      // Créer la production avec consommation des ingrédients
-      const { data, error } = await supabase.rpc('creer_production_avec_consommation', {
-        p_produit: productionData.produit,
-        p_quantite: productionData.quantite,
-        p_destination: productionData.destination || 'Boutique',
-        p_date_production: productionData.date_production || new Date().toISOString().split('T')[0],
-        p_producteur_id: user?.id
+      // Effectuer le transfert
+      const { data, error } = await supabase.rpc('effectuer_transfert_atelier', {
+        p_produit_id: produitId,
+        p_quantite: quantite,
+        p_transfere_par: user?.id
       });
-       
-       if (error) {
-         console.error('Erreur create production:', error)
-         return { production: null, error: error.message }
-       }
-       
-      // Récupérer la production créée avec ses détails
-      const { data: productionComplete, error: fetchError } = await supabase
-        .from('productions')
+
+      if (error) {
+        console.error('Erreur transfert:', error);
+        return { success: false, error: error.message };
+      }
+
+      return { success: true, error: null };
+    } catch (error) {
+      console.error('Erreur dans transfererVersAtelier:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Obtenir l'historique des transferts
+  async getHistoriqueTransferts() {
+    try {
+      const { data, error } = await supabase
+        .from('transferts_atelier')
         .select(`
           *,
-          producteur:profiles!productions_producteur_id_fkey(nom)
+          produit:produits(nom, unite:unites(label)),
+          transfere_par_profile:profiles!transferts_atelier_transfere_par_fkey(nom)
         `)
-        .eq('id', data)
-        .single();
+        .order('created_at', { ascending: false })
+        .limit(50);
       
-      if (fetchError) {
-        console.error('Erreur fetch production:', fetchError);
-        return { production: null, error: fetchError.message };
+      if (error) {
+        console.error('Erreur historique transferts:', error);
+        return { transferts: [], error: error.message };
       }
       
-      return { production: productionComplete, error: null }
-     } catch (error) {
-       console.error('Erreur dans create production:', error)
-       return { production: null, error: error.message }
-     }
-   },
+      return { transferts: data || [], error: null };
+    } catch (error) {
+      console.error('Erreur dans getHistoriqueTransferts:', error);
+      return { transferts: [], error: error.message };
+    }
+  }
+};
+
+export const recetteService = {
+  // Récupérer toutes les recettes
+  async getAll() {
+    try {
+      const { data, error } = await supabase
+        .from('recettes')
+        .select(`
+          *,
+          ingredient:produits!recettes_produit_ingredient_id_fkey(
+            id,
+            nom,
+            unite:unites(label)
+          )
+        `)
+        .order('nom_produit');
+      
+      if (error) {
+        console.error('Erreur getAll recettes:', error);
+        return { recettes: [], error: error.message };
+      }
+      
+      return { recettes: data || [], error: null };
+    } catch (error) {
+      console.error('Erreur dans getAll recettes:', error);
+      return { recettes: [], error: error.message };
+    }
+  },
+
+  // Récupérer les produits disponibles pour les recettes (groupés par nom)
+  async getProduitsRecettes() {
+    try {
+      const { data, error } = await supabase
+        .from('recettes')
+        .select('nom_produit')
+        .order('nom_produit');
+      
+      if (error) {
+        console.error('Erreur getProduitsRecettes:', error);
+        return { produits: [], error: error.message };
+      }
+      
+      // Éliminer les doublons
+      const produitsUniques = [...new Set((data || []).map(r => r.nom_produit))];
+      
+      return { produits: produitsUniques, error: null };
+    } catch (error) {
+      console.error('Erreur dans getProduitsRecettes:', error);
+      return { produits: [], error: error.message };
+    }
+  },
+
+  // Créer une recette
+  async create(recetteData) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      const { data, error } = await supabase
+        .from('recettes')
+        .insert({
+          nom_produit: recetteData.nom_produit,
+          produit_ingredient_id: recetteData.produit_ingredient_id,
+          quantite_necessaire: recetteData.quantite_necessaire,
+          created_by: user?.id
+        })
+        .select(`
+          *,
+          ingredient:produits!recettes_produit_ingredient_id_fkey(
+            nom,
+            unite:unites(label)
+          )
+        `)
+        .single();
+
+      if (error) {
+        console.error('Erreur create recette:', error);
+        return { recette: null, error: error.message };
+      }
+
+      return { recette: data, error: null };
+    } catch (error) {
+      console.error('Erreur dans create recette:', error);
+      return { recette: null, error: error.message };
+    }
+  },
+
+  // Obtenir les ingrédients nécessaires pour une recette
+  async getIngredientsRecette(nomProduit) {
+    try {
+      const { data, error } = await supabase
+        .from('recettes')
+        .select(`
+          *,
+          ingredient:produits!recettes_produit_ingredient_id_fkey(
+            id,
+            nom,
+            quantite_restante,
+            unite:unites(label)
+          )
+        `)
+        .eq('nom_produit', nomProduit);
+
+      if (error) {
+        console.error('Erreur getIngredientsRecette:', error);
+        return { ingredients: [], error: error.message };
+      }
+
+      return { ingredients: data || [], error: null };
+    } catch (error) {
+      console.error('Erreur dans getIngredientsRecette:', error);
+      return { ingredients: [], error: error.message };
+    }
+  },
+
+  // Vérifier la disponibilité des ingrédients pour une production
+  async verifierDisponibiliteIngredients(nomProduit, quantiteAPproduire) {
+    try {
+      const { ingredients, error } = await this.getIngredientsRecette(nomProduit);
+      
+      if (error) return { disponible: false, details: [], error };
+      
+      const details = ingredients.map(ing => {
+        const quantiteNecessaire = ing.quantite_necessaire * quantiteAProduite;
+        const stockAtelier = ing.ingredient?.stock_atelier || 0;
+        
+        return {
+          ingredient: ing.ingredient.nom,
+          quantite_necessaire: quantiteNecessaire,
+          stock_disponible: stockAtelier,
+          suffisant: stockAtelier >= quantiteNecessaire,
+          unite: ing.ingredient.unite?.label || ''
+        };
+      });
+      
+      const disponible = details.every(d => d.suffisant);
+      
+      return { disponible, details, error: null };
+    } catch (error) {
+      console.error('Erreur dans verifierDisponibiliteIngredients:', error);
+      return { disponible: false, details: [], error: error.message };
+    }
+  }
+};
