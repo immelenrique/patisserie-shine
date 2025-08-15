@@ -17,8 +17,7 @@ export default function ProductionManager({ currentUser }) {
     destination: 'Boutique',
     date_production: new Date().toISOString().split('T')[0]
   });
-  const [ingredientsVerification, setIngredientsVerification] = useState(null);
-  const [verificationLoading, setVerificationLoading] = useState(false);
+ 
 
   useEffect(() => {
     loadData();
@@ -74,21 +73,12 @@ export default function ProductionManager({ currentUser }) {
     }
   };
 
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      verifierIngredients();
-    }, 500); // Délai pour éviter trop d'appels
-
-    return () => clearTimeout(timeoutId);
-  }, [formData.produit, formData.quantite]);
+  
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!ingredientsVerification?.disponible) {
-      setError('Impossible de créer la production : ingrédients insuffisants dans l\'atelier');
-      return;
-    }
+   
 
     try {
       const result = await productionService.create({
