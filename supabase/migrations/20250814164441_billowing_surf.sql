@@ -295,4 +295,255 @@ BEGIN
   WHERE r.nom_produit = p_nom_produit
   ORDER BY p.nom;
 END;
+/*
+  # Correction du système de validation des demandes
+
+  1. Problème identifié
+    - La fonction RPC `valider_demande` n'existe pas
+    - Les demandes validées ne vont pas automatiquement dans l'atelier
+    
+  2. Solution
+    - Créer la fonction `valider_demande` manquante
+    - Cette fonction doit valider la demande ET ajouter au stock atelier
+    - Mettre à jour le stock principal automatiquement
+*/
+
+-- Fonction pour valider une demande et ajouter au stock atelier
+CREATE OR REPLACE FUNCTION valider_demande(
+  demande_id_input TEXT, -- Utiliser TEXT pour correspondre au code JS
+  p_valideur_id UUID
+) RETURNS BOOLEAN AS $$
+DECLARE
+  v_demande RECORD;
+  v_produit RECORD;
+  v_stock_suffisant BOOLEAN := FALSE;
+BEGIN
+  -- Récupérer les informations de la demande
+  SELECT d.*, p.nom as produit_nom, p.quantite_restante, p.unite_id
+  INTO v_demande
+  FROM demandes d
+  JOIN produits p ON d.produit_id = p.id
+  WHERE d.id = demande_id_input::INTEGER AND d.statut = 'en_attente';
+  
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Demande non trouvée ou déjà traitée';
+  END IF;
+  
+  -- Vérifier le stock disponible
+  IF v_demande.quantite_restante >= v_demande.quantite THEN
+    v_stock_suffisant := TRUE;
+  ELSE
+    RAISE EXCEPTION 'Stock insuffisant pour %. Demandé: %, Disponible: %', 
+      v_demande.produit_nom, 
+      v_demande.quantite, 
+      v_demande.quantite_restante;
+  END IF;
+  
+  -- Valider la demande
+  UPDATE demandes
+  SET statut = 'validee',
+      valideur_id = p_valideur_id,
+      date_validation = NOW(),
+      updated_at = NOW()
+  WHERE id = demande_id_input::INTEGER;
+  
+  -- Décrémenter le stock principal
+  UPDATE produits
+  SET quantite_restante = quantite_restante - v_demande.quantite,
+      updated_at = NOW()
+  WHERE id = v_demande.produit_id;
+  
+  -- Si destination = Production, ajouter au stock atelier
+  IF v_demande.destination = 'Production' THEN
+    -- Ajouter au stock atelier
+    INSERT INTO stock_atelier (produit_id, quantite_disponible, derniere_maj)
+    VALUES (v_demande.produit_id, v_demande.quantite, NOW())
+    ON CONFLICT (produit_id)
+    DO UPDATE SET
+      quantite_disponible = stock_atelier.quantite_disponible + v_demande.quantite,
+      derniere_maj = NOW(),
+      updated_at = NOW();
+    
+    -- Enregistrer le transfert vers l'atelier
+    INSERT INTO transferts_atelier (
+      produit_id, 
+      quantite_transferee, 
+      transfere_par,
+      demande_id
+    )
+    VALUES (
+      v_demande.produit_id, 
+      v_demande.quantite, 
+      p_valideur_id,
+      demande_id_input::INTEGER
+    );
+  END IF;
+  
+  -- Enregistrer le mouvement de stock
+  INSERT INTO mouvements_stock (
+    produit_id, 
+    type_mouvement, 
+    quantite, 
+    quantite_avant, 
+    quantite_apres, 
+    raison,
+    reference_type,
+    reference_id,
+    utilisateur_id
+  )
+  VALUES (
+    v_demande.produit_id,
+    'sortie',
+    v_demande.quantite,
+    v_demande.quantite_restante,
+    v_demande.quantite_restante - v_demande.quantite,
+    CASE 
+      WHEN v_demande.destination = 'Production' THEN 'Validation demande → Stock atelier'
+      ELSE 'Validation demande → ' || v_demande.destination
+    END,
+    'demande',
+    demande_id_input::INTEGER,
+    p_valideur_id
+  );
+  
+  RETURN TRUE;
+  
+EXCEPTION
+  WHEN OTHERS THEN
+    -- En cas d'erreur, annuler tout
+    RAISE EXCEPTION 'Erreur lors de la validation: %', SQLERRM;
+    RETURN FALSE;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Mise à jour de la table transferts_atelier pour inclure la référence demande
+ALTER TABLE transferts_atelier 
+ADD COLUMN IF NOT EXISTS demande_id INTEGER REFERENCES demandes(id);
+
+-- Vue mise à jour pour le stock atelier avec usage
+CREATE OR REPLACE VIEW vue_stock_atelier_usage AS
+SELECT 
+  sa.id,
+  sa.produit_id,
+  p.nom as nom_produit,
+  sa.quantite_disponible,
+  sa.quantite_reservee,
+  (sa.quantite_disponible - sa.quantite_reservee) as stock_reel,
+  u.label as unite,
+  sa.derniere_maj,
+  sa.created_at,
+  sa.updated_at,
+  -- Statut du stock
+  CASE 
+    WHEN (sa.quantite_disponible - sa.quantite_reservee) <= 0 THEN 'rupture'
+    WHEN (sa.quantite_disponible - sa.quantite_reservee) <= sa.quantite_disponible * 0.2 THEN 'critique'
+    WHEN (sa.quantite_disponible - sa.quantite_reservee) <= sa.quantite_disponible * 0.5 THEN 'faible'
+    ELSE 'normal'
+  END as statut_stock
+FROM stock_atelier sa
+JOIN produits p ON sa.produit_id = p.id
+LEFT JOIN unites u ON p.unite_id = u.id
+WHERE sa.quantite_disponible > 0 OR sa.quantite_reservee > 0
+ORDER BY p.nom;
+
+-- Fonction pour vérifier la disponibilité des ingrédients dans l'atelier
+CREATE OR REPLACE FUNCTION verifier_ingredients_atelier(
+  p_nom_produit VARCHAR,
+  p_quantite_a_produire NUMERIC
+)
+RETURNS TABLE(
+  ingredient VARCHAR,
+  quantite_necessaire NUMERIC,
+  stock_disponible NUMERIC,
+  suffisant BOOLEAN,
+  unite VARCHAR
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    p.nom as ingredient,
+    (r.quantite_necessaire * p_quantite_a_produire) as quantite_necessaire,
+    COALESCE(sa.quantite_disponible - sa.quantite_reservee, 0) as stock_disponible,
+    (COALESCE(sa.quantite_disponible - sa.quantite_reservee, 0) >= (r.quantite_necessaire * p_quantite_a_produire)) as suffisant,
+    COALESCE(u.label, '') as unite
+  FROM recettes r
+  JOIN produits p ON r.produit_ingredient_id = p.id
+  LEFT JOIN unites u ON p.unite_id = u.id
+  LEFT JOIN stock_atelier sa ON p.id = sa.produit_id
+  WHERE r.nom_produit = p_nom_produit
+  ORDER BY p.nom;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Fonction pour calculer le stock nécessaire
+CREATE OR REPLACE FUNCTION calculer_stock_necessaire(
+  p_nom_produit VARCHAR,
+  p_quantite_a_produire NUMERIC
+)
+RETURNS TABLE(
+  ingredient_nom VARCHAR,
+  quantite_necessaire NUMERIC,
+  quantite_disponible NUMERIC,
+  quantite_manquante NUMERIC,
+  unite VARCHAR
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    p.nom as ingredient_nom,
+    (r.quantite_necessaire * p_quantite_a_produire) as quantite_necessaire,
+    COALESCE(sa.quantite_disponible - sa.quantite_reservee, 0) as quantite_disponible,
+    GREATEST(0, (r.quantite_necessaire * p_quantite_a_produire) - COALESCE(sa.quantite_disponible - sa.quantite_reservee, 0)) as quantite_manquante,
+    COALESCE(u.label, '') as unite
+  FROM recettes r
+  JOIN produits p ON r.produit_ingredient_id = p.id
+  LEFT JOIN unites u ON p.unite_id = u.id
+  LEFT JOIN stock_atelier sa ON p.id = sa.produit_id
+  WHERE r.nom_produit = p_nom_produit
+  ORDER BY p.nom;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Fonction pour obtenir les produits avec recettes
+CREATE OR REPLACE FUNCTION get_produits_avec_recettes()
+RETURNS TABLE(nom_produit VARCHAR) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT DISTINCT r.nom_produit
+  FROM recettes r
+  ORDER BY r.nom_produit;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Correction de la vue recettes pour compatibilité
+CREATE OR REPLACE VIEW vue_recettes_cout AS
+SELECT 
+  CONCAT('recette_', r.id) as recette_id, -- ID unique pour chaque ligne
+  r.nom_produit,
+  r.produit_ingredient_id,
+  p.nom as ingredient_nom,
+  r.quantite_necessaire,
+  u.label as unite,
+  p.prix_achat,
+  p.quantite as quantite_achat,
+  -- Calcul du coût unitaire de l'ingrédient
+  CASE 
+    WHEN p.quantite > 0 THEN 
+      ROUND((p.prix_achat / p.quantite) * r.quantite_necessaire, 2)
+    ELSE 0 
+  END as cout_ingredient,
+  -- Stock disponible dans l'atelier
+  COALESCE(sa.quantite_disponible - sa.quantite_reservee, 0) as stock_atelier_disponible,
+  -- Vérifier si l'ingrédient est disponible en quantité suffisante
+  CASE 
+    WHEN COALESCE(sa.quantite_disponible - sa.quantite_reservee, 0) >= r.quantite_necessaire THEN TRUE
+    ELSE FALSE
+  END as ingredient_disponible,
+  r.created_at,
+  r.updated_at
+FROM recettes r
+JOIN produits p ON r.produit_ingredient_id = p.id
+LEFT JOIN unites u ON p.unite_id = u.id
+LEFT JOIN stock_atelier sa ON p.id = sa.produit_id
+ORDER BY r.nom_produit, p.nom;
 $$ LANGUAGE plpgsql;
