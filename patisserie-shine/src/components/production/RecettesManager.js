@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Plus, ChefHat, Calculator, Trash2, Package } from 'lucide-react';
+import { Plus, ChefHat, Calculator, Trash2, Package, Copy } from 'lucide-react';
 import { Card, Modal } from '../ui';
 import { recetteService, productService, utils } from '../../lib/supabase';
 
@@ -21,6 +21,8 @@ export default function RecettesManager({ currentUser }) {
 
   useEffect(() => {
     loadData();
+    // Ajouter un premier ingrédient par défaut
+    ajouterIngredient();
   }, []);
 
   const loadData = async () => {
@@ -58,6 +60,19 @@ export default function RecettesManager({ currentUser }) {
     }]);
   };
 
+  // Ajouter plusieurs ingrédients d'un coup
+  const ajouterPlusieursProduits = () => {
+    const nouveauxIngredients = [];
+    for (let i = 0; i < 3; i++) {
+      nouveauxIngredients.push({
+        id: Date.now() + i,
+        produit_ingredient_id: '',
+        quantite_necessaire: ''
+      });
+    }
+    setIngredients([...ingredients, ...nouveauxIngredients]);
+  };
+
   // Supprimer un ingrédient de la liste
   const supprimerIngredient = (id) => {
     setIngredients(ingredients.filter(ing => ing.id !== id));
@@ -70,6 +85,18 @@ export default function RecettesManager({ currentUser }) {
     ));
   };
 
+  // Dupliquer un ingrédient
+  const dupliquerIngredient = (id) => {
+    const ingredient = ingredients.find(ing => ing.id === id);
+    if (ingredient) {
+      setIngredients([...ingredients, {
+        ...ingredient,
+        id: Date.now(),
+        quantite_necessaire: '' // Reset la quantité
+      }]);
+    }
+  };
+
   // Sauvegarder la recette complète
   const handleSaveRecette = async () => {
     if (!selectedProduit || ingredients.length === 0) {
@@ -77,19 +104,27 @@ export default function RecettesManager({ currentUser }) {
       return;
     }
 
-    try {
-      // Sauvegarder chaque ingrédient
-      for (const ingredient of ingredients) {
-        if (ingredient.produit_ingredient_id && ingredient.quantite_necessaire) {
-          const { error } = await recetteService.create({
-            nom_produit: selectedProduit,
-            produit_ingredient_id: parseInt(ingredient.produit_ingredient_id),
-            quantite_necessaire: parseFloat(ingredient.quantite_necessaire)
-          });
+    // Vérifier que tous les ingrédients ont des données
+    const ingredientsValides = ingredients.filter(ing => 
+      ing.produit_ingredient_id && ing.quantite_necessaire && parseFloat(ing.quantite_necessaire) > 0
+    );
 
-          if (error) {
-            console.error('Erreur ajout ingrédient:', error);
-          }
+    if (ingredientsValides.length === 0) {
+      alert('Veuillez remplir au moins un ingrédient avec une quantité valide');
+      return;
+    }
+
+    try {
+      // Sauvegarder chaque ingrédient valide
+      for (const ingredient of ingredientsValides) {
+        const { error } = await recetteService.create({
+          nom_produit: selectedProduit,
+          produit_ingredient_id: parseInt(ingredient.produit_ingredient_id),
+          quantite_necessaire: parseFloat(ingredient.quantite_necessaire)
+        });
+
+        if (error) {
+          console.error('Erreur ajout ingrédient:', error);
         }
       }
 
@@ -98,7 +133,9 @@ export default function RecettesManager({ currentUser }) {
       setShowAddModal(false);
       setSelectedProduit('');
       setIngredients([]);
-      alert('Recette créée avec succès !');
+      // Re-ajouter un ingrédient par défaut pour la prochaine fois
+      setTimeout(() => ajouterIngredient(), 100);
+      alert(`Recette créée avec succès ! ${ingredientsValides.length} ingrédient(s) ajouté(s).`);
     } catch (err) {
       console.error('Erreur:', err);
       alert('Erreur lors de la création de la recette');
@@ -133,6 +170,13 @@ export default function RecettesManager({ currentUser }) {
     return acc;
   }, {});
 
+  // Obtenir les ingrédients valides (avec données remplies)
+  const getIngredientsValides = () => {
+    return ingredients.filter(ing => 
+      ing.produit_ingredient_id && ing.quantite_necessaire && parseFloat(ing.quantite_necessaire) > 0
+    );
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -149,7 +193,7 @@ export default function RecettesManager({ currentUser }) {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Recettes de Production</h2>
-          <p className="text-gray-600">Gérez les ingrédients nécessaires pour chaque produit fini</p>
+          <p className="text-gray-600">Définissez les ingrédients nécessaires pour chaque produit fini</p>
         </div>
         <div className="flex space-x-3">
           <button 
@@ -208,7 +252,7 @@ export default function RecettesManager({ currentUser }) {
                         {ingredients.length} ingrédient{ingredients.length > 1 ? 's' : ''}
                       </span>
                       <p className={`text-sm mt-1 ${peutProduire ? 'text-green-600' : 'text-red-600'}`}>
-                        {peutProduire ? '✓ Peut être produit' : '✗ Stock insuffisant'}
+                        {peutProduire ? '✓ Peut être produit' : '✗ Stock atelier insuffisant'}
                       </p>
                     </div>
                   </div>
@@ -271,9 +315,10 @@ export default function RecettesManager({ currentUser }) {
           setShowAddModal(false);
           setSelectedProduit('');
           setIngredients([]);
+          setTimeout(() => ajouterIngredient(), 100);
         }} 
         title="Créer une Nouvelle Recette" 
-        size="lg"
+        size="xl"
       >
         <div className="space-y-6">
           <div>
@@ -285,30 +330,41 @@ export default function RecettesManager({ currentUser }) {
               value={selectedProduit}
               onChange={(e) => setSelectedProduit(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              placeholder="Ex: Croissants au Beurre"
+              placeholder="Ex: Croissants au Beurre (pour 12 pièces)"
               required
             />
             <p className="text-xs text-gray-500 mt-1">
-              Le nom du produit que vous fabriquez
+              Précisez la quantité produite (ex: "pour 12 pièces", "pour 1 kg")
             </p>
           </div>
 
           <div>
             <div className="flex justify-between items-center mb-3">
               <label className="block text-sm font-medium text-gray-700">
-                Ingrédients nécessaires *
+                Ingrédients nécessaires * 
+                <span className="text-green-600 ml-2">({getIngredientsValides().length} valide{getIngredientsValides().length > 1 ? 's' : ''})</span>
               </label>
-              <button
-                type="button"
-                onClick={ajouterIngredient}
-                className="bg-green-500 text-white px-3 py-1 rounded-lg text-sm hover:bg-green-600 transition-colors flex items-center space-x-1"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Ajouter</span>
-              </button>
+              <div className="flex space-x-2">
+                <button
+                  type="button"
+                  onClick={ajouterIngredient}
+                  className="bg-green-500 text-white px-3 py-1 rounded-lg text-sm hover:bg-green-600 transition-colors flex items-center space-x-1"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Ajouter</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={ajouterPlusieursProduits}
+                  className="bg-blue-500 text-white px-3 py-1 rounded-lg text-sm hover:bg-blue-600 transition-colors flex items-center space-x-1"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+3</span>
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-3 max-h-60 overflow-y-auto">
+            <div className="space-y-3 max-h-80 overflow-y-auto border border-gray-200 rounded-lg p-4">
               {ingredients.length === 0 ? (
                 <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
                   <Package className="w-8 h-8 mx-auto mb-2 text-gray-300" />
@@ -316,71 +372,137 @@ export default function RecettesManager({ currentUser }) {
                   <p className="text-sm">Cliquez sur "Ajouter" pour commencer</p>
                 </div>
               ) : (
-                ingredients.map((ingredient) => (
-                  <div key={ingredient.id} className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <select
-                        value={ingredient.produit_ingredient_id}
-                        onChange={(e) => updateIngredient(ingredient.id, 'produit_ingredient_id', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
-                      >
-                        <option value="">Choisir un ingrédient</option>
-                        {products.map(product => (
-                          <option key={product.id} value={product.id}>
-                            {product.nom} ({product.unite?.label})
-                          </option>
-                        ))}
-                      </select>
+                ingredients.map((ingredient, index) => {
+                  const produitSelectionne = products.find(p => p.id === parseInt(ingredient.produit_ingredient_id));
+                  const estValide = ingredient.produit_ingredient_id && ingredient.quantite_necessaire && parseFloat(ingredient.quantite_necessaire) > 0;
+                  
+                  return (
+                    <div 
+                      key={ingredient.id} 
+                      className={`grid grid-cols-1 md:grid-cols-4 gap-3 p-4 rounded-lg border-2 ${
+                        estValide ? 'border-green-200 bg-green-50' : 'border-gray-200 bg-gray-50'
+                      }`}
+                    >
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Ingrédient {index + 1} {estValide && <span className="text-green-600">✓</span>}
+                        </label>
+                        <select
+                          value={ingredient.produit_ingredient_id}
+                          onChange={(e) => updateIngredient(ingredient.id, 'produit_ingredient_id', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
+                        >
+                          <option value="">Choisir un ingrédient</option>
+                          {products.map(product => (
+                            <option key={product.id} value={product.id}>
+                              {product.nom} ({product.unite?.label}) - Stock: {utils.formatNumber(product.quantite_restante || 0, 1)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Quantité</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={ingredient.quantite_necessaire}
+                          onChange={(e) => updateIngredient(ingredient.id, 'quantite_necessaire', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
+                          placeholder="0.0"
+                        />
+                        <div className="text-xs text-gray-500 mt-1">
+                          {produitSelectionne ? produitSelectionne.unite?.value : 'unité'}
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-end space-x-1">
+                        <button
+                          type="button"
+                          onClick={() => dupliquerIngredient(ingredient.id)}
+                          className="text-blue-500 hover:text-blue-700 p-1 border border-blue-300 rounded hover:bg-blue-50"
+                          title="Dupliquer cet ingrédient"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => supprimerIngredient(ingredient.id)}
+                          className="text-red-500 hover:text-red-700 p-1 border border-red-300 rounded hover:bg-red-50"
+                          title="Supprimer cet ingrédient"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      
+                      {/* Affichage des infos produit sélectionné */}
+                      {produitSelectionne && (
+                        <div className="md:col-span-4 mt-2 pt-2 border-t border-gray-300">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-gray-600">
+                            <div>
+                              <strong>Stock principal:</strong> {utils.formatNumber(produitSelectionne.quantite_restante || 0, 1)} {produitSelectionne.unite?.value}
+                            </div>
+                            <div>
+                              <strong>Prix:</strong> {utils.formatCFA(produitSelectionne.prix_achat || 0)} / {produitSelectionne.unite?.value}
+                            </div>
+                            <div>
+                              <strong>Coût estimé:</strong> 
+                              {ingredient.quantite_necessaire && produitSelectionne.prix_achat ? 
+                                utils.formatCFA((parseFloat(ingredient.quantite_necessaire) / produitSelectionne.quantite) * produitSelectionne.prix_achat) 
+                                : ' - '}
+                            </div>
+                            <div className={`font-medium ${produitSelectionne.quantite_restante <= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                              {produitSelectionne.quantite_restante <= 0 ? '⚠ Rupture' : '✓ Disponible'}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    
-                    <div>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={ingredient.quantite_necessaire}
-                        onChange={(e) => updateIngredient(ingredient.id, 'quantite_necessaire', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
-                        placeholder="Quantité"
-                      />
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-500">
-                        {ingredient.produit_ingredient_id ? 
-                          products.find(p => p.id === parseInt(ingredient.produit_ingredient_id))?.unite?.value || 'unité'
-                          : 'unité'
-                        }
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => supprimerIngredient(ingredient.id)}
-                        className="text-red-500 hover:text-red-700 p-1"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
+            
+            {ingredients.length > 0 && (
+              <div className="bg-blue-50 p-3 rounded-lg">
+                <div className="flex justify-between items-center text-sm">
+                  <span>Total ingrédients: {ingredients.length}</span>
+                  <span className="font-medium text-blue-800">
+                    Valides: {getIngredientsValides().length} | 
+                    Coût estimé: {utils.formatCFA(
+                      getIngredientsValides().reduce((sum, ing) => {
+                        const produit = products.find(p => p.id === parseInt(ing.produit_ingredient_id));
+                        if (produit && ing.quantite_necessaire) {
+                          return sum + ((parseFloat(ing.quantite_necessaire) / produit.quantite) * produit.prix_achat);
+                        }
+                        return sum;
+                      }, 0)
+                    )}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">💡 Conseils</h4>
-            <ul className="text-sm text-blue-800 space-y-1">
-              <li>• Ajoutez tous les ingrédients nécessaires pour produire 1 unité</li>
-              <li>• Les quantités doivent être précises pour un calcul de coût exact</li>
-              <li>• Vous pourrez modifier la recette plus tard si besoin</li>
+          <div className="bg-yellow-50 p-4 rounded-lg">
+            <h4 className="font-medium text-yellow-900 mb-2">💡 Conseils pour une recette optimale</h4>
+            <ul className="text-sm text-yellow-800 space-y-1">
+              <li>• Définissez les quantités pour UNE production (ex: 12 croissants, 1 gâteau)</li>
+              <li>• Utilisez le bouton "Dupliquer" pour des ingrédients similaires</li>
+              <li>• Le coût est calculé automatiquement selon vos prix d'achat</li>
+              <li>• Seuls les ingrédients valides (complets) seront sauvegardés</li>
+              <li>• Vous pouvez modifier/compléter une recette existante</li>
             </ul>
           </div>
 
           <div className="flex space-x-4 pt-4">
             <button 
               onClick={handleSaveRecette}
-              disabled={!selectedProduit || ingredients.length === 0}
-              className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-2 px-4 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!selectedProduit || getIngredientsValides().length === 0}
+              className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-3 px-4 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
             >
-              Créer la recette
+              Créer la recette ({getIngredientsValides().length} ingrédient{getIngredientsValides().length > 1 ? 's' : ''})
             </button>
             <button 
               type="button" 
@@ -388,8 +510,9 @@ export default function RecettesManager({ currentUser }) {
                 setShowAddModal(false);
                 setSelectedProduit('');
                 setIngredients([]);
+                setTimeout(() => ajouterIngredient(), 100);
               }}
-              className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-all duration-200"
+              className="flex-1 bg-gray-200 text-gray-800 py-3 px-4 rounded-lg hover:bg-gray-300 transition-all duration-200 font-medium"
             >
               Annuler
             </button>
@@ -430,12 +553,16 @@ export default function RecettesManager({ currentUser }) {
               <input
                 type="number"
                 step="0.01"
+                min="0.1"
                 value={calculData.quantite}
                 onChange={(e) => setCalculData({...calculData, quantite: e.target.value})}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="50"
+                placeholder="2 (pour doubler la recette)"
                 required
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Multiplicateur de la recette (ex: 2 = double portion)
+              </p>
             </div>
           </div>
           
@@ -446,7 +573,7 @@ export default function RecettesManager({ currentUser }) {
 
         {besoins.length > 0 && (
           <div>
-            <h4 className="text-lg font-semibold mb-4">Besoins calculés :</h4>
+            <h4 className="text-lg font-semibold mb-4">Besoins calculés pour {calculData.quantite}x "{calculData.nom_produit}" :</h4>
             <div className="space-y-3">
               {besoins.map((besoin, index) => (
                 <div 
@@ -459,22 +586,41 @@ export default function RecettesManager({ currentUser }) {
                     <div>
                       <h5 className="font-medium text-gray-900">{besoin.ingredient_nom}</h5>
                       <p className="text-sm text-gray-600">
-                        Nécessaire: {besoin.quantite_necessaire} {besoin.unite}
+                        Nécessaire: <strong>{utils.formatNumber(besoin.quantite_necessaire, 2)} {besoin.unite}</strong>
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm text-gray-600">
-                        Disponible: {besoin.quantite_disponible} {besoin.unite}
+                        Stock atelier: <strong>{utils.formatNumber(besoin.quantite_disponible, 2)} {besoin.unite}</strong>
                       </p>
-                      {besoin.quantite_manquante > 0 && (
+                      {besoin.quantite_manquante > 0 ? (
                         <p className="text-sm font-medium text-red-600">
-                          Manque: {besoin.quantite_manquante} {besoin.unite}
+                          ⚠ Manque: <strong>{utils.formatNumber(besoin.quantite_manquante, 2)} {besoin.unite}</strong>
+                        </p>
+                      ) : (
+                        <p className="text-sm font-medium text-green-600">
+                          ✓ Stock suffisant
                         </p>
                       )}
                     </div>
                   </div>
                 </div>
               ))}
+              
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h5 className="font-medium text-blue-900 mb-2">Actions recommandées :</h5>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  {besoins.filter(b => b.quantite_manquante > 0).length > 0 ? (
+                    <>
+                      <li>• Créer des demandes pour les ingrédients manquants</li>
+                      <li>• Faire valider les demandes pour alimenter le stock atelier</li>
+                      <li>• Relancer ce calcul après réapprovisionnement</li>
+                    </>
+                  ) : (
+                    <li>• ✅ Vous pouvez lancer la production immédiatement !</li>
+                  )}
+                </ul>
+              </div>
             </div>
           </div>
         )}
