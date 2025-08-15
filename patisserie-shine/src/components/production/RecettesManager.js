@@ -1,3 +1,10 @@
+"use client";
+
+import { useState, useEffect } from 'react';
+import { Plus, ChefHat, Calculator } from 'lucide-react';
+import { Card, Modal } from '../ui';
+import { recetteService, productService, utils } from '../../lib/supabase';
+
 const RecettesManager = ({ currentUser }) => {
   const [recettes, setRecettes] = useState([]);
   const [products, setProducts] = useState([]);
@@ -359,3 +366,5 @@ const RecettesManager = ({ currentUser }) => {
     </div>
   );
 };
+
+export default RecettesManager;
