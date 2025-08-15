@@ -1,21 +1,21 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { authService, statsService } from '@/lib/supabase';
+import { authService, statsService } from '../lib/supabase';
 
 // Import des composants
-import LoginForm from '@/components/auth/LoginForm';
-import { Header, Navigation, Footer } from '@/components/layout';
-import Dashboard from '@/components/dashboard/Dashboard';
+import LoginForm from '../components/auth/LoginForm';
+import { Header, Navigation, Footer } from '../components/layout';
+import Dashboard from '../components/dashboard/Dashboard';
 
-// Import dynamique des gestionnaires (à créer dans les prochaines étapes)
-import StockManager from '@/components/stock/StockManager';
-import StockAtelierManager from '@/components/stock/StockAtelierManager';
-import DemandesManager from '@/components/demandes/DemandesManager';
-import ProductionManager from '@/components/production/ProductionManager';
-import RecettesManager from '@/components/production/RecettesManager';
-import UnitesManager from '@/components/admin/UnitesManager';
-import TeamManager from '@/components/admin/TeamManager';
+// Import dynamique des gestionnaires
+import StockManager from '../components/stock/StockManager';
+import StockAtelierManager from '../components/stock/StockAtelierManager';
+import DemandesManager from '../components/demandes/DemandesManager';
+import ProductionManager from '../components/production/ProductionManager';
+import RecettesManager from '../components/production/RecettesManager';
+import UnitesManager from '../components/admin/UnitesManager';
+import TeamManager from '../components/admin/TeamManager';
 
 export default function PatisserieApp() {
   const [currentUser, setCurrentUser] = useState(null);
