@@ -704,7 +704,7 @@ export const stockAtelierService = {
       return { consommations: [], error: error.message }
     }
   }
-},
+}
 // ===================== SERVICES RECETTES (CORRIGÉ COMPLET) =====================
 export const recetteService = {
   // Récupérer toutes les recettes
@@ -1147,6 +1147,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
