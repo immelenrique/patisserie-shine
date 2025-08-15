@@ -701,7 +701,7 @@ export const stockAtelierService = {
     } catch (error) {
       console.error('Erreur dans getHistoriqueConsommations:', error)
       return { consommations: [], error: error.message }
-    }
+    } }
     
   // Transférer vers l'atelier (optionnel - peut être fait via demandes)
   async transfererVersAtelier(produitId, quantite) {
@@ -1202,6 +1202,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
