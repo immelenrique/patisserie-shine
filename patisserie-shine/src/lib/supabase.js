@@ -793,29 +793,53 @@ export const recetteService = {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       
-      // Préparer les données à insérer
-      const insertData = {
-        nom_produit: recetteData.nom_produit,
-        produit_ingredient_id: recetteData.produit_ingredient_id,
-        quantite_necessaire: recetteData.quantite_necessaire,
-        created_by: user?.id
-      }
-      
-      // Ajouter updated_at seulement si la colonne existe
-      try {
-        // Test si la colonne updated_at existe en faisant une requête rapide
-        await supabase.from('recettes').select('updated_at').limit(1)
-        insertData.updated_at = new Date().toISOString()
-      } catch (columnError) {
-        // La colonne n'existe pas, on l'ignore
-        console.warn('Colonne updated_at non disponible dans recettes')
+      if (!user) {
+        return { recette: null, error: 'Utilisateur non connecté' }
       }
 
-      const { data, error } = await supabase
-        .from('recettes')
-        .insert(insertData)
-        .select()
-        .single()
+      // Essayer d'abord l'insertion directe
+      let data, error;
+      
+      try {
+        ({ data, error } = await supabase
+          .from('recettes')
+          .insert({
+            nom_produit: recetteData.nom_produit,
+            produit_ingredient_id: recetteData.produit_ingredient_id,
+            quantite_necessaire: recetteData.quantite_necessaire,
+            created_by: user.id
+          })
+          .select()
+          .single())
+      } catch (directError) {
+        console.warn('Insertion directe échouée, essai avec fonction sécurisée:', directError)
+        
+        // Utiliser la fonction sécurisée si l'insertion directe échoue
+        try {
+          const { data: recetteId, error: rpcError } = await supabase.rpc('creer_recette_secure', {
+            p_nom_produit: recetteData.nom_produit,
+            p_produit_ingredient_id: recetteData.produit_ingredient_id,
+            p_quantite_necessaire: recetteData.quantite_necessaire,
+            p_created_by: user.id
+          })
+          
+          if (rpcError) {
+            console.error('Erreur fonction sécurisée:', rpcError)
+            return { recette: null, error: rpcError.message }
+          }
+          
+          // Récupérer la recette créée
+          ({ data, error } = await supabase
+            .from('recettes')
+            .select('*')
+            .eq('id', recetteId)
+            .single())
+            
+        } catch (secureError) {
+          console.error('Fonction sécurisée échouée:', secureError)
+          return { recette: null, error: 'Impossible de créer la recette. Vérifiez vos permissions.' }
+        }
+      }
 
       if (error) {
         console.error('Erreur create recette:', error)
