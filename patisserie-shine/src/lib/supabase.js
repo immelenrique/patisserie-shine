@@ -276,7 +276,7 @@ export const demandeService = {
   try {
     const { data: { user } } = await supabase.auth.getUser()
     
-    const { data, error } = await supabase.rpc('valider_demande_web', {
+    const { data, error } = await supabase.rpc('valider_demande', {
       demande_id_input: demandeId.toString(), // forcer en string pour le text param
       p_valideur_id: user?.id
     })
@@ -828,6 +828,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
