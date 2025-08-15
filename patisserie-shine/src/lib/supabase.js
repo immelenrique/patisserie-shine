@@ -1059,6 +1059,7 @@ export const recetteService = {
       return { recettes: [], error: error.message }
     }
   }
+}
 
 // ===================== SERVICES STATISTIQUES (CORRIGÉ) =====================
 export const statsService = {
@@ -1203,6 +1204,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
