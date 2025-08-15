@@ -877,3 +877,4 @@ formatNumber(number, decimals = 0) {
     maximumFractionDigits: decimals
   }).format(number || 0)
 }
+}
