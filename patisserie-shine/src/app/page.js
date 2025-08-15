@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { authService, statsService } from '../lib/supabase';
 
-// Import des composants
+// Import des composants avec chemins relatifs corrects
 import LoginForm from '../components/auth/LoginForm';
 import { Header, Navigation, Footer } from '../components/layout';
 import Dashboard from '../components/dashboard/Dashboard';
