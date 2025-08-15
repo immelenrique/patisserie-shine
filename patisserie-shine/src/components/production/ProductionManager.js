@@ -453,7 +453,7 @@ export default function ProductionManager({ currentUser }) {
                 <button 
                   type="submit" 
                   className="btn-primary"
-                  disabled={!ingredientsVerification?.disponible}
+                  
                 >
                   <ChefHat className="w-4 h-4" />
                   Enregistrer Production
