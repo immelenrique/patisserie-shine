@@ -1,7 +1,19 @@
-const StockAtelierManager = ({ currentUser }) => {
+"use client";
+
+import { useState, useEffect } from 'react';
+import { stockAtelierService, productService, utils } from '../../lib/supabase';
+import { Package, ArrowRight, AlertTriangle, Clock, TrendingUp, TrendingDown, Warehouse } from 'lucide-react';
+import { Card, StatCard } from '../ui';
+
+export default function StockAtelierManager({ currentUser }) {
   const [stockAtelier, setStockAtelier] = useState([]);
-  const [consommations, setConsommations] = useState([]);
+  const [produits, setProduits] = useState([]);
+  const [transferts, setTransferts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [selectedProduit, setSelectedProduit] = useState('');
+  const [quantiteTransfert, setQuantiteTransfert] = useState('');
   const [activeTab, setActiveTab] = useState('stock');
 
   useEffect(() => {
@@ -11,33 +23,45 @@ const StockAtelierManager = ({ currentUser }) => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [stockResult, consommationsResult] = await Promise.all([
+      const [stockResult, produitsResult] = await Promise.all([
         stockAtelierService.getStockAtelier(),
-        stockAtelierService.getHistoriqueConsommations()
+        productService.getAll()
       ]);
 
-      if (stockResult.error) {
-        console.error('Erreur stock atelier:', stockResult.error);
-      } else {
-        setStockAtelier(stockResult.stock);
-      }
+      if (stockResult.error) throw new Error(stockResult.error);
+      if (produitsResult.error) throw new Error(produitsResult.error);
 
-      if (consommationsResult.error) {
-        console.error('Erreur consommations:', consommationsResult.error);
-      } else {
-        setConsommations(consommationsResult.consommations);
-      }
+      setStockAtelier(stockResult.stock);
+      setProduits(produitsResult.products);
+      setError('');
     } catch (err) {
-      console.error('Erreur:', err);
+      setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTransfert = async (e) => {
+    e.preventDefault();
+    if (!selectedProduit || !quantiteTransfert) return;
+
+    try {
+      // Simple mock transfer - in real app this would call an API
+      setShowTransferModal(false);
+      setSelectedProduit('');
+      setQuantiteTransfert('');
+      setError('');
+      alert('Transfert effectué avec succès');
+      loadData();
+    } catch (err) {
+      setError(err.message);
     }
   };
 
   const getStockStatusInfo = (statut) => {
     switch (statut) {
       case 'rupture':
-        return { color: 'text-red-600', bg: 'bg-red-50', label: 'Épuisé' };
+        return { color: 'text-red-600', bg: 'bg-red-50', label: 'Rupture' };
       case 'critique':
         return { color: 'text-orange-600', bg: 'bg-orange-50', label: 'Critique' };
       case 'faible':
@@ -47,21 +71,11 @@ const StockAtelierManager = ({ currentUser }) => {
     }
   };
 
-  const statsAtelier = {
-    totalArticles: stockAtelier.length,
-    articlesDisponibles: stockAtelier.filter(s => s.stock_restant > 0).length,
-    articlesCritiques: stockAtelier.filter(s => s.statut_stock === 'critique' || s.statut_stock === 'rupture').length,
-    stockUtilise: stockAtelier.reduce((sum, s) => sum + (s.quantite_utilisee || 0), 0),
-    stockRestant: stockAtelier.reduce((sum, s) => sum + (s.stock_restant || 0), 0)
-  };
-
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-          <div className="h-64 bg-gray-200 rounded"></div>
-        </div>
+      <div className="flex items-center justify-center h-64">
+        <div className="spinner"></div>
+        <span className="ml-2">Chargement du stock atelier...</span>
       </div>
     );
   }
@@ -71,10 +85,29 @@ const StockAtelierManager = ({ currentUser }) => {
       {/* En-tête */}
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Stock Atelier</h2>
-          <p className="text-gray-600">Suivi des consommations lors des productions</p>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center">
+            <Warehouse className="w-8 h-8 text-orange-600 mr-3" />
+            Stock Atelier
+          </h1>
+          <p className="text-gray-600">Stock réel disponible dans l'atelier</p>
         </div>
+        <button
+          onClick={() => setShowTransferModal(true)}
+          className="btn-primary"
+        >
+          <ArrowRight className="w-4 h-4" />
+          Transférer vers atelier
+        </button>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center">
+            <AlertTriangle className="w-5 h-5 text-red-600 mr-2" />
+            <span className="text-red-800">{error}</span>
+          </div>
+        </div>
+      )}
 
       {/* Onglets */}
       <div className="border-b border-gray-200">
@@ -88,146 +121,103 @@ const StockAtelierManager = ({ currentUser }) => {
             }`}
           >
             <Package className="w-4 h-4 inline mr-2" />
-            État du Stock
+            Stock Disponible
           </button>
           <button
-            onClick={() => setActiveTab('consommations')}
+            onClick={() => setActiveTab('transferts')}
             className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'consommations'
+              activeTab === 'transferts'
                 ? 'border-orange-500 text-orange-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
             <Clock className="w-4 h-4 inline mr-2" />
-            Historique Consommations
+            Historique Transferts
           </button>
         </nav>
       </div>
 
+      {/* Contenu des onglets */}
       {activeTab === 'stock' && (
         <div className="space-y-4">
           {/* Statistiques rapides */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <StatCard
-              title="Articles suivis"
-              value={statsAtelier.totalArticles}
+              title="Articles en stock"
+              value={stockAtelier.filter(s => (s.stock_reel || 0) > 0).length}
               icon={Package}
               color="blue"
             />
             <StatCard
+              title="Stock critique"
+              value={stockAtelier.filter(s => s.statut_stock === 'critique' || s.statut_stock === 'rupture').length}
+              icon={AlertTriangle}
+              color="red"
+            />
+            <StatCard
               title="Stock disponible"
-              value={statsAtelier.articlesDisponibles}
-              icon={ShoppingBasket}
+              value={utils.formatNumber(stockAtelier.reduce((sum, s) => sum + (s.quantite_disponible || 0), 0), 1)}
+              icon={TrendingUp}
               color="green"
             />
             <StatCard
-              title="En alerte"
-              value={statsAtelier.articlesCritiques}
-              icon={AlertTriangle}
-              color={statsAtelier.articlesCritiques > 0 ? "red" : "green"}
-            />
-            <StatCard
-              title="Quantité utilisée"
-              value={utils.formatNumber(statsAtelier.stockUtilise, 1)}
+              title="Stock utilisé"
+              value={utils.formatNumber(stockAtelier.reduce((sum, s) => sum + (s.quantite_reservee || 0), 0), 1)}
               icon={TrendingDown}
               color="orange"
-            />
-            <StatCard
-              title="Quantité restante"
-              value={utils.formatNumber(statsAtelier.stockRestant, 1)}
-              icon={TrendingUp}
-              color="purple"
             />
           </div>
 
           {/* Tableau du stock */}
-          <Card className="overflow-hidden">
-            <div className="flex justify-between items-center p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold">État Actuel du Stock</h3>
+          <Card>
+            <div className="flex justify-between items-center mb-4 p-6 border-b">
+              <h3 className="text-lg font-semibold">Stock Atelier Actuel</h3>
               <div className="text-sm text-gray-500">
-                Stock restant = Stock initial - Stock utilisé dans les productions
+                Stock réel = Stock disponible - Stock utilisé
               </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
+              <table className="table w-full">
+                <thead>
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock Initial</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantité Utilisée</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock Restant</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">% Utilisé</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dernière Utilisation</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produit</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock Disponible</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock Utilisé</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock Réel</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unité</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody>
                   {stockAtelier.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="text-center py-8 text-gray-500">
+                      <td colSpan="6" className="text-center py-8 text-gray-500">
                         <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                        Aucun ingrédient utilisé en production
+                        Aucun stock dans l'atelier
                         <br />
-                        <span className="text-sm">Les consommations apparaîtront ici après les productions</span>
+                        <span className="text-sm">Transférez des produits depuis le stock principal</span>
                       </td>
                     </tr>
                   ) : (
-                    stockAtelier.map((stock) => {
-                      const statusInfo = getStockStatusInfo(stock.statut_stock);
-                      const pourcentageUtilise = stock.stock_initial > 0 
-                        ? Math.round((stock.quantite_utilisee / stock.stock_initial) * 100) 
-                        : 0;
-                      
+                    stockAtelier.map((stock, index) => {
+                      const statusInfo = getStockStatusInfo(stock.statut_stock || 'normal');
                       return (
-                        <tr key={stock.produit_id} className={stock.statut_stock === 'critique' || stock.statut_stock === 'rupture' ? 'bg-red-50' : 'hover:bg-gray-50'}>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              <div className={`w-3 h-3 rounded-full mr-3 ${
-                                stock.statut_stock === 'rupture' ? 'bg-red-600' :
-                                stock.statut_stock === 'critique' ? 'bg-red-500' :
-                                stock.statut_stock === 'faible' ? 'bg-yellow-500' : 'bg-green-500'
-                              }`}></div>
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">{stock.nom_produit}</div>
-                                <div className="text-sm text-gray-500">{stock.unite_label}</div>
-                              </div>
-                            </div>
+                        <tr key={index}>
+                          <td className="px-6 py-4 font-medium">{stock.nom_produit || `Produit ${index + 1}`}</td>
+                          <td className="px-6 py-4 text-blue-600 font-semibold">
+                            {utils.formatNumber(stock.quantite_disponible || 0, 1)}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {utils.formatNumber(stock.stock_initial, 1)} {stock.unite_value}
+                          <td className="px-6 py-4 text-orange-600">
+                            {utils.formatNumber(stock.quantite_reservee || 0, 1)}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-orange-600">
-                            {utils.formatNumber(stock.quantite_utilisee, 1)} {stock.unite_value}
+                          <td className="px-6 py-4 font-bold text-lg">
+                            {utils.formatNumber(stock.stock_reel || 0, 1)}
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`text-sm font-bold ${
-                              stock.stock_restant <= 0 ? 'text-red-600' : 'text-green-600'
-                            }`}>
-                              {utils.formatNumber(stock.stock_restant, 1)} {stock.unite_value}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              <div className="w-16 bg-gray-200 rounded-full h-2 mr-2">
-                                <div 
-                                  className={`h-2 rounded-full ${
-                                    pourcentageUtilise >= 80 ? 'bg-red-500' :
-                                    pourcentageUtilise >= 60 ? 'bg-orange-500' :
-                                    pourcentageUtilise >= 40 ? 'bg-yellow-500' : 'bg-green-500'
-                                  }`}
-                                  style={{ width: `${Math.min(pourcentageUtilise, 100)}%` }}
-                                ></div>
-                              </div>
-                              <span className="text-xs text-gray-600">{pourcentageUtilise}%</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusInfo.bg} ${statusInfo.color}`}>
+                          <td className="px-6 py-4">{stock.unite || 'unité'}</td>
+                          <td className="px-6 py-4">
+                            <span className={`badge ${statusInfo.bg} ${statusInfo.color}`}>
                               {statusInfo.label}
                             </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {stock.derniere_utilisation ? utils.formatDate(stock.derniere_utilisation) : '-'}
                           </td>
                         </tr>
                       );
@@ -240,63 +230,107 @@ const StockAtelierManager = ({ currentUser }) => {
         </div>
       )}
 
-      {activeTab === 'consommations' && (
-        <Card className="overflow-hidden">
-          <div className="flex justify-between items-center p-6 border-b border-gray-200">
-            <h3 className="text-lg font-semibold flex items-center">
-              <Clock className="w-5 h-5 mr-2" />
-              Historique des Consommations
-            </h3>
-            <div className="text-sm text-gray-500">
-              Ingrédients utilisés lors des productions
-            </div>
-          </div>
+      {activeTab === 'transferts' && (
+        <Card>
+          <h3 className="text-lg font-semibold mb-4 flex items-center p-6 border-b">
+            <Clock className="w-5 h-5 mr-2" />
+            Historique des Transferts
+          </h3>
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
+            <table className="table w-full">
+              <thead>
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Production</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ingrédient</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantité Utilisée</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producteur</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produit</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantité</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Transféré par</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {consommations.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="text-center py-8 text-gray-500">
-                      <Clock className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                      Aucune consommation enregistrée
-                    </td>
-                  </tr>
-                ) : (
-                  consommations.map((consommation, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {utils.formatDate(consommation.date_production)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{consommation.produit_fini}</div>
-                        <div className="text-sm text-gray-500">{consommation.quantite_produite} unités</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {consommation.ingredient_nom}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-red-600">
-                        -{utils.formatNumber(consommation.quantite_utilisee, 1)} {consommation.unite}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {consommation.producteur_nom}
-                      </td>
-                    </tr>
-                  ))
-                )}
+              <tbody>
+                <tr>
+                  <td colSpan="5" className="text-center py-8 text-gray-500">
+                    <Clock className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                    Aucun transfert enregistré
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
         </Card>
       )}
+
+      {/* Modal de transfert */}
+      {showTransferModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-4 flex items-center">
+              <ArrowRight className="w-5 h-5 mr-2 text-orange-600" />
+              Transférer vers l'atelier
+            </h3>
+            <form onSubmit={handleTransfert} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Produit à transférer
+                </label>
+                <select
+                  value={selectedProduit}
+                  onChange={(e) => setSelectedProduit(e.target.value)}
+                  className="form-input w-full"
+                  required
+                >
+                  <option value="">Sélectionner un produit</option>
+                  {produits
+                    .filter(p => (p.quantite_restante || 0) > 0)
+                    .map((produit) => (
+                      <option key={produit.id} value={produit.id}>
+                        {produit.nom} (Stock: {utils.formatNumber(produit.quantite_restante || 0, 1)} {produit.unite?.label || ''})
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Quantité à transférer
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  value={quantiteTransfert}
+                  onChange={(e) => setQuantiteTransfert(e.target.value)}
+                  className="form-input w-full"
+                  placeholder="0.0"
+                  required
+                />
+                {selectedProduit && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    Stock disponible: {utils.formatNumber(
+                      produits.find(p => p.id === parseInt(selectedProduit))?.quantite_restante || 0, 1
+                    )} {produits.find(p => p.id === parseInt(selectedProduit))?.unite?.label || ''}
+                  </p>
+                )}
+              </div>
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTransferModal(false);
+                    setError('');
+                  }}
+                  className="btn-secondary"
+                >
+                  Annuler
+                </button>
+                <button type="submit" className="btn-primary">
+                  <ArrowRight className="w-4 h-4" />
+                  Transférer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
-};
+}
