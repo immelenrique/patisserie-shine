@@ -619,6 +619,7 @@ export const stockAtelierService = {
       const { data, error } = await supabase
         .from('vue_stock_atelier_usage')
         .select('*')
+        .order('nom_produit')
         
       if (error) {
         console.error('Erreur getStockAtelier:', error)
@@ -633,63 +634,75 @@ export const stockAtelierService = {
   },
 
   // Obtenir l'historique des transferts
-  async getHistoriqueTransferts() {
+   async getHistoriqueTransferts() {
     try {
-      // Essayer d'abord avec la vue, sinon utiliser la table directement
-      let data, error;
-      
-      try {
-        ({ data, error } = await supabase
-          .from('vue_transferts_atelier')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(50))
-      } catch (viewError) {
-        // Si la vue n'existe pas, utiliser la table stock_atelier directement
-        ({ data, error } = await supabase
-          .from('stock_atelier')
-          .select(`
-            id,
-            produit_id,
-            quantite_transferee,
-            transfere_par,
-            statut,
-            created_at,
-            produit:produits(nom, unite:unites(label)),
-            transfere_par_profile:profiles!stock_atelier_transfere_par_fkey(nom)
-          `)
-          .eq('statut', 'effectue')
-          .order('created_at', { ascending: false })
-          .limit(50))
-        
-        // Reformater les données pour correspondre à l'interface attendue
-        if (data) {
-          data = data.map(transfert => ({
-            id: transfert.id,
-            produit_id: transfert.produit_id,
-            nom_produit: transfert.produit?.nom || 'Produit inconnu',
-            quantite_transferee: transfert.quantite_transferee,
-            transfere_par: transfert.transfere_par,
-            statut: transfert.statut,
-            created_at: transfert.created_at,
-            unite: transfert.produit?.unite?.label || '',
-            transfere_par_nom: transfert.transfere_par_profile?.nom || 'Inconnu'
-          }))
-        }
-      }
+      const { data, error } = await supabase
+        .from('stock_atelier')
+        .select(`
+          id,
+          produit_id,
+          quantite_disponible,
+          quantite_reservee,
+          transfere_par,
+          statut,
+          created_at,
+          derniere_maj,
+          produit:produits(nom, unite:unites(label)),
+          transfere_par_profile:profiles!stock_atelier_transfere_par_fkey(nom)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(50)
       
       if (error) {
         console.error('Erreur getHistoriqueTransferts:', error)
         return { transferts: [], error: error.message }
       }
       
-      return { transferts: data || [], error: null }
+      // Reformater pour correspondre à l'interface attendue
+      const transfertsFormated = (data || []).map(item => ({
+        id: item.id,
+        produit_id: item.produit_id,
+        quantite_transferee: item.quantite_disponible, // Mapping pour compatibilité
+        transfere_par: item.transfere_par,
+        statut: item.statut,
+        created_at: item.created_at,
+        produit: item.produit,
+        transfere_par_profile: item.transfere_par_profile
+      }))
+      
+      return { transferts: transfertsFormated, error: null }
     } catch (error) {
       console.error('Erreur dans getHistoriqueTransferts:', error)
       return { transferts: [], error: error.message }
     }
   },
-
+   // Obtenir l'historique des consommations (via consommations_atelier)
+  async getHistoriqueConsommations(limit = 50) {
+    try {
+      const { data, error } = await supabase
+        .from('consommations_atelier')
+        .select(`
+          *,
+          produit:produits(nom, unite:unites(label)),
+          production:productions(
+            id, produit, quantite, destination, date_production, statut,
+            producteur:profiles(nom)
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+      
+      if (error) {
+        console.error('Erreur getHistoriqueConsommations:', error)
+        return { consommations: [], error: error.message }
+      }
+      
+      return { consommations: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getHistoriqueConsommations:', error)
+      return { consommations: [], error: error.message }
+    },
+    
   // Transférer vers l'atelier (optionnel - peut être fait via demandes)
   async transfererVersAtelier(produitId, quantite) {
     try {
@@ -753,11 +766,9 @@ export const recetteService = {
   // Récupérer toutes les recettes
   async getAll() {
     try {
-      // Essayer d'abord avec la vue, puis fallback sur la table
       let data, error;
       
       try {
-        // Utiliser la vue qui agrège tout
         ({ data, error } = await supabase
           .from('vue_recettes_cout')
           .select('*')
@@ -765,7 +776,6 @@ export const recetteService = {
       } catch (viewError) {
         console.warn('Vue vue_recettes_cout indisponible, utilisation de la table:', viewError)
         
-        // Fallback : requête directe sur la table avec jointures
         ({ data, error } = await supabase
           .from('recettes')
           .select(`
@@ -788,12 +798,10 @@ export const recetteService = {
         return { recettes: [], error: error.message }
       }
       
-      // Formatter les données selon la source
       let recettesFormatees = []
       
       if (data && data.length > 0) {
         recettesFormatees = data.map(recette => {
-          // Si c'est de la vue vue_recettes_cout
           if (recette.ingredient_nom) {
             return {
               recette_id: `recette_${recette.recette_id}`,
@@ -811,7 +819,6 @@ export const recetteService = {
               updated_at: recette.updated_at
             }
           } else {
-            // Si c'est de la table avec jointures
             return {
               recette_id: `recette_${recette.id}`,
               nom_produit: recette.nom_produit,
@@ -843,7 +850,6 @@ export const recetteService = {
   // Obtenir les produits avec recettes
   async getProduitsRecettes() {
     try {
-      // Essayer d'abord avec la fonction principale
       let data, error;
       
       try {
@@ -851,19 +857,16 @@ export const recetteService = {
       } catch (firstError) {
         console.warn('Fonction get_produits_avec_recettes échouée, essai avec fallback:', firstError)
         
-        // Essayer avec la fonction de fallback
         try {
           ({ data, error } = await supabase.rpc('get_produits_recettes_simple'))
         } catch (secondError) {
           console.warn('Fonction fallback échouée, requête directe:', secondError)
           
-          // Dernière tentative : requête directe sur la table
           ({ data, error } = await supabase
             .from('recettes')
             .select('nom_produit')
             .order('nom_produit'))
           
-          // Extraire les noms uniques
           if (data) {
             const nomsUniques = [...new Set(data.map(item => item.nom_produit))].sort()
             data = nomsUniques.map(nom => ({ nom_produit: nom }))
@@ -910,72 +913,6 @@ export const recetteService = {
     }
   },
 
-  // Créer une recette
-  async create(recetteData) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) {
-        return { recette: null, error: 'Utilisateur non connecté' }
-      }
-
-      // Essayer d'abord l'insertion directe
-      let data, error;
-      
-      try {
-        ({ data, error } = await supabase
-          .from('recettes')
-          .insert({
-            nom_produit: recetteData.nom_produit,
-            produit_ingredient_id: recetteData.produit_ingredient_id,
-            quantite_necessaire: recetteData.quantite_necessaire,
-            created_by: user.id
-          })
-          .select()
-          .single())
-      } catch (directError) {
-        console.warn('Insertion directe échouée, essai avec fonction sécurisée:', directError)
-        
-        // Utiliser la fonction sécurisée si l'insertion directe échoue
-        try {
-          const { data: recetteId, error: rpcError } = await supabase.rpc('creer_recette_secure', {
-            p_nom_produit: recetteData.nom_produit,
-            p_produit_ingredient_id: recetteData.produit_ingredient_id,
-            p_quantite_necessaire: recetteData.quantite_necessaire,
-            p_created_by: user.id
-          })
-          
-          if (rpcError) {
-            console.error('Erreur fonction sécurisée:', rpcError)
-            return { recette: null, error: rpcError.message }
-          }
-          
-          // Récupérer la recette créée
-          ({ data, error } = await supabase
-            .from('recettes')
-            .select('*')
-            .eq('id', recetteId)
-            .single())
-            
-        } catch (secureError) {
-          console.error('Fonction sécurisée échouée:', secureError)
-          return { recette: null, error: 'Impossible de créer la recette. Vérifiez vos permissions.' }
-        }
-      }
-
-      if (error) {
-        console.error('Erreur create recette:', error)
-        return { recette: null, error: error.message }
-      }
-
-      console.log('Recette créée avec succès:', data)
-      return { recette: data, error: null }
-    } catch (error) {
-      console.error('Erreur dans create recette:', error)
-      return { recette: null, error: error.message }
-    }
-  },
-
   // Calculer stock nécessaire
   async calculerStockNecessaire(nomProduit, quantite) {
     try {
@@ -994,8 +931,133 @@ export const recetteService = {
       console.error('Erreur dans calculerStockNecessaire:', error)
       return { besoins: [], error: error.message }
     }
+  },
+
+  // Créer une recette
+  async create(recetteData) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { recette: null, error: 'Utilisateur non connecté' }
+      }
+
+      let data, error;
+      
+      try {
+        ({ data, error } = await supabase
+          .from('recettes')
+          .insert({
+            nom_produit: recetteData.nom_produit,
+            produit_ingredient_id: recetteData.produit_ingredient_id,
+            quantite_necessaire: recetteData.quantite_necessaire,
+            created_by: user.id
+          })
+          .select()
+          .single())
+      } catch (directError) {
+        console.warn('Insertion directe échouée:', directError)
+        return { recette: null, error: 'Impossible de créer la recette. Vérifiez vos permissions.' }
+      }
+
+      if (error) {
+        console.error('Erreur create recette:', error)
+        return { recette: null, error: error.message }
+      }
+
+      console.log('Recette créée avec succès:', data)
+      return { recette: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans create recette:', error)
+      return { recette: null, error: error.message }
+    }
+  },
+
+  // Supprimer une recette
+  async delete(recetteId) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' }
+      }
+
+      const { error } = await supabase
+        .from('recettes')
+        .delete()
+        .eq('id', recetteId)
+
+      if (error) {
+        console.error('Erreur delete recette:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, message: 'Recette supprimée avec succès' }
+    } catch (error) {
+      console.error('Erreur dans delete recette:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Mettre à jour une recette
+  async update(recetteId, recetteData) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { recette: null, error: 'Utilisateur non connecté' }
+      }
+
+      const { data, error } = await supabase
+        .from('recettes')
+        .update({
+          nom_produit: recetteData.nom_produit,
+          produit_ingredient_id: recetteData.produit_ingredient_id,
+          quantite_necessaire: recetteData.quantite_necessaire,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', recetteId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erreur update recette:', error)
+        return { recette: null, error: error.message }
+      }
+
+      return { recette: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans update recette:', error)
+      return { recette: null, error: error.message }
+    }
+  },
+
+  // Obtenir les recettes pour un produit spécifique
+  async getRecettesProduit(nomProduit) {
+    try {
+      const { data, error } = await supabase
+        .from('recettes')
+        .select(`
+          *,
+          produit_ingredient:produits!recettes_produit_ingredient_id_fkey(
+            id, nom, prix_achat, quantite,
+            unite:unites(id, value, label)
+          )
+        `)
+        .eq('nom_produit', nomProduit)
+        .order('created_at')
+
+      if (error) {
+        console.error('Erreur getRecettesProduit:', error)
+        return { recettes: [], error: error.message }
+      }
+
+      return { recettes: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getRecettesProduit:', error)
+      return { recettes: [], error: error.message }
+    }
   }
-}
 
 // ===================== SERVICES STATISTIQUES (CORRIGÉ) =====================
 export const statsService = {
@@ -1140,6 +1202,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
