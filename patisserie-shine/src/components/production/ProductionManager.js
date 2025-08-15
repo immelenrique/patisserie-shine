@@ -17,7 +17,8 @@ export default function ProductionManager({ currentUser }) {
     destination: 'Boutique',
     date_production: new Date().toISOString().split('T')[0]
   });
- 
+ const [ingredientsVerification, setIngredientsVerification] = useState(null);
+
 
   useEffect(() => {
     loadData();
