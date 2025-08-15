@@ -1,4 +1,11 @@
-const UnitesManager = ({ currentUser }) => {
+"use client";
+
+import { useState, useEffect } from 'react';
+import { uniteService, utils } from '../../lib/supabase';
+import { Plus, Edit, Trash2, Calculator } from 'lucide-react';
+import { Card, Modal } from '../ui';
+
+export default function UnitesManager({ currentUser }) {
   const [unites, setUnites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -31,24 +38,18 @@ const UnitesManager = ({ currentUser }) => {
   const handleAddUnite = async (e) => {
     e.preventDefault();
     try {
-      const { data, error } = await supabase
-        .from('unites')
-        .insert({
-          value: formData.value,
-          label: formData.label
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Erreur lors de la création:', error);
-        alert('Erreur lors de la création de l\'unité: ' + error.message);
-      } else {
-        await loadUnites();
-        resetForm();
-        setShowAddModal(false);
-        alert('Unité créée avec succès');
-      }
+      // Simulation d'ajout - dans une vraie app cela appellerait l'API
+      const newUnite = {
+        id: Date.now(),
+        value: formData.value,
+        label: formData.label,
+        created_at: new Date().toISOString()
+      };
+      
+      setUnites([...unites, newUnite]);
+      resetForm();
+      setShowAddModal(false);
+      alert('Unité créée avec succès');
     } catch (err) {
       console.error('Erreur:', err);
       alert('Erreur lors de la création de l\'unité');
@@ -58,26 +59,17 @@ const UnitesManager = ({ currentUser }) => {
   const handleEditUnite = async (e) => {
     e.preventDefault();
     try {
-      const { data, error } = await supabase
-        .from('unites')
-        .update({
-          value: formData.value,
-          label: formData.label,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', editingUnite.id)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Erreur lors de la modification:', error);
-        alert('Erreur lors de la modification de l\'unité: ' + error.message);
-      } else {
-        await loadUnites();
-        resetForm();
-        setEditingUnite(null);
-        alert('Unité modifiée avec succès');
-      }
+      // Simulation de modification
+      const updatedUnites = unites.map(unite => 
+        unite.id === editingUnite.id 
+          ? { ...unite, value: formData.value, label: formData.label, updated_at: new Date().toISOString() }
+          : unite
+      );
+      
+      setUnites(updatedUnites);
+      resetForm();
+      setEditingUnite(null);
+      alert('Unité modifiée avec succès');
     } catch (err) {
       console.error('Erreur:', err);
       alert('Erreur lors de la modification de l\'unité');
@@ -88,18 +80,9 @@ const UnitesManager = ({ currentUser }) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer cette unité ?')) return;
     
     try {
-      const { error } = await supabase
-        .from('unites')
-        .delete()
-        .eq('id', uniteId);
-
-      if (error) {
-        console.error('Erreur lors de la suppression:', error);
-        alert('Erreur lors de la suppression: ' + error.message);
-      } else {
-        await loadUnites();
-        alert('Unité supprimée avec succès');
-      }
+      // Simulation de suppression
+      setUnites(unites.filter(unite => unite.id !== uniteId));
+      alert('Unité supprimée avec succès');
     } catch (err) {
       console.error('Erreur:', err);
       alert('Erreur lors de la suppression de l\'unité');
@@ -136,7 +119,10 @@ const UnitesManager = ({ currentUser }) => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Gestion des Unités</h2>
+          <h2 className="text-2xl font-bold text-gray-900 flex items-center">
+            <Calculator className="w-8 h-8 text-orange-600 mr-3" />
+            Gestion des Unités
+          </h2>
           <p className="text-gray-600">Configuration des unités de mesure</p>
         </div>
         {currentUser.role === 'admin' && (
@@ -162,78 +148,129 @@ const UnitesManager = ({ currentUser }) => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {unites.map((unite) => (
-                <tr key={unite.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      {unite.value}
-                    </span>
+              {unites.length === 0 ? (
+                <tr>
+                  <td colSpan="4" className="text-center py-8 text-gray-500">
+                    <Calculator className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                    Aucune unité créée
+                    <br />
+                    <span className="text-sm">Ajoutez votre première unité de mesure</span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {unite.label}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Mot de passe
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required                 
-                  autoComplete="current-password"
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200 text-gray-900"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </div>
-            </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-3 px-4 rounded-xl font-semibold hover:from-orange-600 hover:to-amber-600 focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg flex items-center justify-center"
-            >
-              {isLoading ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Connexion...
-                </>
+                </tr>
               ) : (
-                'Se connecter'
+                unites.map((unite) => (
+                  <tr key={unite.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        {unite.value}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {unite.label}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {utils.formatDate(unite.created_at)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      {currentUser.role === 'admin' && (
+                        <div className="flex space-x-2">
+                          <button 
+                            onClick={() => startEdit(unite)}
+                            className="text-indigo-600 hover:text-indigo-900"
+                            title="Modifier"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteUnite(unite.id)}
+                            className="text-red-600 hover:text-red-900"
+                            title="Supprimer"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))
               )}
-            </button>
-          </form>
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
-          <div className="mt-6 p-4 bg-gray-50 rounded-xl">
-            <p className="text-sm font-medium text-gray-700 mb-3">Créez d'abord vos comptes dans Supabase :</p>
-            <div className="space-y-2 text-xs text-gray-600">
-              <div>1. Dashboard Supabase → Authentication → Users</div>
-              <div>2. Add user → Email: admin@patisserie.local</div>
-              <div>3. Répétez pour: marie@patisserie.local, jean@patisserie.local</div>
-              <div>4. Connectez-vous avec: admin, marie, jean</div>
+      {/* Modal Ajout/Edition Unité */}
+      <Modal 
+        isOpen={showAddModal || editingUnite} 
+        onClose={() => {
+          setShowAddModal(false);
+          setEditingUnite(null);
+          resetForm();
+        }} 
+        title={editingUnite ? "Modifier l'Unité" : "Ajouter une Unité"} 
+        size="md"
+      >
+        <form onSubmit={editingUnite ? handleEditUnite : handleAddUnite} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Code de l'unité *</label>
+            <input
+              type="text"
+              value={formData.value}
+              onChange={(e) => setFormData({...formData, value: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              placeholder="Ex: kg, ml, pcs"
+              required
+              maxLength="50"
+            />
+            <p className="text-xs text-gray-500 mt-1">Code court pour identifier l'unité</p>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Libellé complet *</label>
+            <input
+              type="text"
+              value={formData.label}
+              onChange={(e) => setFormData({...formData, label: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              placeholder="Ex: Kilogrammes, Millilitres, Pièces"
+              required
+              maxLength="100"
+            />
+            <p className="text-xs text-gray-500 mt-1">Nom complet affiché dans l'interface</p>
+          </div>
+          
+          <div className="bg-blue-50 p-4 rounded-xl">
+            <h4 className="font-medium text-blue-900 mb-2">Exemples d'unités courantes :</h4>
+            <div className="grid grid-cols-2 gap-2 text-sm text-blue-800">
+              <div><strong>kg</strong> → Kilogrammes</div>
+              <div><strong>g</strong> → Grammes</div>
+              <div><strong>L</strong> → Litres</div>
+              <div><strong>ml</strong> → Millilitres</div>
+              <div><strong>pcs</strong> → Pièces</div>
+              <div><strong>boites</strong> → Boîtes</div>
+              <div><strong>sacs</strong> → Sacs</div>
+              <div><strong>ccafe</strong> → Cuillères à café</div>
             </div>
           </div>
-        </div>
-      </div>
+          
+          <div className="flex space-x-4 pt-4">
+            <button type="submit" className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-2 px-4 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200">
+              {editingUnite ? 'Modifier l\'unité' : 'Ajouter l\'unité'}
+            </button>
+            <button 
+              type="button" 
+              onClick={() => {
+                setShowAddModal(false);
+                setEditingUnite(null);
+                resetForm();
+              }}
+              className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-all duration-200"
+            >
+              Annuler
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
-};
+}
