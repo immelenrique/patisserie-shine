@@ -377,102 +377,88 @@ export default function ProductionManager({ currentUser }) {
               </div>
 
               {/* Vérification des ingrédients */}
-              {(verificationLoading || ingredientsVerification) && (
-                <div className="border rounded-lg p-4">
-                  <h4 className="font-medium mb-3 flex items-center">
-                    {verificationLoading ? (
-                      <div className="spinner w-5 h-5 mr-2"></div>
-                    ) : ingredientsVerification?.disponible ? (
-                      <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-red-600 mr-2" />
-                    )}
-                    Vérification des ingrédients dans l'atelier
-                  </h4>
-                  
-                  {verificationLoading ? (
-                    <p className="text-gray-600">Vérification en cours...</p>
-                  ) : ingredientsVerification && (
-                    <div className="space-y-2">
-                      {ingredientsVerification.details.map((detail, index) => (
-                        <div 
-                          key={index}
-                          className={`flex justify-between items-center p-3 rounded ${
-                            detail.suffisant ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
-                          }`}
-                        >
-                          <div className="flex items-center">
-                            <Package className="w-4 h-4 mr-2 text-gray-500" />
-                            <span className="font-medium">{detail.ingredient}</span>
-                          </div>
-                          <div className="text-sm text-right">
-                            <div className={detail.suffisant ? 'text-green-700' : 'text-red-700'}>
-                              <strong>Requis:</strong> {utils.formatNumber(detail.quantite_necessaire, 2)} {detail.unite}
-                            </div>
-                            <div className="text-gray-600">
-                              <strong>Disponible:</strong> {utils.formatNumber(detail.stock_disponible, 2)} {detail.unite}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      
-                      {!ingredientsVerification.disponible && (
-                        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded">
-                          <p className="text-red-700 text-sm">
-                            <AlertTriangle className="w-4 h-4 inline mr-1" />
-                            Stock insuffisant dans l'atelier. Actions nécessaires :
-                          </p>
-                          <ul className="mt-2 text-sm text-red-700 space-y-1">
-                            <li>• Créer des demandes pour les ingrédients manquants</li>
-                            <li>• Faire valider les demandes par un admin/responsable production</li>
-                            <li>• Les ingrédients validés s'ajouteront automatiquement au stock atelier</li>
-                          </ul>
-                        </div>
-                      )}
+{ingredientsVerification && (
+  <div className="border rounded-lg p-4">
+    <h4 className="font-medium mb-3 flex items-center">
+      {ingredientsVerification?.disponible ? (
+        <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
+      ) : (
+        <AlertTriangle className="w-5 h-5 text-red-600 mr-2" />
+      )}
+      Vérification des ingrédients dans l'atelier
+    </h4>
 
-                      {ingredientsVerification.disponible && (
-                        <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
-                          <p className="text-green-700 text-sm">
-                            <CheckCircle className="w-4 h-4 inline mr-1" />
-                            Enregistrer votre production.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+    <div className="space-y-2">
+      {ingredientsVerification.details.map((detail, index) => (
+        <div 
+          key={index}
+          className={`flex justify-between items-center p-3 rounded ${
+            detail.suffisant ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+          }`}
+        >
+          <div className="flex items-center">
+            <Package className="w-4 h-4 mr-2 text-gray-500" />
+            <span className="font-medium">{detail.ingredient}</span>
+          </div>
+          <div className="text-sm text-right">
+            <div className={detail.suffisant ? 'text-green-700' : 'text-red-700'}>
+              <strong>Requis:</strong> {utils.formatNumber(detail.quantite_necessaire, 2)} {detail.unite}
+            </div>
+            <div className="text-gray-600">
+              <strong>Disponible:</strong> {utils.formatNumber(detail.stock_disponible, 2)} {detail.unite}
+            </div>
+          </div>
+        </div>
+      ))}
 
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddModal(false);
-                    setIngredientsVerification(null);
-                    setError('');
-                  }}
-                  className="btn-secondary"
-                >
-                  Annuler
-                </button>
-                <button 
-                  type="submit" 
-                  className="btn-primary"
-                  disabled={!ingredientsVerification?.disponible || verificationLoading}
-                >
-                  {verificationLoading ? (
-                    <>
-                      <div className="spinner w-4 h-4"></div>
-                      Vérification...
-                    </>
-                  ) : (
-                    <>
-                      <ChefHat className="w-4 h-4" />
-                      Enregistrer Production
-                    </>
-                  )}
-                </button>
-              </div>
+      {!ingredientsVerification.disponible && (
+        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded">
+          <p className="text-red-700 text-sm">
+            <AlertTriangle className="w-4 h-4 inline mr-1" />
+            Stock insuffisant dans l'atelier. Actions nécessaires :
+          </p>
+          <ul className="mt-2 text-sm text-red-700 space-y-1">
+            <li>• Créer des demandes pour les ingrédients manquants</li>
+            <li>• Faire valider les demandes par un admin/responsable production</li>
+            <li>• Les ingrédients validés s'ajouteront automatiquement au stock atelier</li>
+          </ul>
+        </div>
+      )}
+
+      {ingredientsVerification.disponible && (
+        <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
+          <p className="text-green-700 text-sm">
+            <CheckCircle className="w-4 h-4 inline mr-1" />
+            Enregistrer votre production.
+          </p>
+        </div>
+      )}
+    </div>
+  </div>
+)}
+
+<div className="flex justify-end space-x-3 pt-4">
+  <button
+    type="button"
+    onClick={() => {
+      setShowAddModal(false);
+      setIngredientsVerification(null);
+      setError('');
+    }}
+    className="btn-secondary"
+  >
+    Annuler
+  </button>
+  <button 
+    type="submit" 
+    className="btn-primary"
+    disabled={!ingredientsVerification?.disponible}
+  >
+    <ChefHat className="w-4 h-4" />
+    Enregistrer Production
+  </button>
+</div>
+
             </form>
           </div>
         </div>
