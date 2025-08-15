@@ -1,4 +1,4 @@
-// lib/supabase.js - Configuration Supabase pour Pâtisserie Shine (VERSION CORRIGÉE COMPLÈTE)
+// lib/supabase.js - Configuration Supabase pour Pâtisserie Shine (VERSION FINALE)
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -834,47 +834,40 @@ export const utils = {
     })
   },
 
+  // Formatage de la date et heure
   formatDateTime(dateString) {
-  if (!dateString) return ''
-  return new Date(dateString).toLocaleString('fr-FR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-},
+    if (!dateString) return ''
+    return new Date(dateString).toLocaleString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  },
 
-// Formatage de la date simple
-formatDate(dateString) {
-  if (!dateString) return ''
-  return new Date(dateString).toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  })
-},
+  // Calculer le pourcentage de stock restant
+  calculateStockPercentage(quantiteRestante, quantiteInitiale) {
+    if (quantiteInitiale === 0) return 0
+    return Math.round((quantiteRestante / quantiteInitiale) * 100)
+  },
 
-// Calculer le pourcentage de stock restant
-calculateStockPercentage(quantiteRestante, quantiteInitiale) {
-  if (quantiteInitiale === 0) return 0
-  return Math.round((quantiteRestante / quantiteInitiale) * 100)
-},
+  // Déterminer le niveau d'alerte stock
+  getStockAlertLevel(quantiteRestante, quantiteInitiale) {
+    const percentage = this.calculateStockPercentage(quantiteRestante, quantiteInitiale)
+    if (percentage <= 0) return 'rupture'
+    if (percentage <= 20) return 'critique'
+    if (percentage <= 50) return 'faible'
+    return 'normal'
+  },
 
-// Déterminer le niveau d'alerte stock
-getStockAlertLevel(quantiteRestante, quantiteInitiale) {
-  const percentage = this.calculateStockPercentage(quantiteRestante, quantiteInitiale)
-  if (percentage <= 0) return 'rupture'
-  if (percentage <= 20) return 'critique'
-  if (percentage <= 50) return 'faible'
-  return 'normal'
-},
-
-// Formater un nombre avec séparateurs
-formatNumber(number, decimals = 0) {
-  return new Intl.NumberFormat('fr-FR', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals
-  }).format(number || 0)
+  // Formater un nombre avec séparateurs
+  formatNumber(number, decimals = 0) {
+    return new Intl.NumberFormat('fr-FR', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    }).format(number || 0)
+  }
 }
-}
+
+export default supabase
