@@ -626,45 +626,91 @@ export const stockAtelierService = {
   }
 }
 
-// ===================== SERVICES RECETTES (CORRIGÉ) =====================
+// ===================== SERVICES RECETTES (CORRIGÉ COMPLET) =====================
 export const recetteService = {
   // Récupérer toutes les recettes
   async getAll() {
     try {
-      const { data, error } = await supabase
-        .from('recettes')
-        .select(`
-          *,
-          produit_ingredient:produits!recettes_produit_ingredient_id_fkey(
-            id, nom, prix_achat, quantite,
-            unite:unites(id, value, label)
-          )
-        `)
-        .order('nom_produit', { ascending: true })
+      // Essayer d'abord avec la vue, puis fallback sur la table
+      let data, error;
+      
+      try {
+        // Utiliser la vue qui agrège tout
+        ({ data, error } = await supabase
+          .from('vue_recettes_cout')
+          .select('*')
+          .order('nom_produit', { ascending: true }))
+      } catch (viewError) {
+        console.warn('Vue vue_recettes_cout indisponible, utilisation de la table:', viewError)
+        
+        // Fallback : requête directe sur la table avec jointures
+        ({ data, error } = await supabase
+          .from('recettes')
+          .select(`
+            id,
+            nom_produit,
+            produit_ingredient_id,
+            quantite_necessaire,
+            created_at,
+            updated_at,
+            produit_ingredient:produits!recettes_produit_ingredient_id_fkey(
+              id, nom, prix_achat, quantite,
+              unite:unites(id, value, label)
+            )
+          `)
+          .order('nom_produit', { ascending: true }))
+      }
       
       if (error) {
         console.error('Erreur getAll recettes:', error)
         return { recettes: [], error: error.message }
       }
       
-      // Formatter les données pour l'interface
-      const recettesFormatees = data?.map(recette => ({
-        recette_id: `recette_${recette.id}`,
-        nom_produit: recette.nom_produit,
-        produit_ingredient_id: recette.produit_ingredient_id,
-        ingredient_nom: recette.produit_ingredient?.nom || 'Inconnu',
-        quantite_necessaire: recette.quantite_necessaire,
-        unite: recette.produit_ingredient?.unite?.label || '',
-        prix_achat: recette.produit_ingredient?.prix_achat || 0,
-        quantite_achat: recette.produit_ingredient?.quantite || 1,
-        cout_ingredient: recette.produit_ingredient?.quantite > 0 ? 
-          Math.round((recette.produit_ingredient.prix_achat / recette.produit_ingredient.quantite) * recette.quantite_necessaire * 100) / 100 : 0,
-        stock_atelier_disponible: 0,
-        ingredient_disponible: true,
-        created_at: recette.created_at,
-        updated_at: recette.updated_at
-      })) || []
+      // Formatter les données selon la source
+      let recettesFormatees = []
       
+      if (data && data.length > 0) {
+        recettesFormatees = data.map(recette => {
+          // Si c'est de la vue vue_recettes_cout
+          if (recette.ingredient_nom) {
+            return {
+              recette_id: `recette_${recette.recette_id}`,
+              nom_produit: recette.nom_produit,
+              produit_ingredient_id: recette.produit_ingredient_id,
+              ingredient_nom: recette.ingredient_nom,
+              quantite_necessaire: recette.quantite_necessaire,
+              unite: recette.unite || '',
+              prix_achat: recette.prix_achat || 0,
+              quantite_achat: recette.quantite_achat || 1,
+              cout_ingredient: recette.cout_ingredient || 0,
+              stock_atelier_disponible: recette.stock_atelier_disponible || 0,
+              ingredient_disponible: recette.ingredient_disponible || false,
+              created_at: recette.created_at,
+              updated_at: recette.updated_at
+            }
+          } else {
+            // Si c'est de la table avec jointures
+            return {
+              recette_id: `recette_${recette.id}`,
+              nom_produit: recette.nom_produit,
+              produit_ingredient_id: recette.produit_ingredient_id,
+              ingredient_nom: recette.produit_ingredient?.nom || 'Inconnu',
+              quantite_necessaire: recette.quantite_necessaire,
+              unite: recette.produit_ingredient?.unite?.label || '',
+              prix_achat: recette.produit_ingredient?.prix_achat || 0,
+              quantite_achat: recette.produit_ingredient?.quantite || 1,
+              cout_ingredient: recette.produit_ingredient?.quantite > 0 ? 
+                Math.round((recette.produit_ingredient.prix_achat / recette.produit_ingredient.quantite) * recette.quantite_necessaire * 100) / 100 : 0,
+              stock_atelier_disponible: 0,
+              ingredient_disponible: true,
+              created_at: recette.created_at,
+              updated_at: recette.updated_at
+            }
+          }
+        })
+      }
+      
+      console.log('Recettes chargées:', recettesFormatees.length)
       return { recettes: recettesFormatees, error: null }
     } catch (error) {
       console.error('Erreur dans getAll recettes:', error)
