@@ -719,7 +719,7 @@ export const statsService = {
         supabase.from('productions').select('id').eq('date_production', new Date().toISOString().split('T')[0]),
         supabase.from('profiles').select('id'),
         supabase.from('vue_stock_faible').select('id'),
-        supabase.from('vue_stock_atelier').select('id').in('statut_stock', ['critique', 'rupture'])
+        supabase.from('vue_stock_atelier').select('id').in('statut', ['critique', 'rupture'])
       ])
 
       if (produitsError || demandesError || productionsError || profilesError) {
@@ -828,3 +828,4 @@ export const utils = {
 }
 
 export default supabase
+
