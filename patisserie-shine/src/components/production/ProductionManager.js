@@ -45,33 +45,31 @@ export default function ProductionManager({ currentUser }) {
   };
 
   const verifierIngredients = async () => {
-    if (!formData.produit || !formData.quantite) {
+  if (!formData.produit || !formData.quantite) {
+    setIngredientsVerification(null);
+    return;
+  }
+
+  try {
+    const result = await recetteService.verifierDisponibiliteIngredients(
+      formData.produit,
+      parseFloat(formData.quantite)
+    );
+
+    if (result.error) {
+      setError(result.error);
       setIngredientsVerification(null);
       return;
     }
 
-    setVerificationLoading(true);
-    try {
-      const result = await recetteService.verifierDisponibiliteIngredients(
-        formData.produit,
-        parseFloat(formData.quantite)
-      );
+    setIngredientsVerification(result);
+    setError('');
+  } catch (err) {
+    setError(err.message);
+    setIngredientsVerification(null);
+  }
+};
 
-      if (result.error) {
-        setError(result.error);
-        setIngredientsVerification(null);
-        return;
-      }
-
-      setIngredientsVerification(result);
-      setError('');
-    } catch (err) {
-      setError(err.message);
-      setIngredientsVerification(null);
-    } finally {
-      setVerificationLoading(false);
-    }
-  };
 
   
 
