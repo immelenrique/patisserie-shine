@@ -332,6 +332,9 @@ export const demandeService = {
 }
 
 // ===================== SERVICES PRODUCTION =====================
+// Service de production mis à jour dans src/lib/supabase.js
+// Remplacer la section productionService par ce code :
+
 export const productionService = {
   // Récupérer toutes les productions
   async getAll() {
@@ -1137,5 +1140,6 @@ export const utils = {
 }
 
 export default supabase
+
 
 
