@@ -613,7 +613,7 @@ export const uniteService = {
 
 // ===================== SERVICES STOCK ATELIER (CORRIGÉ) =====================
 export const stockAtelierService = {
-  // Récupérer l'état du stock atelier
+  // Récupérer l'état du stock atelier (utilise la vue adaptée à votre structure)
   async getStockAtelier() {
     try {
       const { data, error } = await supabase
@@ -633,8 +633,8 @@ export const stockAtelierService = {
     }
   },
 
-  // Obtenir l'historique des transferts
-   async getHistoriqueTransferts() {
+  // Obtenir l'historique des transferts (utilise votre table directement)
+  async getHistoriqueTransferts() {
     try {
       const { data, error } = await supabase
         .from('stock_atelier')
@@ -676,7 +676,8 @@ export const stockAtelierService = {
       return { transferts: [], error: error.message }
     }
   },
-   // Obtenir l'historique des consommations (via consommations_atelier)
+
+  // Obtenir l'historique des consommations (via consommations_atelier)
   async getHistoriqueConsommations(limit = 50) {
     try {
       const { data, error } = await supabase
@@ -701,67 +702,9 @@ export const stockAtelierService = {
     } catch (error) {
       console.error('Erreur dans getHistoriqueConsommations:', error)
       return { consommations: [], error: error.message }
-    } 
-  },
-    
-  // Transférer vers l'atelier (optionnel - peut être fait via demandes)
-  async transfererVersAtelier(produitId, quantite) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      // Vérifier le stock disponible
-      const { data: produit, error: produitError } = await supabase
-        .from('produits')
-        .select('quantite_restante, nom')
-        .eq('id', produitId)
-        .single()
-      
-      if (produitError || !produit) {
-        return { success: false, error: 'Produit introuvable' }
-      }
-      
-      if (produit.quantite_restante < quantite) {
-        return { success: false, error: 'Stock insuffisant dans le stock principal' }
-      }
-      
-      // Créer le transfert direct
-      const { data, error } = await supabase
-        .from('stock_atelier')
-        .insert({
-          produit_id: produitId,
-          quantite_transferee: quantite,
-          transfere_par: user?.id,
-          statut: 'effectue'
-        })
-        .select()
-        .single()
-      
-      if (error) {
-        console.error('Erreur transfert:', error)
-        return { success: false, error: error.message }
-      }
-      
-      // Décrémenter le stock principal
-      const { error: updateError } = await supabase
-        .from('produits')
-        .update({
-          quantite_restante: produit.quantite_restante - quantite
-        })
-        .eq('id', produitId)
-      
-      if (updateError) {
-        console.error('Erreur mise à jour stock:', updateError)
-        return { success: false, error: 'Erreur lors de la mise à jour du stock' }
-      }
-      
-      return { success: true, transfert: data }
-    } catch (error) {
-      console.error('Erreur dans transfererVersAtelier:', error)
-      return { success: false, error: error.message }
     }
   }
-}
-
+},
 // ===================== SERVICES RECETTES (CORRIGÉ COMPLET) =====================
 export const recetteService = {
   // Récupérer toutes les recettes
@@ -1204,6 +1147,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
