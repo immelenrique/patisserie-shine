@@ -75,7 +75,7 @@ export default function PatisserieApp() {
     { id: 'stock-atelier', label: 'Stock Atelier', adminOnly: true },
     { id: 'recettes', label: 'Recettes', adminOnly: true },
     { id: 'demandes', label: 'Demandes', adminOnly: false },
-    { id: 'production', label: 'Production', adminOnly: false },
+    { id: 'production', label: 'Produit par atelier', adminOnly: false },
     { id: 'unites', label: 'Unités', adminOnly: true },
     { id: 'equipe', label: 'Équipe', adminOnly: true }
   ];
@@ -152,3 +152,4 @@ export default function PatisserieApp() {
     </div>
   );
 }
+
