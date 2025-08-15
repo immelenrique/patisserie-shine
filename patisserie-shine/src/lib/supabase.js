@@ -513,11 +513,48 @@ export const stockAtelierService = {
   // Obtenir l'historique des transferts
   async getHistoriqueTransferts() {
     try {
-      const { data, error } = await supabase
-        .from('vue_transferts_atelier')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50)
+      // Essayer d'abord avec la vue, sinon utiliser la table directement
+      let data, error;
+      
+      try {
+        ({ data, error } = await supabase
+          .from('vue_transferts_atelier')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(50))
+      } catch (viewError) {
+        // Si la vue n'existe pas, utiliser la table stock_atelier directement
+        ({ data, error } = await supabase
+          .from('stock_atelier')
+          .select(`
+            id,
+            produit_id,
+            quantite_transferee,
+            transfere_par,
+            statut,
+            created_at,
+            produit:produits(nom, unite:unites(label)),
+            transfere_par_profile:profiles!stock_atelier_transfere_par_fkey(nom)
+          `)
+          .eq('statut', 'effectue')
+          .order('created_at', { ascending: false })
+          .limit(50))
+        
+        // Reformater les données pour correspondre à l'interface attendue
+        if (data) {
+          data = data.map(transfert => ({
+            id: transfert.id,
+            produit_id: transfert.produit_id,
+            nom_produit: transfert.produit?.nom || 'Produit inconnu',
+            quantite_transferee: transfert.quantite_transferee,
+            transfere_par: transfert.transfere_par,
+            statut: transfert.statut,
+            created_at: transfert.created_at,
+            unite: transfert.produit?.unite?.label || '',
+            transfere_par_nom: transfert.transfere_par_profile?.nom || 'Inconnu'
+          }))
+        }
+      }
       
       if (error) {
         console.error('Erreur getHistoriqueTransferts:', error)
@@ -638,7 +675,33 @@ export const recetteService = {
   // Obtenir les produits avec recettes
   async getProduitsRecettes() {
     try {
-      const { data, error } = await supabase.rpc('get_produits_avec_recettes')
+      // Essayer d'abord avec la fonction principale
+      let data, error;
+      
+      try {
+        ({ data, error } = await supabase.rpc('get_produits_avec_recettes'))
+      } catch (firstError) {
+        console.warn('Fonction get_produits_avec_recettes échouée, essai avec fallback:', firstError)
+        
+        // Essayer avec la fonction de fallback
+        try {
+          ({ data, error } = await supabase.rpc('get_produits_recettes_simple'))
+        } catch (secondError) {
+          console.warn('Fonction fallback échouée, requête directe:', secondError)
+          
+          // Dernière tentative : requête directe sur la table
+          ({ data, error } = await supabase
+            .from('recettes')
+            .select('nom_produit')
+            .order('nom_produit'))
+          
+          // Extraire les noms uniques
+          if (data) {
+            const nomsUniques = [...new Set(data.map(item => item.nom_produit))].sort()
+            data = nomsUniques.map(nom => ({ nom_produit: nom }))
+          }
+        }
+      }
       
       if (error) {
         console.error('Erreur getProduitsRecettes:', error)
