@@ -1,7 +1,7 @@
 "use client";
 
 import { ChefHat, Package, ShoppingCart, Warehouse, AlertTriangle, TrendingUp } from 'lucide-react';
-import { Card, StatCard } from '@/components/ui';
+import { Card, StatCard } from '../ui';
 
 export default function Dashboard({ stats, loading }) {
   const calculatedStats = {
