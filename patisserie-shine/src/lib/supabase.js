@@ -273,25 +273,25 @@ export const demandeService = {
 
   // Valider une demande
   async validate(demandeId) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      const { data, error } = await supabase.rpc('valider_demande', {
-        demande_id: demandeId,
-        valideur_id: user?.id
-      })
-      
-      if (error) {
-        console.error('Erreur validate demande:', error)
-        return { result: null, error: error.message }
-      }
-      
-      return { result: data, error: null }
-    } catch (error) {
-      console.error('Erreur dans validate demande:', error)
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    const { data, error } = await supabase.rpc('valider_demande_web', {
+      demande_id_input: demandeId.toString(), // forcer en string pour le text param
+      p_valideur_id: user?.id
+    })
+    
+    if (error) {
+      console.error('Erreur validate demande:', error)
       return { result: null, error: error.message }
     }
-  },
+    
+    return { result: data, error: null }
+  } catch (error) {
+    console.error('Erreur dans validate demande:', error)
+    return { result: null, error: error.message }
+  }
+}
 
   // Refuser une demande
   async reject(demandeId) {
@@ -828,4 +828,5 @@ export const utils = {
 }
 
 export default supabase
+
 
