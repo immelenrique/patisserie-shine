@@ -481,6 +481,4 @@ export default function RecettesManager({ currentUser }) {
       </Modal>
     </div>
   );
-};
-
-export default RecettesManager;
+}
