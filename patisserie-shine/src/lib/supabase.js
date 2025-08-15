@@ -793,14 +793,27 @@ export const recetteService = {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       
+      // Préparer les données à insérer
+      const insertData = {
+        nom_produit: recetteData.nom_produit,
+        produit_ingredient_id: recetteData.produit_ingredient_id,
+        quantite_necessaire: recetteData.quantite_necessaire,
+        created_by: user?.id
+      }
+      
+      // Ajouter updated_at seulement si la colonne existe
+      try {
+        // Test si la colonne updated_at existe en faisant une requête rapide
+        await supabase.from('recettes').select('updated_at').limit(1)
+        insertData.updated_at = new Date().toISOString()
+      } catch (columnError) {
+        // La colonne n'existe pas, on l'ignore
+        console.warn('Colonne updated_at non disponible dans recettes')
+      }
+
       const { data, error } = await supabase
         .from('recettes')
-        .insert({
-          nom_produit: recetteData.nom_produit,
-          produit_ingredient_id: recetteData.produit_ingredient_id,
-          quantite_necessaire: recetteData.quantite_necessaire,
-          created_by: user?.id
-        })
+        .insert(insertData)
         .select()
         .single()
 
@@ -809,6 +822,7 @@ export const recetteService = {
         return { recette: null, error: error.message }
       }
 
+      console.log('Recette créée avec succès:', data)
       return { recette: data, error: null }
     } catch (error) {
       console.error('Erreur dans create recette:', error)
