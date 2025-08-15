@@ -1058,7 +1058,7 @@ export const recetteService = {
       console.error('Erreur dans getRecettesProduit:', error)
       return { recettes: [], error: error.message }
     }
-  },
+  }
 
 // ===================== SERVICES STATISTIQUES (CORRIGÉ) =====================
 export const statsService = {
@@ -1203,6 +1203,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
