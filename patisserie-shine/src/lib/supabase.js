@@ -291,7 +291,7 @@ export const demandeService = {
     console.error('Erreur dans validate demande:', error)
     return { result: null, error: error.message }
   }
-}
+},
 
   // Refuser une demande
   async reject(demandeId) {
@@ -828,5 +828,6 @@ export const utils = {
 }
 
 export default supabase
+
 
 
