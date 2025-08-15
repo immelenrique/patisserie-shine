@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ChefHat, User, Lock, Eye, EyeOff, RefreshCw } from 'lucide-react';
-import { authService } from '@/lib/supabase';
+import { authService } from '../../lib/supabase';
 
 export default function LoginForm({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -118,8 +118,8 @@ export default function LoginForm({ onLogin }) {
             <p className="text-sm font-medium text-gray-700 mb-3">Créez d'abord vos comptes dans Supabase :</p>
             <div className="space-y-2 text-xs text-gray-600">
               <div>1. Dashboard Supabase → Authentication → Users</div>
-              <div>2. Add user → Email: admin@patisserie.local</div>
-              <div>3. Répétez pour: marie@patisserie.local, jean@patisserie.local</div>
+              <div>2. Add user → Email: admin@shine.local</div>
+              <div>3. Répétez pour: marie@shine.local, jean@shine.local</div>
               <div>4. Connectez-vous avec: admin, marie, jean</div>
             </div>
           </div>
