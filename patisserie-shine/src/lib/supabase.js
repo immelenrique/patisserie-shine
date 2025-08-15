@@ -356,40 +356,107 @@ export const productionService = {
     }
   },
 
-  // Créer une nouvelle production
+  // Créer une nouvelle production avec déduction automatique du stock atelier
   async create(productionData) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       
-      const { data, error } = await supabase
+      if (!user) {
+        return { production: null, error: 'Utilisateur non connecté' }
+      }
+
+      console.log('Création production:', productionData)
+
+      // Utiliser la fonction PostgreSQL qui gère la déduction automatique
+      const { data, error } = await supabase.rpc('creer_production_avec_deduction', {
+        p_produit: productionData.produit,
+        p_quantite: productionData.quantite,
+        p_destination: productionData.destination || 'Boutique',
+        p_date_production: productionData.date_production || new Date().toISOString().split('T')[0],
+        p_producteur_id: user.id
+      })
+      
+      if (error) {
+        console.error('Erreur RPC create production:', error)
+        return { production: null, error: error.message }
+      }
+
+      // Vérifier le résultat de la fonction
+      if (!data || !data.success) {
+        const errorMessage = data?.error || 'Erreur inconnue lors de la création'
+        console.error('Erreur création production:', errorMessage)
+        return { production: null, error: errorMessage }
+      }
+
+      console.log('Production créée avec succès:', data)
+
+      // Récupérer les données complètes de la production créée
+      const { data: productionData, error: fetchError } = await supabase
         .from('productions')
-        .insert({
-          produit: productionData.produit,
-          quantite: productionData.quantite,
-          destination: productionData.destination || 'Boutique',
-          date_production: productionData.date_production || new Date().toISOString().split('T')[0],
-          statut: productionData.statut || 'termine',
-          producteur_id: user?.id
-        })
         .select(`
           *,
           producteur:profiles!productions_producteur_id_fkey(nom)
         `)
+        .eq('id', data.production_id)
         .single()
-      
-      if (error) {
-        console.error('Erreur create production:', error)
-        return { production: null, error: error.message }
+
+      if (fetchError) {
+        console.warn('Erreur récupération production créée:', fetchError)
+        // Retourner quand même le succès avec les données minimales
+        return { 
+          production: { 
+            id: data.production_id, 
+            cout_ingredients: data.cout_ingredients,
+            message: data.message 
+          }, 
+          error: null 
+        }
       }
       
-      return { production: data, error: null }
+      return { 
+        production: {
+          ...productionData,
+          message: data.message
+        }, 
+        error: null 
+      }
     } catch (error) {
       console.error('Erreur dans create production:', error)
       return { production: null, error: error.message }
     }
   },
 
-  // Mettre à jour une production
+  // Annuler une production et restaurer le stock atelier
+  async cancel(productionId) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' }
+      }
+
+      const { data, error } = await supabase.rpc('annuler_production', {
+        p_production_id: productionId,
+        p_utilisateur_id: user.id
+      })
+      
+      if (error) {
+        console.error('Erreur annulation production:', error)
+        return { success: false, error: error.message }
+      }
+
+      if (!data || !data.success) {
+        return { success: false, error: data?.error || 'Erreur lors de l\'annulation' }
+      }
+
+      return { success: true, message: data.message }
+    } catch (error) {
+      console.error('Erreur dans cancel production:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Mettre à jour une production (statut uniquement)
   async update(productionId, updates) {
     try {
       const { data, error } = await supabase
@@ -415,9 +482,61 @@ export const productionService = {
       console.error('Erreur dans update production:', error)
       return { production: null, error: error.message }
     }
+  },
+
+  // Obtenir les productions du jour avec consommation d'ingrédients
+  async getProductionsDuJour() {
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      
+      const { data, error } = await supabase
+        .from('productions')
+        .select(`
+          *,
+          producteur:profiles!productions_producteur_id_fkey(nom)
+        `)
+        .eq('date_production', today)
+        .neq('statut', 'annule')
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        console.error('Erreur getProductionsDuJour:', error)
+        return { productions: [], error: error.message }
+      }
+      
+      return { productions: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getProductionsDuJour:', error)
+      return { productions: [], error: error.message }
+    }
+  },
+
+  // Obtenir l'historique d'utilisation des ingrédients
+  async getHistoriqueUtilisation(limit = 50) {
+    try {
+      const { data, error } = await supabase
+        .from('mouvements_stock')
+        .select(`
+          *,
+          produit:produits(nom, unite:unites(label)),
+          utilisateur:profiles(nom)
+        `)
+        .in('type_mouvement', ['utilisation_production', 'restauration_annulation'])
+        .order('created_at', { ascending: false })
+        .limit(limit)
+      
+      if (error) {
+        console.error('Erreur getHistoriqueUtilisation:', error)
+        return { mouvements: [], error: error.message }
+      }
+      
+      return { mouvements: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getHistoriqueUtilisation:', error)
+      return { mouvements: [], error: error.message }
+    }
   }
 }
-
 // ===================== SERVICES UTILISATEURS =====================
 export const userService = {
   // Récupérer tous les utilisateurs
@@ -1018,3 +1137,4 @@ export const utils = {
 }
 
 export default supabase
+
