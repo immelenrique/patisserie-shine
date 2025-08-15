@@ -372,6 +372,40 @@ export const productionService = {
       if (error) {
         console.error('Erreur create production:', error)
         return { production: null, error: error.message }
+      }
+      
+      return { production: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans create production:', error)
+      return { production: null, error: error.message }
+    }
+  },
+
+  // Mettre à jour une production
+  async update(productionId, updates) {
+    try {
+      const { data, error } = await supabase
+        .from('productions')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', productionId)
+        .select(`
+          *,
+          producteur:profiles!productions_producteur_id_fkey(nom)
+        `)
+        .single()
+      
+      if (error) {
+        console.error('Erreur update production:', error)
+        return { production: null, error: error.message }
+      }
+      
+      return { production: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans update production:', error)
+      return { production: null, error: error.message }
     }
   }
 }
@@ -547,47 +581,6 @@ export const stockAtelierService = {
     } catch (error) {
       console.error('Erreur dans transfererVersAtelier:', error)
       return { success: false, error: error.message }
-    }
-  },
-
-  // Obtenir les consommations par production
-  async getConsommationsParProduit(produitId, limit = 20) {
-    try {
-      const { data, error } = await supabase
-        .from('vue_consommations_detail')
-        .select('*')
-        .eq('produit_id', produitId)
-        .order('date_production', { ascending: false })
-        .limit(limit)
-      
-      if (error) {
-        console.error('Erreur getConsommationsParProduit:', error)
-        return { consommations: [], error: error.message }
-      }
-      
-      return { consommations: data || [], error: null }
-    } catch (error) {
-      console.error('Erreur dans getConsommationsParProduit:', error)
-      return { consommations: [], error: error.message }
-    }
-  },
-
-  // Obtenir les statistiques de consommation
-  async getStatistiquesConsommation(periode = '30 days') {
-    try {
-      const { data, error } = await supabase.rpc('get_stats_consommation_atelier', {
-        p_periode: periode
-      })
-      
-      if (error) {
-        console.error('Erreur getStatistiquesConsommation:', error)
-        return { stats: null, error: error.message }
-      }
-      
-      return { stats: data, error: null }
-    } catch (error) {
-      console.error('Erreur dans getStatistiquesConsommation:', error)
-      return { stats: null, error: error.message }
     }
   }
 }
@@ -834,37 +827,4 @@ export const utils = {
   }
 }
 
-export default supabase }
-      }
-      
-      return { production: data, error: null }
-    } catch (error) {
-      console.error('Erreur dans create production:', error)
-      return { production: null, error: error.message }
-    }
-  },
-
-  // Mettre à jour une production
-  async update(productionId, updates) {
-    try {
-      const { data, error } = await supabase
-        .from('productions')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', productionId)
-        .select(`
-          *,
-          producteur:profiles!productions_producteur_id_fkey(nom)
-        `)
-        .single()
-      
-      if (error) {
-        console.error('Erreur update production:', error)
-        return { production: null, error: error.message }
-      }
-      
-      return { production: data, error: null }
-    } catch (error) {
-      console.error('Erreur dans update production:', error)
+export default supabase
