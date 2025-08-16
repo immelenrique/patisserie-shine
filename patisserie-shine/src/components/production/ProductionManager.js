@@ -56,6 +56,7 @@ export default function ProductionManager({ currentUser }) {
 
   const loadRecetteInfo = async () => {
     try {
+      // Utiliser la méthode correcte getRecettesProduit
       const { recettes, error } = await recetteService.getRecettesProduit(formData.produit);
       
       if (error) {
