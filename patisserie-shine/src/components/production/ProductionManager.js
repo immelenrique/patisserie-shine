@@ -189,10 +189,12 @@ export default function ProductionManager({ currentUser }) {
         <div className="flex items-start">
           <Info className="w-5 h-5 text-blue-600 mr-2 mt-0.5" />
           <div className="text-blue-800">
-            <h4 className="font-medium mb-1">Processus de production automatique</h4>
+            <h4 className="font-medium mb-1">🔄 Processus de production automatique</h4>
             <p className="text-sm">
-              ✓ Les ingrédients sont automatiquement déduits du stock principal<br/>
-              ✓ Les soldes mis à jour sont disponibles immédiatement dans l'atelier<br/>
+              <strong>Flux complet :</strong><br/>
+              1️⃣ <strong>Demandes</strong> → Les ingrédients demandés vont dans le stock atelier<br/>
+              2️⃣ <strong>Production</strong> → Les ingrédients sont déduits du stock atelier<br/>
+              3️⃣ <strong>Solde visible</strong> → Vous voyez ce qui reste dans l'atelier après production<br/>
               ✓ Le coût de production est calculé automatiquement selon vos recettes
             </p>
           </div>
