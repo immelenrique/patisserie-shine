@@ -126,13 +126,13 @@ export function Footer() {
               <ChefHat className="h-4 w-4 text-white" />
             </div>
             <span className="text-sm text-gray-600">
-              © 2024 Pâtisserie Shine - Gestion de stock professionnelle
+              © 2025 Pâtisserie Shine - Gestion de stock professionnelle
             </span>
           </div>
           <div className="flex items-center space-x-4 text-sm text-gray-500">
             <span>Version 3.0.0</span>
             <span>•</span>
-            <span>Made with ❤️ in Burkina Faso 🇧🇫</span>
+            <span>Made in Burkina Faso 🇧🇫</span>
           </div>
         </div>
       </div>
