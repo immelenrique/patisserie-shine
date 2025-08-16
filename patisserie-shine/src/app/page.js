@@ -11,9 +11,12 @@ import Dashboard from '../components/dashboard/Dashboard';
 // Import dynamique des gestionnaires
 import StockManager from '../components/stock/StockManager';
 import StockAtelierManager from '../components/stock/StockAtelierManager';
+import StockBoutiqueManager from '../components/stock/StockBoutiqueManager';
 import DemandesManager from '../components/demandes/DemandesManager';
 import ProductionManager from '../components/production/ProductionManager';
 import RecettesManager from '../components/production/RecettesManager';
+import CaisseManager from '../components/caisse/CaisseManager';
+import ComptabiliteManager from '../components/comptabilite/ComptabiliteManager';
 import UnitesManager from '../components/admin/UnitesManager';
 import TeamManager from '../components/admin/TeamManager';
 import UserManagement from '../components/admin/UserManagement';
@@ -69,21 +72,24 @@ export default function PatisserieApp() {
     }
   };
 
-  // Navigation tabs avec le nouvel onglet de gestion des utilisateurs
+  // Navigation tabs avec les nouveaux onglets
   const tabs = [
     { id: 'dashboard', label: 'Tableau de Bord', adminOnly: false },
     { id: 'stock', label: 'Stock Principal', adminOnly: false },
     { id: 'stock-atelier', label: 'Stock Atelier', adminOnly: true },
+    { id: 'stock-boutique', label: 'Stock Boutique', adminOnly: false },
     { id: 'recettes', label: 'Recettes', adminOnly: true },
     { id: 'demandes', label: 'Demandes', adminOnly: false },
     { id: 'production', label: 'Production', adminOnly: false },
+    { id: 'caisse', label: 'Caisse', adminOnly: false },
+    { id: 'comptabilite', label: 'Comptabilité', adminOnly: true },
     { id: 'unites', label: 'Unités', adminOnly: true },
     { id: 'equipe', label: 'Équipe', adminOnly: true },
     { 
       id: 'users', 
       label: 'Utilisateurs', 
       adminOnly: true, 
-      proprietaireOnly: true // Nouveau flag pour le propriétaire
+      proprietaireOnly: true
     }
   ];
 
@@ -119,6 +125,8 @@ export default function PatisserieApp() {
         return currentUser.role === 'admin' ? 
           <StockAtelierManager currentUser={currentUser} /> : 
           <Dashboard stats={stats} loading={!stats} />;
+      case 'stock-boutique':
+        return <StockBoutiqueManager currentUser={currentUser} />;
       case 'recettes':
         return currentUser.role === 'admin' ? 
           <RecettesManager currentUser={currentUser} /> : 
@@ -127,6 +135,12 @@ export default function PatisserieApp() {
         return <DemandesManager currentUser={currentUser} />;
       case 'production':
         return <ProductionManager currentUser={currentUser} />;
+      case 'caisse':
+        return <CaisseManager currentUser={currentUser} />;
+      case 'comptabilite':
+        return currentUser.role === 'admin' ? 
+          <ComptabiliteManager currentUser={currentUser} /> : 
+          <Dashboard stats={stats} loading={!stats} />;
       case 'unites':
         return currentUser.role === 'admin' ? 
           <UnitesManager currentUser={currentUser} /> : 
@@ -136,7 +150,6 @@ export default function PatisserieApp() {
           <TeamManager currentUser={currentUser} /> : 
           <Dashboard stats={stats} loading={!stats} />;
       case 'users':
-        // Nouveau cas pour la gestion des utilisateurs
         return (currentUser.role === 'admin' || currentUser.username === 'proprietaire') ? 
           <UserManagement currentUser={currentUser} /> : 
           <Dashboard stats={stats} loading={!stats} />;
