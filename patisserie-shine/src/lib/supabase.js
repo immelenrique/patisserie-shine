@@ -321,6 +321,82 @@ export const productService = {
       return { products: [], error: error.message }
     }
   },
+  async mettreAJourStockBoutique(productionData) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { success: false, error: 'Utilisateur non connecté' }
+    }
+
+    // Vérifier si le produit a un prix de vente défini
+    const { data: prixVente } = await supabase
+      .from('prix_vente')
+      .select('prix_vente')
+      .eq('produit_id', productionData.produit_id)
+      .single()
+
+    if (!prixVente || !prixVente.prix_vente) {
+      console.warn(`Produit ${productionData.produit} sans prix de vente défini, non ajouté à la boutique`)
+      return { success: false, error: 'Prix de vente non défini pour ce produit' }
+    }
+
+    // Ajouter/mettre à jour le stock boutique
+    const { data: stockExistant } = await supabase
+      .from('stock_boutique')
+      .select('id, quantite_disponible')
+      .eq('produit_id', productionData.produit_id)
+      .single()
+
+    if (stockExistant) {
+      // Mettre à jour stock existant
+      const { error: updateError } = await supabase
+        .from('stock_boutique')
+        .update({
+          quantite_disponible: (stockExistant.quantite_disponible || 0) + productionData.quantite,
+          prix_vente: prixVente.prix_vente,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', stockExistant.id)
+
+      if (updateError) {
+        console.error('Erreur mise à jour stock boutique:', updateError)
+        return { success: false, error: updateError.message }
+      }
+    } else {
+      // Créer nouvelle entrée stock boutique
+      const { error: insertError } = await supabase
+        .from('stock_boutique')
+        .insert({
+          produit_id: productionData.produit_id,
+          quantite_disponible: productionData.quantite,
+          quantite_vendue: 0,
+          prix_vente: prixVente.prix_vente
+        })
+
+      if (insertError) {
+        console.error('Erreur création stock boutique:', insertError)
+        return { success: false, error: insertError.message }
+      }
+    }
+
+    // Enregistrer l'entrée boutique
+    await supabase
+      .from('entrees_boutique')
+      .insert({
+        produit_id: productionData.produit_id,
+        quantite: productionData.quantite,
+        source: 'production',
+        type_entree: 'production',
+        prix_vente: prixVente.prix_vente
+      })
+
+    return { success: true, message: 'Stock boutique mis à jour avec succès' }
+  } catch (error) {
+    console.error('Erreur dans mettreAJourStockBoutique:', error)
+    return { success: false, error: error.message }
+  }
+},
 
   // Créer un nouveau produit AVEC enregistrement automatique de la dépense
   async create(productData) {
@@ -1496,35 +1572,50 @@ export const comptabiliteService = {
   },
   // Obtenir le rapport comptable
   async getRapportComptable(dateDebut, dateFin) {
-    try {
-      const ventesResult = await caisseService.getVentesPeriode(dateDebut, dateFin)
-      const ventes = ventesResult.ventes || []
-      
-      const chiffreAffaires = ventes.reduce((sum, v) => sum + (v.total || 0), 0)
-      const nombreVentes = ventes.length
-      const ticketMoyen = nombreVentes > 0 ? chiffreAffaires / nombreVentes : 0
+  try {
+    // 1. Récupérer les ventes
+    const ventesResult = await caisseService.getVentesPeriode(dateDebut, dateFin)
+    const ventes = ventesResult.ventes || []
+    
+    const chiffreAffaires = ventes.reduce((sum, v) => sum + (v.total || 0), 0)
+    const nombreVentes = ventes.length
+    const ticketMoyen = nombreVentes > 0 ? chiffreAffaires / nombreVentes : 0
 
-      return {
-        periode: { debut: dateDebut, fin: dateFin },
-        finances: {
-          chiffre_affaires: chiffreAffaires,
-          depenses: 0,
-          marge_brute: chiffreAffaires,
-          pourcentage_marge: 100
-        },
-        ventes: {
-          nombre_transactions: nombreVentes,
-          ticket_moyen: Math.round(ticketMoyen * 100) / 100,
-          articles_vendus: ventes.reduce((sum, v) => 
-            sum + (v.items?.reduce((s, i) => s + (i.quantite || 0), 0) || 0), 0)
-        },
-        error: null
-      }
-    } catch (error) {
-      console.error('Erreur dans getRapportComptable:', error)
-      return { error: error.message }
+    // 2. Récupérer les dépenses
+    const depensesResult = await this.getDepenses(dateDebut, dateFin)
+    const totalDepenses = depensesResult.depenses || 0
+
+    // 3. Calculer la marge
+    const margeBrute = chiffreAffaires - totalDepenses
+    const pourcentageMarge = chiffreAffaires > 0 ? (margeBrute / chiffreAffaires) * 100 : 0
+
+    // 4. Calculer les articles vendus
+    const articlesVendus = ventes.reduce((sum, v) => 
+      sum + (v.items?.reduce((s, i) => s + (i.quantite || 0), 0) || 0), 0)
+
+    return {
+      periode: { debut: dateDebut, fin: dateFin },
+      finances: {
+        chiffre_affaires: Math.round(chiffreAffaires * 100) / 100,
+        depenses: Math.round(totalDepenses * 100) / 100,
+        marge_brute: Math.round(margeBrute * 100) / 100,
+        pourcentage_marge: Math.round(pourcentageMarge * 100) / 100
+      },
+      ventes: {
+        nombre_transactions: nombreVentes,
+        ticket_moyen: Math.round(ticketMoyen * 100) / 100,
+        articles_vendus: articlesVendus
+      },
+      depenses_details: depensesResult.details || [],
+      repartition_depenses: depensesResult.repartition || {},
+      error: null
     }
-  },
+  } catch (error) {
+    console.error('Erreur dans getRapportComptable:', error)
+    return { error: error.message }
+  }
+}
+
 
   // Obtenir l'évolution mensuelle
   async getEvolutionMensuelle(annee) {
@@ -1783,3 +1874,4 @@ export const utils = {
 }
 
 export default supabase
+
