@@ -543,17 +543,6 @@ export const productService = {
         return { success: false, error: 'Utilisateur non connecté' }
       }
 
-      // Vérifier les permissions (admin seulement)
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, username')
-        .eq('id', user.id)
-        .single()
-
-      if (profile?.role !== 'admin' && profile?.username !== 'proprietaire') {
-        return { success: false, error: 'Seuls les administrateurs peuvent définir les prix de vente' }
-      }
-
       // Récupérer les infos du produit
       const { data: produit, error: produitError } = await supabase
         .from('produits')
@@ -569,16 +558,14 @@ export const productService = {
       const marge = prixVente - (produit.prix_achat || 0)
       const pourcentageMarge = produit.prix_achat > 0 ? (marge / produit.prix_achat) * 100 : 0
 
-      // Mettre à jour ou créer l'entrée dans prix_vente
+      // Mettre à jour ou créer l'entrée dans prix_vente_produits
       const { data, error } = await supabase
-        .from('prix_vente')
+        .from('prix_vente_produits')
         .upsert({
           produit_id: produitId,
-          prix_vente: prixVente,
-          marge: marge,
-          pourcentage_marge: Math.round(pourcentageMarge * 100) / 100,
-          defini_par: user.id,
-          updated_at: new Date().toISOString()
+          prix: prixVente,
+          marge_pourcentage: Math.round(pourcentageMarge * 100) / 100,
+          actif: true
         })
         .select()
 
@@ -604,24 +591,37 @@ export const productService = {
     }
   },
 
+
+      
+
   // Obtenir les prix de vente définis
-  async getPrixVente() {
+ async getPrixVente() {
     try {
       const { data, error } = await supabase
-        .from('prix_vente')
+        .from('prix_vente_produits') // Nom correct selon le schéma
         .select(`
           *,
-          produit:produits(nom, prix_achat, unite:unites(label)),
-          defini_par_profile:profiles!prix_vente_defini_par_fkey(nom)
+          produit:produits(nom, prix_achat, unite:unites(label))
         `)
-        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false })
       
       if (error) {
         console.error('Erreur getPrixVente:', error)
         return { prix: [], error: error.message }
       }
       
-      return { prix: data || [], error: null }
+      // Reformater les données pour correspondre au code existant
+      const prixFormates = (data || []).map(item => ({
+        id: item.id,
+        produit_id: item.produit_id,
+        prix_vente: item.prix,
+        marge: item.prix - (item.produit?.prix_achat || 0),
+        pourcentage_marge: item.marge_pourcentage || 0,
+        produit: item.produit,
+        created_at: item.created_at
+      }))
+      
+      return { prix: prixFormates, error: null }
     } catch (error) {
       console.error('Erreur dans getPrixVente:', error)
       return { prix: [], error: error.message }
@@ -1869,6 +1869,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
