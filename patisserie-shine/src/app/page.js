@@ -20,6 +20,8 @@ import ComptabiliteManager from '../components/comptabilite/ComptabiliteManager'
 import UnitesManager from '../components/admin/UnitesManager';
 import TeamManager from '../components/admin/TeamManager';
 import UserManagement from '../components/admin/UserManagement';
+import PrixVenteManager from '../components/caisse/PrixVenteManager';
+
 
 export default function PatisserieApp() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -82,6 +84,7 @@ export default function PatisserieApp() {
     { id: 'demandes', label: 'Demandes', adminOnly: false },
     { id: 'production', label: 'Production', adminOnly: false },
     { id: 'caisse', label: 'Caisse', adminOnly: false },
+    { id: 'prix-vente', label: 'Prix Vente', adminOnly: true, proprietaireOnly: true },
     { id: 'comptabilite', label: 'Comptabilité', adminOnly: true },
     { id: 'unites', label: 'Unités', adminOnly: true },
     { id: 'equipe', label: 'Équipe', adminOnly: true },
@@ -181,3 +184,4 @@ export default function PatisserieApp() {
     </div>
   );
 }
+
