@@ -860,8 +860,6 @@ export const caisseServiceCorrected = {
   }
 }
 
-// Export par défaut pour compatibilité
-export default caisseServiceCorrected
 
 // Fonction utilitaire pour tester le système complet
 export const testerSystemeComplet = async () => {
@@ -2414,6 +2412,7 @@ export const userService = {
   }
 }
 export default supabase
+
 
 
 
