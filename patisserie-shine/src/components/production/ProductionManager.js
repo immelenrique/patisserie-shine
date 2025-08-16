@@ -1,49 +1,46 @@
 "use client";
-
 import { useState, useEffect } from 'react';
 import { productionService, recetteService, utils } from '../../lib/supabase';
 import { Plus, ChefHat, Calendar, MapPin, User, AlertTriangle, CheckCircle, Clock, Package } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
 
-export default function ProductionManager({ currentUser }) {
-  const [productions, setProductions] = useState([]);
-  const [produitsRecettes, setProduitsRecettes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [formData, setFormData] = useState({
+
+const [productions, setProductions] = useState([]);
+const [produitsRecettes, setProduitsRecettes] = useState([]);
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState('');
+const [showAddModal, setShowAddModal] = useState(false);
+const [formData, setFormData] = useState({
     produit: '',
     quantite: '',
     destination: 'Boutique',
     date_production: new Date().toISOString().split('T')[0]
-  });
- const [ingredientsVerification, setIngredientsVerification] = useState(null);
+});
+const [ingredientsVerification, setIngredientsVerification] = useState(null);
 
 
   useEffect(() => {
     loadData();
-  }, []);
+}, []);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [productionsResult, produitsResult] = await Promise.all([
-        productionService.getAll(),
-        recetteService.getProduitsRecettes()
-      ]);
-
-      if (productionsResult.error) throw new Error(productionsResult.error);
-      if (produitsResult.error) throw new Error(produitsResult.error);
-
-      setProductions(productionsResult.productions);
-      setProduitsRecettes(produitsResult.produits);
-      setError('');
+        const [productionsResult, produitsResult] = await Promise.all([
+            productionService.getAll(),
+            recetteService.getProduitsRecettes()
+        ]);
+        ...
+        setProductions(productionsResult.productions);
+        setProduitsRecettes(produitsResult.produits);
+        setError('');
     } catch (err) {
-      setError(err.message);
+        setError(err.message);
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+};
+
 
   const verifierIngredients = async () => {
   if (!formData.produit || !formData.quantite) {
