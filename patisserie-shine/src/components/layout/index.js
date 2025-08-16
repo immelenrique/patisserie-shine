@@ -1,8 +1,13 @@
-// src/components/layout/index.js - Version mise à jour
+import React from 'react';
 import { ChefHat, Bell, LogOut, Home, Package, Warehouse, Calculator, ShoppingCart, Users, UserPlus, Store, CreditCard, BarChart3 } from 'lucide-react';
 
 // Header Component
 export function Header({ currentUser, stats, onLogout }) {
+  // Vérifications de sécurité
+  if (!currentUser) {
+    return null;
+  }
+
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 py-4">
@@ -25,7 +30,7 @@ export function Header({ currentUser, stats, onLogout }) {
             <div className="relative">
               <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="h-5 w-5" />
-                {(stats?.demandes_en_attente > 0 || stats?.stock_atelier_critique > 0 || stats?.produits_stock_critique > 0) && (
+                {((stats?.demandes_en_attente || 0) + (stats?.stock_atelier_critique || 0) + (stats?.produits_stock_critique || 0)) > 0 && (
                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
                     {(stats?.demandes_en_attente || 0) + (stats?.stock_atelier_critique || 0) + (stats?.produits_stock_critique || 0)}
                   </span>
@@ -36,7 +41,7 @@ export function Header({ currentUser, stats, onLogout }) {
             <div className="flex items-center space-x-3 px-4 py-2 bg-gray-50 rounded-xl">
               <div className="w-8 h-8 bg-gradient-to-r from-green-400 to-blue-500 rounded-lg flex items-center justify-center">
                 <span className="text-white text-sm font-semibold">
-                  {currentUser?.nom?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
+                  {(currentUser?.nom?.charAt(0) || currentUser?.email?.charAt(0) || 'U').toUpperCase()}
                 </span>
               </div>
               <div>
@@ -51,6 +56,7 @@ export function Header({ currentUser, stats, onLogout }) {
             <button
               onClick={onLogout}
               className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Se déconnecter"
             >
               <LogOut className="h-5 w-5" />
             </button>
@@ -63,6 +69,11 @@ export function Header({ currentUser, stats, onLogout }) {
 
 // Navigation Component
 export function Navigation({ tabs, activeTab, onTabChange, stats }) {
+  // Vérifications de sécurité
+  if (!tabs || !Array.isArray(tabs)) {
+    return null;
+  }
+
   const tabIcons = {
     dashboard: Home,
     stock: Package,
@@ -72,6 +83,7 @@ export function Navigation({ tabs, activeTab, onTabChange, stats }) {
     demandes: ShoppingCart,
     production: ChefHat,
     caisse: CreditCard,
+    'prix-vente': CreditCard,
     comptabilite: BarChart3,
     unites: Calculator,
     equipe: Users,
@@ -79,11 +91,11 @@ export function Navigation({ tabs, activeTab, onTabChange, stats }) {
   };
 
   const tabBadges = {
-    stock: stats?.produits_stock_critique,
-    'stock-atelier': stats?.stock_atelier_critique,
-    'stock-boutique': stats?.stock_boutique_critique,
-    demandes: stats?.demandes_en_attente,
-    caisse: stats?.ventes_en_cours
+    stock: stats?.produits_stock_critique || 0,
+    'stock-atelier': stats?.stock_atelier_critique || 0,
+    'stock-boutique': stats?.stock_boutique_critique || 0,
+    demandes: stats?.demandes_en_attente || 0,
+    caisse: stats?.ventes_en_cours || 0
   };
 
   return (
@@ -91,13 +103,13 @@ export function Navigation({ tabs, activeTab, onTabChange, stats }) {
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex space-x-1 overflow-x-auto">
           {tabs.map((tab) => {
-            const Icon = tabIcons[tab.id];
-            const badge = tabBadges[tab.id];
+            const Icon = tabIcons[tab.id] || Package;
+            const badge = tabBadges[tab.id] || 0;
             
             return (
               <button
                 key={tab.id}
-                onClick={() => onTabChange(tab.id)}
+                onClick={() => onTabChange && onTabChange(tab.id)}
                 className={`flex items-center space-x-2 px-4 py-4 rounded-t-lg font-medium text-sm transition-all duration-200 relative whitespace-nowrap ${
                   activeTab === tab.id
                     ? 'bg-orange-50 text-orange-600 border-b-2 border-orange-500'
