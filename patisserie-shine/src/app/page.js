@@ -8,7 +8,7 @@ import LoginForm from '../components/auth/LoginForm';
 import { Header, Navigation, Footer } from '../components/layout';
 import Dashboard from '../components/dashboard/Dashboard';
 
-// Import dynamique des gestionnaires
+// Import des gestionnaires avec des noms corrects
 import StockManager from '../components/stock/StockManager';
 import StockAtelierManager from '../components/stock/StockAtelierManager';
 import StockBoutiqueManager from '../components/stock/StockBoutiqueManager';
@@ -21,7 +21,6 @@ import UnitesManager from '../components/admin/UnitesManager';
 import TeamManager from '../components/admin/TeamManager';
 import UserManagement from '../components/admin/UserManagement';
 import PrixVenteManager from '../components/caisse/PrixVenteManager';
-
 
 export default function PatisserieApp() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -74,7 +73,7 @@ export default function PatisserieApp() {
     }
   };
 
-  // Navigation tabs avec les nouveaux onglets
+  // Navigation tabs avec vérification des permissions
   const tabs = [
     { id: 'dashboard', label: 'Tableau de Bord', adminOnly: false },
     { id: 'stock', label: 'Stock Principal', adminOnly: false },
@@ -98,10 +97,12 @@ export default function PatisserieApp() {
 
   // Filtrer les onglets selon les permissions
   const visibleTabs = tabs.filter(tab => {
+    if (!currentUser) return false;
+    
     if (tab.proprietaireOnly) {
-      return currentUser?.role === 'admin' || currentUser?.username === 'proprietaire';
+      return currentUser.role === 'admin' || currentUser.username === 'proprietaire';
     }
-    return !tab.adminOnly || currentUser?.role === 'admin';
+    return !tab.adminOnly || currentUser.role === 'admin';
   });
 
   if (loading) {
@@ -117,51 +118,69 @@ export default function PatisserieApp() {
     return <LoginForm onLogin={setCurrentUser} />;
   }
 
-  // Rendu du contenu selon l'onglet actif
+  // Rendu du contenu selon l'onglet actif avec vérification des erreurs
   const renderContent = () => {
-    switch (activeTab) {
-      case 'dashboard':
-        return <Dashboard stats={stats} loading={!stats} />;
-      case 'stock':
-        return <StockManager currentUser={currentUser} />;
-      case 'stock-atelier':
-        return currentUser.role === 'admin' ? 
-          <StockAtelierManager currentUser={currentUser} /> : 
-          <Dashboard stats={stats} loading={!stats} />;
-      case 'stock-boutique':
-        return <StockBoutiqueManager currentUser={currentUser} />;
-      case 'recettes':
-        return currentUser.role === 'admin' ? 
-          <RecettesManager currentUser={currentUser} /> : 
-          <Dashboard stats={stats} loading={!stats} />;
-      case 'demandes':
-        return <DemandesManager currentUser={currentUser} />;
-      case 'production':
-        return <ProductionManager currentUser={currentUser} />;
-      case 'caisse':
-        return <CaisseManager currentUser={currentUser} />;
-      case 'prix-vente':
-        return (currentUser.role === 'admin' || currentUser.username === 'proprietaire') ? 
-          <PrixVenteManager currentUser={currentUser} /> : 
-          <Dashboard stats={stats} loading={!stats} />;
-      case 'comptabilite':
-        return currentUser.role === 'admin' ? 
-          <ComptabiliteManager currentUser={currentUser} /> : 
-          <Dashboard stats={stats} loading={!stats} />;
-      case 'unites':
-        return currentUser.role === 'admin' ? 
-          <UnitesManager currentUser={currentUser} /> : 
-          <Dashboard stats={stats} loading={!stats} />;
-      case 'equipe':
-        return currentUser.role === 'admin' ? 
-          <TeamManager currentUser={currentUser} /> : 
-          <Dashboard stats={stats} loading={!stats} />;
-      case 'users':
-        return (currentUser.role === 'admin' || currentUser.username === 'proprietaire') ? 
-          <UserManagement currentUser={currentUser} /> : 
-          <Dashboard stats={stats} loading={!stats} />;
-      default:
-        return <Dashboard stats={stats} loading={!stats} />;
+    try {
+      switch (activeTab) {
+        case 'dashboard':
+          return <Dashboard stats={stats} loading={!stats} />;
+        case 'stock':
+          return <StockManager currentUser={currentUser} />;
+        case 'stock-atelier':
+          return currentUser.role === 'admin' ? 
+            <StockAtelierManager currentUser={currentUser} /> : 
+            <Dashboard stats={stats} loading={!stats} />;
+        case 'stock-boutique':
+          return <StockBoutiqueManager currentUser={currentUser} />;
+        case 'recettes':
+          return currentUser.role === 'admin' ? 
+            <RecettesManager currentUser={currentUser} /> : 
+            <Dashboard stats={stats} loading={!stats} />;
+        case 'demandes':
+          return <DemandesManager currentUser={currentUser} />;
+        case 'production':
+          return <ProductionManager currentUser={currentUser} />;
+        case 'caisse':
+          return <CaisseManager currentUser={currentUser} />;
+        case 'prix-vente':
+          return (currentUser.role === 'admin' || currentUser.username === 'proprietaire') ? 
+            <PrixVenteManager currentUser={currentUser} /> : 
+            <Dashboard stats={stats} loading={!stats} />;
+        case 'comptabilite':
+          return currentUser.role === 'admin' ? 
+            <ComptabiliteManager currentUser={currentUser} /> : 
+            <Dashboard stats={stats} loading={!stats} />;
+        case 'unites':
+          return currentUser.role === 'admin' ? 
+            <UnitesManager currentUser={currentUser} /> : 
+            <Dashboard stats={stats} loading={!stats} />;
+        case 'equipe':
+          return currentUser.role === 'admin' ? 
+            <TeamManager currentUser={currentUser} /> : 
+            <Dashboard stats={stats} loading={!stats} />;
+        case 'users':
+          return (currentUser.role === 'admin' || currentUser.username === 'proprietaire') ? 
+            <UserManagement currentUser={currentUser} /> : 
+            <Dashboard stats={stats} loading={!stats} />;
+        default:
+          return <Dashboard stats={stats} loading={!stats} />;
+      }
+    } catch (error) {
+      console.error('Erreur lors du rendu du contenu:', error);
+      return (
+        <div className="p-8 text-center">
+          <div className="text-red-600 mb-4">
+            <h3 className="text-lg font-medium">Erreur de chargement</h3>
+            <p className="text-sm">Une erreur s'est produite lors du chargement de cette section.</p>
+          </div>
+          <button 
+            onClick={() => setActiveTab('dashboard')}
+            className="btn-primary"
+          >
+            Retour au tableau de bord
+          </button>
+        </div>
+      );
     }
   };
 
@@ -188,5 +207,3 @@ export default function PatisserieApp() {
     </div>
   );
 }
-
-
