@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { productService, utils } from '../../lib/supabase';
-import { DollarSign, Plus, Edit, TrendingUp, Package, AlertTriangle, CheckCircle } from 'lucide-react';
+import { DollarSign, Plus, Edit, TrendingUp, Package, AlertTriangle, CheckCircle, Save } from 'lucide-react';
 import { Card, Modal } from '../ui';
 
 export default function PrixVenteManager({ currentUser }) {
@@ -61,8 +61,8 @@ export default function PrixVenteManager({ currentUser }) {
         parseFloat(formData.prix_vente)
       );
 
-      if (result.error) {
-        setError(result.error);
+      if (result.error || !result.success) {
+        setError(result.error || 'Erreur lors de la définition du prix');
       } else {
         alert(result.message);
         setShowModal(false);
@@ -101,25 +101,32 @@ export default function PrixVenteManager({ currentUser }) {
     resetForm();
   };
 
-  // Obtenir les produits sans prix défini
-  const produitsSansPrix = produits.filter(produit => 
-    !prixVente.some(prix => prix.produit_id === produit.id)
-  );
-
   // Calculer les statistiques
   const stats = {
     totalProduits: produits.length,
     avecPrix: prixVente.length,
-    sansPrix: produitsSansPrix.length,
-    margemoyenne: prixVente.length > 0 ? 
+    sansPrix: produits.length - prixVente.length,
+    margeMoyenne: prixVente.length > 0 ? 
       prixVente.reduce((sum, p) => sum + (p.pourcentage_marge || 0), 0) / prixVente.length : 0
   };
+
+  const canManagePrices = currentUser?.role === 'admin' || currentUser?.username === 'proprietaire';
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="spinner"></div>
         <span className="ml-2">Chargement des prix...</span>
+      </div>
+    );
+  }
+
+  if (!canManagePrices) {
+    return (
+      <div className="p-8 text-center">
+        <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-yellow-500" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">Accès restreint</h3>
+        <p className="text-gray-500">Seuls les administrateurs et le propriétaire peuvent gérer les prix de vente.</p>
       </div>
     );
   }
@@ -135,15 +142,13 @@ export default function PrixVenteManager({ currentUser }) {
           </h1>
           <p className="text-gray-600">Définir les prix de vente et calculer les marges</p>
         </div>
-        {(currentUser.role === 'admin' || currentUser.username === 'proprietaire') && (
-          <button
-            onClick={() => setShowModal(true)}
-            className="btn-primary"
-          >
-            <Plus className="w-4 h-4" />
-            Définir Prix
-          </button>
-        )}
+        <button
+          onClick={() => setShowModal(true)}
+          className="btn-primary"
+        >
+          <Plus className="w-4 h-4" />
+          Définir Prix
+        </button>
       </div>
 
       {error && (
@@ -189,7 +194,7 @@ export default function PrixVenteManager({ currentUser }) {
             <TrendingUp className="w-8 h-8 text-purple-600" />
             <div className="ml-3">
               <p className="text-sm font-medium text-gray-500">Marge moyenne</p>
-              <p className="text-2xl font-bold text-gray-900">{Math.round(stats.margemoyenne)}%</p>
+              <p className="text-2xl font-bold text-gray-900">{Math.round(stats.margeMoyenne)}%</p>
             </div>
           </div>
         </Card>
@@ -280,14 +285,12 @@ export default function PrixVenteManager({ currentUser }) {
                       {prix.defini_par_profile?.nom}
                     </td>
                     <td className="px-6 py-4">
-                      {(currentUser.role === 'admin' || currentUser.username === 'proprietaire') && (
-                        <button
-                          onClick={() => startEdit(prix)}
-                          className="text-indigo-600 hover:text-indigo-900"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
-                      )}
+                      <button
+                        onClick={() => startEdit(prix)}
+                        className="text-indigo-600 hover:text-indigo-900"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -296,3 +299,142 @@ export default function PrixVenteManager({ currentUser }) {
           </table>
         </div>
       </Card>
+
+      {/* Modal Définir/Modifier Prix */}
+      <Modal 
+        isOpen={showModal} 
+        onClose={handleCloseModal} 
+        title={editingPrix ? "Modifier le Prix de Vente" : "Définir un Prix de Vente"} 
+        size="md"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="text-red-800 text-sm">{error}</div>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Produit *
+            </label>
+            <select
+              value={formData.produit_id}
+              onChange={(e) => setFormData({...formData, produit_id: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              required
+              disabled={submitting || editingPrix}
+            >
+              <option value="">Sélectionner un produit</option>
+              {produits.map((produit) => {
+                const aPrix = prixVente.some(p => p.produit_id === produit.id);
+                const enCoursEdition = editingPrix && editingPrix.produit_id === produit.id;
+                
+                return (
+                  <option 
+                    key={produit.id} 
+                    value={produit.id}
+                    disabled={aPrix && !enCoursEdition}
+                  >
+                    {produit.nom} ({utils.formatCFA(produit.prix_achat)}) {aPrix && !enCoursEdition ? '✓ Prix défini' : ''}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Prix de vente (CFA) *
+            </label>
+            <input
+              type="number"
+              step="25"
+              min="0"
+              value={formData.prix_vente}
+              onChange={(e) => setFormData({...formData, prix_vente: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              placeholder="2500"
+              required
+              disabled={submitting}
+            />
+          </div>
+
+          {/* Aperçu de la marge */}
+          {formData.produit_id && formData.prix_vente && (
+            <div className="bg-blue-50 p-4 rounded-lg">
+              {(() => {
+                const produit = produits.find(p => p.id === parseInt(formData.produit_id));
+                const prixVenteNum = parseFloat(formData.prix_vente);
+                const prixAchat = produit?.prix_achat || 0;
+                const marge = prixVenteNum - prixAchat;
+                const pourcentageMarge = prixAchat > 0 ? (marge / prixAchat) * 100 : 0;
+                
+                return (
+                  <div>
+                    <h4 className="font-medium text-blue-900 mb-2">Aperçu de la marge</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-blue-700">Prix d'achat:</span>
+                        <div className="font-semibold">{utils.formatCFA(prixAchat)}</div>
+                      </div>
+                      <div>
+                        <span className="text-blue-700">Prix de vente:</span>
+                        <div className="font-semibold text-green-600">{utils.formatCFA(prixVenteNum)}</div>
+                      </div>
+                      <div>
+                        <span className="text-blue-700">Marge:</span>
+                        <div className={`font-semibold ${marge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {marge >= 0 ? '+' : ''}{utils.formatCFA(marge)}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-blue-700">% Marge:</span>
+                        <div className={`font-semibold ${pourcentageMarge >= 20 ? 'text-green-600' : 'text-red-600'}`}>
+                          {Math.round(pourcentageMarge * 100) / 100}%
+                        </div>
+                      </div>
+                    </div>
+                    {pourcentageMarge < 20 && (
+                      <div className="mt-2 p-2 bg-yellow-100 border border-yellow-300 rounded text-xs text-yellow-800">
+                        ⚠️ Marge faible (recommandé : minimum 20%)
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+          
+          <div className="flex space-x-4 pt-4">
+            <button 
+              type="submit" 
+              disabled={submitting}
+              className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-2 px-4 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submitting ? (
+                <>
+                  <div className="spinner w-4 h-4 inline mr-2"></div>
+                  {editingPrix ? 'Modification...' : 'Définition...'}
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4 inline mr-2" />
+                  {editingPrix ? 'Modifier le prix' : 'Définir le prix'}
+                </>
+              )}
+            </button>
+            <button 
+              type="button" 
+              onClick={handleCloseModal}
+              disabled={submitting}
+              className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-all duration-200 disabled:opacity-50"
+            >
+              Annuler
+            </button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+}
