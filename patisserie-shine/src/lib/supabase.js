@@ -1362,7 +1362,7 @@ export const comptabiliteService = {
 
 
 // ===================== SERVICES PRODUITS =====================
-export const productServiceCorrected = {
+export const productService = {
   // Créer un nouveau produit AVEC enregistrement de la dépense
   async create(productData) {
     try {
@@ -2842,6 +2842,7 @@ export const userService = {
   }
 }
 export default supabase
+
 
 
 
