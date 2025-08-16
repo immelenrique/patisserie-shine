@@ -322,12 +322,17 @@ export const productService = {
     }
   },
 
-  // Créer un nouveau produit
+  // Créer un nouveau produit AVEC enregistrement automatique de la dépense
   async create(productData) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       
-      const { data, error } = await supabase
+      if (!user) {
+        return { product: null, error: 'Utilisateur non connecté' }
+      }
+
+      // 1. Créer le produit
+      const { data: produit, error: produitError } = await supabase
         .from('produits')
         .insert({
           nom: productData.nom,
@@ -336,7 +341,7 @@ export const productService = {
           quantite: productData.quantite,
           quantite_restante: productData.quantite,
           unite_id: productData.unite_id,
-          created_by: user?.id
+          created_by: user.id
         })
         .select(`
           *,
@@ -344,12 +349,52 @@ export const productService = {
         `)
         .single()
       
-      if (error) {
-        console.error('Erreur create produit:', error)
-        return { product: null, error: error.message }
+      if (produitError) {
+        console.error('Erreur create produit:', produitError)
+        return { product: null, error: produitError.message }
+      }
+
+      // 2. Enregistrer automatiquement la dépense comptable
+      try {
+        const depenseResult = await comptabiliteService.enregistrerDepenseStock(
+          { ...productData, unite: produit.unite }, 
+          user.id
+        )
+        
+        if (depenseResult.depense) {
+          // Mettre à jour la référence produit dans la dépense
+          await supabase
+            .from('depenses_comptables')
+            .update({ reference_produit_id: produit.id })
+            .eq('id', depenseResult.depense.id)
+          
+          console.log(`💰 Dépense enregistrée: ${utils.formatCFA((productData.prix_achat || 0) * (productData.quantite || 0))}`)
+        }
+      } catch (depenseError) {
+        console.warn('Erreur enregistrement dépense (produit créé quand même):', depenseError)
+        // On ne bloque pas la création du produit si l'enregistrement de la dépense échoue
+      }
+
+      // 3. Enregistrer le mouvement de stock (optionnel)
+      try {
+        await supabase
+          .from('mouvements_stock')
+          .insert({
+            produit_id: produit.id,
+            type_mouvement: 'entree',
+            quantite: productData.quantite,
+            quantite_avant: 0,
+            quantite_apres: productData.quantite,
+            utilisateur_id: user.id,
+            raison: 'Création nouveau produit',
+            commentaire: `Nouveau produit: ${productData.nom} - ${productData.quantite} ${produit.unite?.label}`
+          })
+      } catch (mouvementError) {
+        console.warn('Erreur enregistrement mouvement:', mouvementError)
+        // Non bloquant
       }
       
-      return { product: data, error: null }
+      return { product: produit, error: null }
     } catch (error) {
       console.error('Erreur dans create produit:', error)
       return { product: null, error: error.message }
@@ -410,6 +455,100 @@ export const productService = {
     } catch (error) {
       console.error('Erreur dans getLowStock:', error)
       return { products: [], error: error.message }
+    }
+  },
+
+  // Définir le prix de vente d'un produit
+  async definirPrixVente(produitId, prixVente) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' }
+      }
+
+      // Vérifier les permissions (admin seulement)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role, username')
+        .eq('id', user.id)
+        .single()
+
+      if (profile?.role !== 'admin' && profile?.username !== 'proprietaire') {
+        return { success: false, error: 'Seuls les administrateurs peuvent définir les prix de vente' }
+      }
+
+      // Récupérer les infos du produit
+      const { data: produit, error: produitError } = await supabase
+        .from('produits')
+        .select('nom, prix_achat, unite:unites(label)')
+        .eq('id', produitId)
+        .single()
+      
+      if (produitError || !produit) {
+        return { success: false, error: 'Produit introuvable' }
+      }
+
+      // Calculer la marge
+      const marge = prixVente - (produit.prix_achat || 0)
+      const pourcentageMarge = produit.prix_achat > 0 ? (marge / produit.prix_achat) * 100 : 0
+
+      // Mettre à jour ou créer l'entrée dans prix_vente
+      const { data, error } = await supabase
+        .from('prix_vente')
+        .upsert({
+          produit_id: produitId,
+          prix_vente: prixVente,
+          marge: marge,
+          pourcentage_marge: Math.round(pourcentageMarge * 100) / 100,
+          defini_par: user.id,
+          updated_at: new Date().toISOString()
+        })
+        .select()
+
+      if (error) {
+        console.error('Erreur définition prix vente:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { 
+        success: true, 
+        message: `Prix de vente défini: ${utils.formatCFA(prixVente)} (marge: ${Math.round(pourcentageMarge)}%)`,
+        data: {
+          produit: produit.nom,
+          prix_achat: produit.prix_achat,
+          prix_vente: prixVente,
+          marge: marge,
+          pourcentage_marge: pourcentageMarge
+        }
+      }
+    } catch (error) {
+      console.error('Erreur dans definirPrixVente:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Obtenir les prix de vente définis
+  async getPrixVente() {
+    try {
+      const { data, error } = await supabase
+        .from('prix_vente')
+        .select(`
+          *,
+          produit:produits(nom, prix_achat, unite:unites(label)),
+          defini_par_profile:profiles!prix_vente_defini_par_fkey(nom)
+        `)
+        .order('updated_at', { ascending: false })
+      
+      if (error) {
+        console.error('Erreur getPrixVente:', error)
+        return { prix: [], error: error.message }
+      }
+      
+      return { prix: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getPrixVente:', error)
+      return { prix: [], error: error.message }
     }
   }
 }
@@ -1216,6 +1355,145 @@ export const caisseService = {
 
 // ===================== SERVICES COMPTABILITÉ =====================
 export const comptabiliteService = {
+  // Enregistrer une dépense de stock
+  async enregistrerDepenseStock(productData, utilisateurId) {
+    try {
+      const montantDepense = (productData.prix_achat || 0) * (productData.quantite || 0)
+      
+      // Enregistrer la dépense dans une table de dépenses
+      const { data: depense, error: depenseError } = await supabase
+        .from('depenses_comptables')
+        .insert({
+          type_depense: 'achat_stock',
+          description: `Achat ${productData.nom} - ${productData.quantite} ${productData.unite?.label || 'unité'}`,
+          montant: montantDepense,
+          reference_produit_id: null, // Sera mis à jour après création du produit
+          date_depense: productData.date_achat || new Date().toISOString().split('T')[0],
+          utilisateur_id: utilisateurId,
+          details: JSON.stringify({
+            nom_produit: productData.nom,
+            quantite: productData.quantite,
+            prix_unitaire: productData.prix_achat,
+            unite_id: productData.unite_id,
+            type_operation: 'nouveau_produit'
+          })
+        })
+        .select()
+        .single()
+      
+      if (depenseError) {
+        console.warn('Erreur enregistrement dépense:', depenseError)
+        // Si la table n'existe pas, on essaie de la créer ou on ignore l'erreur
+        if (depenseError.code === '42P01') {
+          console.info('Table depenses_comptables inexistante, dépense non enregistrée')
+          return { depense: null, error: null } // Pas d'erreur bloquante
+        }
+        return { depense: null, error: depenseError.message }
+      }
+      
+      return { depense, error: null }
+    } catch (error) {
+      console.error('Erreur dans enregistrerDepenseStock:', error)
+      return { depense: null, error: error.message }
+    }
+  },
+
+  // Obtenir les dépenses (coûts des achats + production)
+  async getDepenses(dateDebut, dateFin) {
+    try {
+      let depensesStock = 0
+      let detailsDepensesStock = []
+      
+      // 1. Essayer avec la table depenses_comptables (si elle existe)
+      try {
+        const { data: depensesStockData, error: stockError } = await supabase
+          .from('depenses_comptables')
+          .select('*')
+          .gte('date_depense', dateDebut)
+          .lte('date_depense', dateFin)
+          .in('type_depense', ['achat_stock', 'reapprovisionnement_stock'])
+        
+        if (!stockError && depensesStockData) {
+          depensesStock = depensesStockData.reduce((sum, d) => sum + (d.montant || 0), 0)
+          detailsDepensesStock = depensesStockData.map(d => ({
+            date: d.date_depense,
+            type: d.type_depense,
+            description: d.description,
+            montant: d.montant
+          }))
+        }
+      } catch (stockErr) {
+        console.warn('Table depenses_comptables indisponible, calcul depuis les produits:', stockErr)
+      }
+      
+      // 2. Si pas de table spécialisée, calculer depuis les achats de produits
+      if (depensesStock === 0) {
+        try {
+          const { data: nouveauxProduits, error: npError } = await supabase
+            .from('produits')
+            .select('nom, prix_achat, quantite, date_achat')
+            .gte('date_achat', dateDebut)
+            .lte('date_achat', dateFin)
+          
+          if (!npError && nouveauxProduits) {
+            depensesStock = nouveauxProduits.reduce((sum, p) => 
+              sum + ((p.prix_achat || 0) * (p.quantite || 0)), 0
+            )
+            detailsDepensesStock = nouveauxProduits.map(p => ({
+              date: p.date_achat,
+              type: 'achat_produit',
+              description: `Achat ${p.nom}`,
+              montant: (p.prix_achat || 0) * (p.quantite || 0)
+            }))
+          }
+        } catch (altErr) {
+          console.warn('Erreur calcul dépenses depuis produits:', altErr)
+        }
+      }
+
+      // 3. Dépenses de production (coûts ingrédients)
+      let depensesProduction = 0
+      try {
+        const { data: productions, error: prodError } = await supabase
+          .from('productions')
+          .select('cout_ingredients, quantite, date_production')
+          .gte('date_production', dateDebut)
+          .lte('date_production', dateFin)
+          .not('cout_ingredients', 'is', null)
+        
+        if (!prodError && productions) {
+          depensesProduction = productions.reduce((sum, p) => sum + (p.cout_ingredients || 0), 0)
+        }
+      } catch (err) {
+        console.warn('Erreur dépenses production:', err)
+      }
+
+      const totalDepenses = depensesStock + depensesProduction
+      
+      const details = [
+        ...detailsDepensesStock,
+        ...(depensesProduction > 0 ? [{
+          date: dateDebut,
+          type: 'production',
+          description: 'Coûts de production',
+          montant: depensesProduction
+        }] : [])
+      ].filter(d => d.montant > 0)
+      
+      return { 
+        depenses: totalDepenses, 
+        details, 
+        repartition: {
+          depenses_stock: depensesStock,
+          depenses_production: depensesProduction
+        },
+        error: null 
+      }
+    } catch (error) {
+      console.error('Erreur dans getDepenses:', error)
+      return { depenses: 0, details: [], error: error.message }
+    }
+  },
   // Obtenir le rapport comptable
   async getRapportComptable(dateDebut, dateFin) {
     try {
