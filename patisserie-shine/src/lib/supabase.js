@@ -97,7 +97,645 @@ export const authService = {
     }
   }
 }
+// ===================== SERVICES STOCK BOUTIQUE =====================
+export const stockBoutiqueService = {
+  // Récupérer l'état du stock boutique
+  async getStockBoutique() {
+    try {
+      // Essayer d'abord avec la vue dédiée
+      let data, error;
+      
+      try {
+        ({ data, error } = await supabase
+          .from('vue_stock_boutique')
+          .select('*')
+          .order('nom_produit'))
+      } catch (viewError) {
+        console.warn('Vue vue_stock_boutique indisponible, utilisation de la vue alternative:', viewError)
+        
+        // Fallback sur une requête directe
+        ({ data, error } = await supabase
+          .from('stock_boutique')
+          .select(`
+            *,
+            produit:produits(nom, unite:unites(label)),
+            prix_vente:prix_vente_produits(prix)
+          `)
+          .order('created_at', { ascending: false }))
+      }
+        
+      if (error) {
+        console.error('Erreur getStockBoutique:', error)
+        return { stock: [], error: error.message }
+      }
+      
+      return { stock: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getStockBoutique:', error)
+      return { stock: [], error: error.message }
+    }
+  },
 
+  // Obtenir l'historique des entrées (productions + demandes validées)
+  async getHistoriqueEntrees(limit = 50) {
+    try {
+      const { data, error } = await supabase
+        .from('entrees_boutique')
+        .select(`
+          id,
+          produit_id,
+          quantite,
+          source,
+          type_entree,
+          created_at,
+          produit:produits(nom, unite:unites(label)),
+          source_production:productions(produit, destination, producteur:profiles(nom)),
+          source_demande:demandes(destination, demandeur:profiles(nom))
+        `)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+      
+      if (error) {
+        console.error('Erreur getHistoriqueEntrees:', error)
+        return { entrees: [], error: error.message }
+      }
+      
+      // Reformater pour l'interface
+      const entreesFormatees = (data || []).map(item => ({
+        id: item.id,
+        nom_produit: item.produit?.nom || 'Produit inconnu',
+        quantite: item.quantite,
+        unite: item.produit?.unite?.label || '',
+        source: item.source || 'Production',
+        type_entree: item.type_entree || 'Production',
+        created_at: item.created_at
+      }))
+      
+      return { entrees: entreesFormatees, error: null }
+    } catch (error) {
+      console.error('Erreur dans getHistoriqueEntrees:', error)
+      return { entrees: [], error: error.message }
+    }
+  },
+
+  // Obtenir l'historique des sorties (ventes)
+  async getHistoriqueSorties(limit = 50) {
+    try {
+      const { data, error } = await supabase
+        .from('sorties_boutique')
+        .select(`
+          id,
+          produit_id,
+          quantite,
+          prix_unitaire,
+          total,
+          created_at,
+          produit:produits(nom, unite:unites(label)),
+          vente:ventes(numero_ticket, vendeur:profiles(nom))
+        `)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+      
+      if (error) {
+        console.error('Erreur getHistoriqueSorties:', error)
+        return { sorties: [], error: error.message }
+      }
+      
+      // Reformater pour l'interface
+      const sortiesFormatees = (data || []).map(item => ({
+        id: item.id,
+        nom_produit: item.produit?.nom || 'Produit inconnu',
+        quantite: item.quantite,
+        unite: item.produit?.unite?.label || '',
+        prix_unitaire: item.prix_unitaire,
+        total: item.total,
+        created_at: item.created_at,
+        vendeur: item.vente?.vendeur
+      }))
+      
+      return { sorties: sortiesFormatees, error: null }
+    } catch (error) {
+      console.error('Erreur dans getHistoriqueSorties:', error)
+      return { sorties: [], error: error.message }
+    }
+  },
+
+  // Ajouter au stock boutique (appelé automatiquement par les triggers)
+  async ajouterAuStock(produitId, quantite, source = 'Production', sourceId = null) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' }
+      }
+
+      const { data, error } = await supabase.rpc('ajouter_stock_boutique', {
+        p_produit_id: produitId,
+        p_quantite: quantite,
+        p_source: source,
+        p_source_id: sourceId,
+        p_ajoute_par: user.id
+      })
+      
+      if (error) {
+        console.error('Erreur ajout stock boutique:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data }
+    } catch (error) {
+      console.error('Erreur dans ajouterAuStock:', error)
+      return { success: false, error: error.message }
+    }
+  }
+}
+
+// ===================== SERVICES CAISSE =====================
+export const caisseService = {
+  // Enregistrer une vente complète
+  async enregistrerVente(venteData) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { vente: null, error: 'Utilisateur non connecté' }
+      }
+
+      console.log('Enregistrement vente:', venteData)
+
+      // Utiliser la fonction PostgreSQL pour traiter la vente complète
+      const { data, error } = await supabase.rpc('enregistrer_vente_complete', {
+        p_items: JSON.stringify(venteData.items),
+        p_total: venteData.total,
+        p_montant_donne: venteData.montant_donne,
+        p_monnaie_rendue: venteData.monnaie_rendue,
+        p_vendeur_id: venteData.vendeur_id
+      })
+      
+      if (error) {
+        console.error('Erreur RPC enregistrer vente:', error)
+        return { vente: null, error: error.message }
+      }
+
+      if (!data || !data.success) {
+        const errorMessage = data?.error || 'Erreur inconnue lors de l\'enregistrement'
+        console.error('Erreur enregistrement vente:', errorMessage)
+        return { vente: null, error: errorMessage }
+      }
+
+      console.log('Vente enregistrée avec succès:', data)
+
+      // Récupérer les données complètes de la vente créée
+      const { data: fullVenteData, error: fetchError } = await supabase
+        .from('ventes')
+        .select(`
+          *,
+          vendeur:profiles!ventes_vendeur_id_fkey(nom)
+        `)
+        .eq('id', data.vente_id)
+        .single()
+
+      if (fetchError) {
+        console.warn('Erreur récupération vente créée:', fetchError)
+        // Retourner quand même le succès avec les données minimales
+        return { 
+          vente: { 
+            id: data.vente_id, 
+            numero_ticket: data.numero_ticket
+          }, 
+          error: null 
+        }
+      }
+      
+      return { vente: fullVenteData, error: null }
+    } catch (error) {
+      console.error('Erreur dans enregistrerVente:', error)
+      return { vente: null, error: error.message }
+    }
+  },
+
+  // Obtenir les ventes du jour
+  async getVentesJour(date = null) {
+    try {
+      const dateRecherche = date || new Date().toISOString().split('T')[0]
+      
+      const { data, error } = await supabase
+        .from('ventes')
+        .select(`
+          *,
+          vendeur:profiles!ventes_vendeur_id_fkey(nom),
+          items:lignes_vente(
+            produit_id,
+            nom_produit,
+            quantite,
+            prix_unitaire,
+            total
+          )
+        `)
+        .gte('created_at', dateRecherche + 'T00:00:00.000Z')
+        .lt('created_at', dateRecherche + 'T23:59:59.999Z')
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        console.error('Erreur getVentesJour:', error)
+        return { ventes: [], error: error.message }
+      }
+      
+      return { ventes: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getVentesJour:', error)
+      return { ventes: [], error: error.message }
+    }
+  },
+
+  // Obtenir les ventes d'une période
+  async getVentesPeriode(dateDebut, dateFin) {
+    try {
+      const { data, error } = await supabase
+        .from('ventes')
+        .select(`
+          *,
+          vendeur:profiles!ventes_vendeur_id_fkey(nom),
+          items:lignes_vente(
+            produit_id,
+            nom_produit,
+            quantite,
+            prix_unitaire,
+            total
+          )
+        `)
+        .gte('created_at', dateDebut + 'T00:00:00.000Z')
+        .lte('created_at', dateFin + 'T23:59:59.999Z')
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        console.error('Erreur getVentesPeriode:', error)
+        return { ventes: [], error: error.message }
+      }
+      
+      return { ventes: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getVentesPeriode:', error)
+      return { ventes: [], error: error.message }
+    }
+  },
+
+  // Annuler une vente
+  async annulerVente(venteId, motif = '') {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' }
+      }
+
+      const { data, error } = await supabase.rpc('annuler_vente', {
+        p_vente_id: venteId,
+        p_motif: motif,
+        p_annule_par: user.id
+      })
+      
+      if (error) {
+        console.error('Erreur annulation vente:', error)
+        return { success: false, error: error.message }
+      }
+
+      if (!data || !data.success) {
+        return { success: false, error: data?.error || 'Erreur lors de l\'annulation' }
+      }
+
+      return { success: true, message: data.message }
+    } catch (error) {
+      console.error('Erreur dans annulerVente:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Obtenir les statistiques de vente
+  async getStatistiquesVentes(periode = 'jour') {
+    try {
+      let dateDebut, dateFin;
+      const maintenant = new Date();
+      
+      switch (periode) {
+        case 'jour':
+          dateDebut = dateFin = maintenant.toISOString().split('T')[0];
+          break;
+        case 'semaine':
+          const debutSemaine = new Date(maintenant);
+          debutSemaine.setDate(maintenant.getDate() - maintenant.getDay());
+          dateDebut = debutSemaine.toISOString().split('T')[0];
+          dateFin = maintenant.toISOString().split('T')[0];
+          break;
+        case 'mois':
+          dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1).toISOString().split('T')[0];
+          dateFin = maintenant.toISOString().split('T')[0];
+          break;
+        default:
+          dateDebut = dateFin = maintenant.toISOString().split('T')[0];
+      }
+
+      const { data, error } = await supabase.rpc('get_statistiques_ventes', {
+        p_date_debut: dateDebut,
+        p_date_fin: dateFin
+      })
+      
+      if (error) {
+        console.error('Erreur getStatistiquesVentes:', error)
+        return { stats: null, error: error.message }
+      }
+      
+      return { stats: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans getStatistiquesVentes:', error)
+      return { stats: null, error: error.message }
+    }
+  },
+
+  // Obtenir le rapport comptable mensuel
+  async getRapportComptableMensuel(annee, mois) {
+    try {
+      const { data, error } = await supabase.rpc('get_rapport_comptable_mensuel', {
+        p_annee: annee,
+        p_mois: mois
+      })
+      
+      if (error) {
+        console.error('Erreur getRapportComptableMensuel:', error)
+        return { rapport: null, error: error.message }
+      }
+      
+      return { rapport: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans getRapportComptableMensuel:', error)
+      return { rapport: null, error: error.message }
+    }
+  },
+
+  // Clôturer la caisse (fin de journée)
+  async cloturerCaisse(montantFond = 0, observations = '') {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' }
+      }
+
+      const { data, error } = await supabase.rpc('cloturer_caisse', {
+        p_date_cloture: new Date().toISOString().split('T')[0],
+        p_montant_fond: montantFond,
+        p_observations: observations,
+        p_cloture_par: user.id
+      })
+      
+      if (error) {
+        console.error('Erreur clôture caisse:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data }
+    } catch (error) {
+      console.error('Erreur dans cloturerCaisse:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Obtenir les produits les plus vendus
+  async getProduitsTopVentes(limite = 10, periode = 'mois') {
+    try {
+      let dateDebut;
+      const maintenant = new Date();
+      
+      switch (periode) {
+        case 'jour':
+          dateDebut = maintenant.toISOString().split('T')[0];
+          break;
+        case 'semaine':
+          const debutSemaine = new Date(maintenant);
+          debutSemaine.setDate(maintenant.getDate() - 7);
+          dateDebut = debutSemaine.toISOString().split('T')[0];
+          break;
+        case 'mois':
+          const debutMois = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1);
+          dateDebut = debutMois.toISOString().split('T')[0];
+          break;
+        default:
+          dateDebut = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1).toISOString().split('T')[0];
+      }
+
+      const { data, error } = await supabase.rpc('get_produits_top_ventes', {
+        p_date_debut: dateDebut,
+        p_limite: limite
+      })
+      
+      if (error) {
+        console.error('Erreur getProduitsTopVentes:', error)
+        return { produits: [], error: error.message }
+      }
+      
+      return { produits: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getProduitsTopVentes:', error)
+      return { produits: [], error: error.message }
+    }
+  }
+}
+
+// ===================== SERVICES COMPTABILITÉ =====================
+export const comptabiliteService = {
+  // Obtenir le chiffre d'affaires par période
+  async getChiffreAffaires(dateDebut, dateFin) {
+    try {
+      const { data, error } = await supabase.rpc('get_chiffre_affaires', {
+        p_date_debut: dateDebut,
+        p_date_fin: dateFin
+      })
+      
+      if (error) {
+        console.error('Erreur getChiffreAffaires:', error)
+        return { chiffre: 0, details: [], error: error.message }
+      }
+      
+      return { 
+        chiffre: data?.total || 0, 
+        details: data?.details || [], 
+        error: null 
+      }
+    } catch (error) {
+      console.error('Erreur dans getChiffreAffaires:', error)
+      return { chiffre: 0, details: [], error: error.message }
+    }
+  },
+
+  // Obtenir les dépenses (coûts des ingrédients utilisés)
+  async getDepenses(dateDebut, dateFin) {
+    try {
+      const { data, error } = await supabase.rpc('get_depenses_periode', {
+        p_date_debut: dateDebut,
+        p_date_fin: dateFin
+      })
+      
+      if (error) {
+        console.error('Erreur getDepenses:', error)
+        return { depenses: 0, details: [], error: error.message }
+      }
+      
+      return { 
+        depenses: data?.total || 0, 
+        details: data?.details || [], 
+        error: null 
+      }
+    } catch (error) {
+      console.error('Erreur dans getDepenses:', error)
+      return { depenses: 0, details: [], error: error.message }
+    }
+  },
+
+  // Calculer la marge brute
+  async getMargesBrutes(dateDebut, dateFin) {
+    try {
+      const [caResult, depensesResult] = await Promise.all([
+        this.getChiffreAffaires(dateDebut, dateFin),
+        this.getDepenses(dateDebut, dateFin)
+      ])
+
+      if (caResult.error || depensesResult.error) {
+        return { 
+          marge: 0, 
+          pourcentage: 0, 
+          error: caResult.error || depensesResult.error 
+        }
+      }
+
+      const chiffreAffaires = caResult.chiffre
+      const depenses = depensesResult.depenses
+      const marge = chiffreAffaires - depenses
+      const pourcentage = chiffreAffaires > 0 ? (marge / chiffreAffaires) * 100 : 0
+
+      return {
+        chiffre_affaires: chiffreAffaires,
+        depenses: depenses,
+        marge: marge,
+        pourcentage: Math.round(pourcentage * 100) / 100,
+        error: null
+      }
+    } catch (error) {
+      console.error('Erreur dans getMargesBrutes:', error)
+      return { marge: 0, pourcentage: 0, error: error.message }
+    }
+  },
+
+  // Rapport comptable complet
+  async getRapportComptable(dateDebut, dateFin) {
+    try {
+      const [margesResult, ventesResult, produitsResult] = await Promise.all([
+        this.getMargesBrutes(dateDebut, dateFin),
+        caisseService.getVentesPeriode(dateDebut, dateFin),
+        caisseService.getProduitsTopVentes(5, 'custom')
+      ])
+
+      const nombreVentes = ventesResult.ventes?.length || 0
+      const ticketMoyen = nombreVentes > 0 ? margesResult.chiffre_affaires / nombreVentes : 0
+
+      return {
+        periode: { debut: dateDebut, fin: dateFin },
+        finances: {
+          chiffre_affaires: margesResult.chiffre_affaires || 0,
+          depenses: margesResult.depenses || 0,
+          marge_brute: margesResult.marge || 0,
+          pourcentage_marge: margesResult.pourcentage || 0
+        },
+        ventes: {
+          nombre_transactions: nombreVentes,
+          ticket_moyen: ticketMoyen,
+          articles_vendus: ventesResult.ventes?.reduce((sum, v) => 
+            sum + (v.items?.reduce((s, i) => s + i.quantite, 0) || 0), 0) || 0
+        },
+        produits_top: produitsResult.produits || [],
+        error: margesResult.error || ventesResult.error || produitsResult.error
+      }
+    } catch (error) {
+      console.error('Erreur dans getRapportComptable:', error)
+      return { error: error.message }
+    }
+  },
+
+  // Obtenir l'évolution mensuelle
+  async getEvolutionMensuelle(annee) {
+    try {
+      const { data, error } = await supabase.rpc('get_evolution_mensuelle', {
+        p_annee: annee
+      })
+      
+      if (error) {
+        console.error('Erreur getEvolutionMensuelle:', error)
+        return { evolution: [], error: error.message }
+      }
+      
+      return { evolution: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getEvolutionMensuelle:', error)
+      return { evolution: [], error: error.message }
+    }
+  },
+
+  // Exporter les données comptables
+  async exporterDonneesComptables(dateDebut, dateFin, format = 'csv') {
+    try {
+      const rapport = await this.getRapportComptable(dateDebut, dateFin)
+      
+      if (rapport.error) {
+        return { success: false, error: rapport.error }
+      }
+
+      const donnees = {
+        rapport: rapport,
+        ventes: (await caisseService.getVentesPeriode(dateDebut, dateFin)).ventes
+      }
+
+      if (format === 'csv') {
+        const csvContent = this.genererCSV(donnees)
+        return { success: true, content: csvContent, filename: `comptabilite_${dateDebut}_${dateFin}.csv` }
+      } else {
+        const jsonContent = JSON.stringify(donnees, null, 2)
+        return { success: true, content: jsonContent, filename: `comptabilite_${dateDebut}_${dateFin}.json` }
+      }
+    } catch (error) {
+      console.error('Erreur dans exporterDonneesComptables:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Générer CSV pour export
+  genererCSV(donnees) {
+    const lignes = []
+    
+    // En-tête du rapport
+    lignes.push('RAPPORT COMPTABLE PATISSERIE SHINE')
+    lignes.push(`Période: ${donnees.rapport.periode.debut} - ${donnees.rapport.periode.fin}`)
+    lignes.push('')
+    
+    // Résumé financier
+    lignes.push('RESUME FINANCIER')
+    lignes.push('Indicateur,Montant')
+    lignes.push(`Chiffre d'affaires,${donnees.rapport.finances.chiffre_affaires}`)
+    lignes.push(`Dépenses,${donnees.rapport.finances.depenses}`)
+    lignes.push(`Marge brute,${donnees.rapport.finances.marge_brute}`)
+    lignes.push(`Pourcentage marge,${donnees.rapport.finances.pourcentage_marge}%`)
+    lignes.push('')
+    
+    // Détail des ventes
+    lignes.push('DETAIL DES VENTES')
+    lignes.push('Date,Ticket,Produits,Total,Vendeur')
+    
+    donnees.ventes.forEach(vente => {
+      const produits = vente.items?.map(i => `${i.nom_produit} x${i.quantite}`).join('; ') || ''
+      lignes.push(`${vente.created_at.split('T')[0]},${vente.numero_ticket},"${produits}",${vente.total},${vente.vendeur?.nom || ''}`)
+    })
+    
+    return lignes.join('\n')
+  }
+}
 // ===================== SERVICES PRODUITS =====================
 export const productService = {
   // Récupérer tous les produits
@@ -1429,6 +2067,7 @@ export const userService = {
   }
 }
 export default supabase
+
 
 
 
