@@ -22,30 +22,30 @@ export default function CaisseManager({ currentUser }) {
   }, []);
 
   const loadData = async () => {
-    setLoading(true);
-    try {
-      const [stockResult, ventesResult] = await Promise.all([
-        stockBoutiqueService.getStockBoutique(),
-        caisseService.getVentesJour()
-      ]);
+  setLoading(true);
+  try {
+    const [stockResult, ventesResult] = await Promise.all([
+      stockBoutiqueService.getStockBoutique(),
+      caisseService.getVentesJour()
+    ]);
 
-      if (stockResult.error) throw new Error(stockResult.error);
-      if (ventesResult.error) throw new Error(ventesResult.error);
+    if (stockResult.error) throw new Error(stockResult.error);
+    if (ventesResult.error) throw new Error(ventesResult.error);
 
-      // Filtrer seulement les produits avec stock > 0 et prix défini
-      const produitsDisponibles = (stockResult.stock || []).filter(p => 
-        (p.stock_reel || 0) > 0 && (p.prix_vente || 0) > 0
-      );
+    // Filtrer seulement les produits avec stock > 0 ET prix défini
+    const produitsDisponibles = (stockResult.stock || []).filter(p => 
+      (p.stock_reel || 0) > 0 && (p.prix_vente || 0) > 0 && p.prix_defini
+    );
 
-      setProduitsBoutique(produitsDisponibles);
-      setVentesJour(ventesResult.ventes || []);
-      setError('');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    setProduitsBoutique(produitsDisponibles);
+    setVentesJour(ventesResult.ventes || []);
+    setError('');
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Fonctions de gestion du panier
   const ajouterAuPanier = (produit) => {
