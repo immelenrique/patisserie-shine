@@ -42,6 +42,20 @@ export async function POST(request) {
       )
     }
 
+    // Vérifier si le nom d'utilisateur existe déjà
+    const { data: existingProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('username', username)
+      .maybeSingle()
+
+    if (existingProfile) {
+      return NextResponse.json(
+        { error: `Le nom d'utilisateur "${username}" existe déjà` },
+        { status: 400 }
+      )
+    }
+
     // Construire l'email à partir du username
     const email = `${username}@shine.local`
 
@@ -65,33 +79,83 @@ export async function POST(request) {
       )
     }
 
-    // 2. Créer le profil dans la table profiles
-    const { data: profileData, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .insert({
-        id: authData.user.id,
-        username: username,
-        nom: nom,
-        telephone: telephone || null,
-        role: role,
-        actif: true
-      })
-      .select()
-      .single()
+    // 2. Attendre un peu pour laisser le trigger s'exécuter
+    await new Promise(resolve => setTimeout(resolve, 1000))
 
-    if (profileError) {
-      console.error('Erreur création profil:', profileError)
-      
-      // Supprimer l'utilisateur auth si le profil n'a pas pu être créé
-      await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
-      
-      return NextResponse.json(
-        { error: `Erreur de création du profil: ${profileError.message}` },
-        { status: 400 }
-      )
+    // 3. Vérifier si le profil existe déjà (créé par trigger)
+    const { data: existingUserProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', authData.user.id)
+      .maybeSingle()
+
+    let profileData
+
+    if (existingUserProfile) {
+      // Mettre à jour le profil existant
+      const { data: updatedProfile, error: updateError } = await supabaseAdmin
+        .from('profiles')
+        .update({
+          username: username,
+          nom: nom,
+          telephone: telephone || null,
+          role: role,
+          actif: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', authData.user.id)
+        .select()
+        .single()
+
+      if (updateError) {
+        console.error('Erreur mise à jour profil:', updateError)
+        // Nettoyer l'utilisateur auth créé
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+        return NextResponse.json(
+          { error: `Erreur de mise à jour du profil: ${updateError.message}` },
+          { status: 400 }
+        )
+      }
+
+      profileData = updatedProfile
+    } else {
+      // Créer le profil manuellement (pas de trigger ou échec du trigger)
+      const { data: newProfile, error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .insert({
+          id: authData.user.id,
+          username: username,
+          nom: nom,
+          telephone: telephone || null,
+          role: role,
+          actif: true
+        })
+        .select()
+        .single()
+
+      if (profileError) {
+        console.error('Erreur création profil:', profileError)
+        
+        // Supprimer l'utilisateur auth si le profil n'a pas pu être créé
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+        
+        if (profileError.code === '23505') { // Duplicate key
+          return NextResponse.json(
+            { error: 'Un conflit s\'est produit. Veuillez réessayer.' },
+            { status: 409 }
+          )
+        }
+        
+        return NextResponse.json(
+          { error: `Erreur de création du profil: ${profileError.message}` },
+          { status: 400 }
+        )
+      }
+
+      profileData = newProfile
     }
 
-    // 3. Retourner les données de l'utilisateur créé
+    // 4. Retourner les données de l'utilisateur créé
     return NextResponse.json({
       success: true,
       user: {
