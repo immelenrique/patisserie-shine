@@ -698,20 +698,119 @@ export const recetteService = {
     }
   },
 
+  // Obtenir les recettes pour un produit spécifique
+  async getRecettesProduit(nomProduit) {
+    try {
+      const { data, error } = await supabase
+        .from('recettes')
+        .select(`
+          *,
+          produit_ingredient:produits!recettes_produit_ingredient_id_fkey(
+            id, nom, prix_achat, quantite,
+            unite:unites(id, value, label)
+          )
+        `)
+        .eq('nom_produit', nomProduit)
+        .order('created_at')
+
+      if (error) {
+        console.error('Erreur getRecettesProduit:', error)
+        return { recettes: [], error: error.message }
+      }
+
+      return { recettes: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getRecettesProduit:', error)
+      return { recettes: [], error: error.message }
+    }
+  },
+
+  // Vérifier disponibilité des ingrédients dans l'atelier
+  async verifierDisponibiliteIngredients(nomProduit, quantite) {
+    try {
+      // Essayer d'abord avec la fonction RPC
+      try {
+        const { data, error } = await supabase.rpc('verifier_ingredients_atelier', {
+          p_nom_produit: nomProduit,
+          p_quantite_a_produire: quantite
+        })
+
+        if (!error && data) {
+          const details = data || []
+          const disponible = details.length > 0 && details.every(d => d.suffisant)
+          return { details, disponible, error: null }
+        }
+      } catch (rpcError) {
+        console.warn('RPC verifier_ingredients_atelier échouée, méthode alternative:', rpcError)
+      }
+
+      // Méthode alternative : vérifier manuellement
+      const recettesResult = await this.getRecettesProduit(nomProduit)
+      
+      if (recettesResult.error) {
+        return { details: [], disponible: false, error: recettesResult.error }
+      }
+
+      const recettes = recettesResult.recettes || []
+      const details = recettes.map(recette => {
+        const quantiteNecessaire = (recette.quantite_necessaire || 0) * quantite
+        return {
+          ingredient: recette.produit_ingredient?.nom || 'Inconnu',
+          quantite_necessaire: quantiteNecessaire,
+          stock_disponible: 0, // Par défaut, pas de stock atelier
+          unite: recette.produit_ingredient?.unite?.label || '',
+          suffisant: false // Par défaut, pas suffisant sans stock atelier
+        }
+      })
+
+      return { 
+        details, 
+        disponible: false, // Par défaut, pas disponible sans données de stock atelier
+        error: null 
+      }
+    } catch (error) {
+      console.error('Erreur dans verifierDisponibiliteIngredients:', error)
+      return { details: [], disponible: false, error: error.message }
+    }
+  },
+
   // Calculer stock nécessaire
   async calculerStockNecessaire(nomProduit, quantite) {
     try {
-      const { data, error } = await supabase.rpc('calculer_stock_necessaire', {
-        p_nom_produit: nomProduit,
-        p_quantite_a_produire: quantite
-      })
+      // Essayer d'abord avec la fonction RPC
+      try {
+        const { data, error } = await supabase.rpc('calculer_stock_necessaire', {
+          p_nom_produit: nomProduit,
+          p_quantite_a_produire: quantite
+        })
 
-      if (error) {
-        console.error('Erreur calcul stock:', error)
-        return { besoins: [], error: error.message }
+        if (!error && data) {
+          return { besoins: data || [], error: null }
+        }
+      } catch (rpcError) {
+        console.warn('RPC calculer_stock_necessaire échouée, méthode alternative:', rpcError)
       }
 
-      return { besoins: data || [], error: null }
+      // Méthode alternative : calculer manuellement
+      const recettesResult = await this.getRecettesProduit(nomProduit)
+      
+      if (recettesResult.error) {
+        return { besoins: [], error: recettesResult.error }
+      }
+
+      const recettes = recettesResult.recettes || []
+      const besoins = recettes.map(recette => {
+        const quantiteNecessaire = (recette.quantite_necessaire || 0) * quantite
+        return {
+          ingredient_nom: recette.produit_ingredient?.nom || 'Inconnu',
+          quantite_necessaire: quantiteNecessaire,
+          quantite_disponible: 0, // Par défaut, pas de stock atelier
+          quantite_manquante: quantiteNecessaire, // Tout est manquant par défaut
+          unite: recette.produit_ingredient?.unite?.label || ''
+        }
+      })
+
+      return { besoins, error: null }
     } catch (error) {
       console.error('Erreur dans calculerStockNecessaire:', error)
       return { besoins: [], error: error.message }
@@ -960,11 +1059,39 @@ export const caisseService = {
             total: item.quantite * item.prix
           })
         
-        // Mettre à jour le stock boutique
-        await supabase.rpc('update_stock_boutique_vente', {
-          p_produit_id: item.id,
-          p_quantite_vendue: item.quantite
-        })
+        // Insérer dans les sorties boutique
+        await supabase
+          .from('sorties_boutique')
+          .insert({
+            vente_id: vente.id,
+            produit_id: item.id,
+            quantite: item.quantite,
+            prix_unitaire: item.prix,
+            total: item.quantite * item.prix
+          })
+        
+        // Mettre à jour le stock boutique manuellement
+        try {
+          // Récupérer le stock actuel
+          const { data: stockActuel } = await supabase
+            .from('stock_boutique')
+            .select('quantite_vendue')
+            .eq('produit_id', item.id)
+            .single()
+          
+          if (stockActuel) {
+            // Mettre à jour la quantité vendue
+            await supabase
+              .from('stock_boutique')
+              .update({
+                quantite_vendue: (stockActuel.quantite_vendue || 0) + item.quantite,
+                updated_at: new Date().toISOString()
+              })
+              .eq('produit_id', item.id)
+          }
+        } catch (stockError) {
+          console.warn('Erreur mise à jour stock boutique:', stockError)
+        }
       }
       
       return { 
