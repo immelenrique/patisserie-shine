@@ -514,53 +514,7 @@ export const productionService = {
     }
   }
 }
-// ===================== SERVICES UTILISATEURS =====================
-export const userService = {
-  // Récupérer tous les utilisateurs
-  async getAll() {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false })
-      
-      if (error) {
-        console.error('Erreur getAll users:', error)
-        return { users: [], error: error.message }
-      }
-      
-      return { users: data || [], error: null }
-    } catch (error) {
-      console.error('Erreur dans getAll users:', error)
-      return { users: [], error: error.message }
-    }
-  },
 
-  // Mettre à jour un profil utilisateur
-  async updateProfile(userId, updates) {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({
-          ...updates,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId)
-        .select()
-        .single()
-      
-      if (error) {
-        console.error('Erreur updateProfile:', error)
-        return { user: null, error: error.message }
-      }
-      
-      return { user: data, error: null }
-    } catch (error) {
-      console.error('Erreur dans updateProfile:', error)
-      return { user: null, error: error.message }
-    }
-  }
-}
 
 // ===================== SERVICES UNITÉS =====================
 export const uniteService = {
@@ -1161,6 +1115,8 @@ export const utils = {
     }).format(number || 0)
   }
 }
+// ===================== SERVICES UTILISATEURS =====================
+
 export const userService = {
   // Récupérer tous les utilisateurs
   async getAll() {
@@ -1182,7 +1138,7 @@ export const userService = {
     }
   },
 
-  // Créer un nouvel utilisateur (méthode simplifiée côté client)
+  // Créer un nouvel utilisateur (version complète avec API)
   async createUser(userData) {
     try {
       // Vérifier que l'utilisateur actuel a les permissions
@@ -1215,93 +1171,81 @@ export const userService = {
         return { user: null, error: `Le nom d'utilisateur "${userData.username}" existe déjà` }
       }
 
-      // Créer l'utilisateur via l'API Supabase Auth (nécessite une route API)
-      const response = await fetch('/api/admin/create-user', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${currentUser.access_token}`
-        },
-        body: JSON.stringify({
-          username: userData.username,
-          nom: userData.nom,
-          telephone: userData.telephone,
-          role: userData.role,
-          password: userData.password
+      // Essayer d'abord avec l'API route
+      try {
+        const response = await fetch('/api/admin/create-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          },
+          body: JSON.stringify({
+            username: userData.username,
+            nom: userData.nom,
+            telephone: userData.telephone,
+            role: userData.role,
+            password: userData.password
+          })
         })
-      })
 
-      const result = await response.json()
+        const result = await response.json()
 
-      if (!response.ok) {
-        return { user: null, error: result.error || 'Erreur lors de la création' }
+        if (!response.ok) {
+          throw new Error(result.error || 'Erreur API')
+        }
+
+        return { user: result.user, error: null }
+      } catch (apiError) {
+        console.warn('API non disponible, utilisation de la méthode alternative:', apiError)
+        
+        // Fallback : méthode alternative (simulation)
+        return await this.createUserFallback(userData, currentUser.id)
       }
-
-      return { user: result.user, error: null }
     } catch (error) {
       console.error('Erreur dans createUser:', error)
       return { user: null, error: error.message }
     }
   },
 
-  // Version alternative : Création manuelle via insertion directe
-  async createUserSimple(userData) {
+  // Méthode alternative pour créer un utilisateur (fallback)
+  async createUserFallback(userData, creatorId) {
     try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      // Générer un ID temporaire (dans un vrai système, ceci viendrait d'auth.users)
+      const tempUserId = crypto.randomUUID()
       
-      if (!currentUser) {
-        return { user: null, error: 'Vous devez être connecté' }
-      }
-
-      // Vérifier les permissions
-      const { data: currentProfile } = await supabase
-        .from('profiles')
-        .select('role, username')
-        .eq('id', currentUser.id)
-        .single()
-
-      if (currentProfile?.role !== 'admin' && currentProfile?.username !== 'proprietaire') {
-        return { user: null, error: 'Permissions insuffisantes' }
-      }
-
-      // Simuler la création (pour démonstration)
-      // Dans un vrai environnement, ceci créerait un utilisateur via une fonction Supabase
-      const newUserId = crypto.randomUUID()
-      const newUser = {
-        id: newUserId,
-        username: userData.username,
-        nom: userData.nom,
-        telephone: userData.telephone,
-        role: userData.role,
-        actif: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
-
-      // Note: Cette insertion échouera car 'id' doit correspondre à un utilisateur auth.users
-      // C'est pourquoi nous avons besoin d'une route API ou d'une fonction Supabase
+      // Insérer directement dans profiles (ATTENTION: nécessite un vrai utilisateur auth)
       const { data, error } = await supabase
         .from('profiles')
-        .insert(newUser)
+        .insert({
+          id: tempUserId, // Ceci échouera car l'ID doit exister dans auth.users
+          username: userData.username,
+          nom: userData.nom,
+          telephone: userData.telephone,
+          role: userData.role,
+          actif: true
+        })
         .select()
         .single()
 
       if (error) {
-        console.error('Erreur insertion profil:', error)
+        console.error('Erreur insertion profil fallback:', error)
         return { 
           user: null, 
-          error: 'Impossible de créer l\'utilisateur. Utilisez le dashboard Supabase ou configurez une route API.' 
+          error: 'Création impossible sans API Admin. Instructions alternatives :\n\n1. Configurez SUPABASE_SERVICE_ROLE_KEY dans vos variables d\'environnement\n2. Ou créez l\'utilisateur manuellement dans le dashboard Supabase :\n   - Dashboard Supabase → Authentication → Users\n   - Add user avec email: ' + userData.username + '@shine.local\n   - Le profil sera créé automatiquement'
         }
       }
 
       return { user: data, error: null }
     } catch (error) {
-      console.error('Erreur dans createUserSimple:', error)
-      return { user: null, error: error.message }
+      console.error('Erreur dans createUserFallback:', error)
+      return { 
+        user: null, 
+        error: 'Pour créer des utilisateurs, veuillez :\n1. Configurer la clé SERVICE_ROLE\n2. Ou utiliser le dashboard Supabase manuellement'
+      }
     }
   },
 
-  // Supprimer un utilisateur (désactivation)
+  // Supprimer/Désactiver un utilisateur
   async deleteUser(userId) {
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser()
@@ -1317,8 +1261,361 @@ export const userService = {
         .eq('id', currentUser.id)
         .single()
 
-      if (currentProfile?.role !== 'admin' && currentProfile?.username
+      if (currentProfile?.role !== 'admin' && currentProfile?.username !== 'proprietaire') {
+        return { success: false, error: 'Permissions insuffisantes' }
+      }
+
+      // Vérifier qu'on ne peut pas supprimer son propre compte
+      if (userId === currentUser.id) {
+        return { success: false, error: 'Vous ne pouvez pas supprimer votre propre compte' }
+      }
+
+      // Récupérer les infos de l'utilisateur à supprimer
+      const { data: userToDelete } = await supabase
+        .from('profiles')
+        .select('username, nom, role')
+        .eq('id', userId)
+        .single()
+
+      if (!userToDelete) {
+        return { success: false, error: 'Utilisateur introuvable' }
+      }
+
+      // Empêcher la suppression du propriétaire
+      if (userToDelete.username === 'proprietaire') {
+        return { success: false, error: 'Impossible de supprimer le compte propriétaire' }
+      }
+
+      // Désactiver l'utilisateur au lieu de le supprimer complètement
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          actif: false,
+          username: `${userToDelete.username}_deleted_${Date.now()}`,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+
+      if (error) {
+        console.error('Erreur suppression utilisateur:', error)
+        return { success: false, error: error.message }
+      }
+
+      // Optionnel : Désactiver aussi dans auth.users via API
+      try {
+        const response = await fetch('/api/admin/deactivate-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          },
+          body: JSON.stringify({ userId })
+        })
+
+        if (!response.ok) {
+          console.warn('Impossible de désactiver dans auth.users via API')
+        }
+      } catch (authError) {
+        console.warn('API de désactivation non disponible:', authError)
+        // Continue malgré l'erreur auth - la désactivation dans profiles suffit
+      }
+
+      return { success: true, message: `Utilisateur ${userToDelete.nom} désactivé avec succès` }
+    } catch (error) {
+      console.error('Erreur dans deleteUser:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Réactiver un utilisateur
+  async reactivateUser(userId) {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      
+      if (!currentUser) {
+        return { success: false, error: 'Vous devez être connecté' }
+      }
+
+      // Vérifier les permissions
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('role, username')
+        .eq('id', currentUser.id)
+        .single()
+
+      if (currentProfile?.role !== 'admin' && currentProfile?.username !== 'proprietaire') {
+        return { success: false, error: 'Permissions insuffisantes' }
+      }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          actif: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+
+      if (error) {
+        console.error('Erreur réactivation utilisateur:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, message: 'Utilisateur réactivé avec succès' }
+    } catch (error) {
+      console.error('Erreur dans reactivateUser:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Mettre à jour un profil utilisateur
+  async updateProfile(userId, updates) {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      
+      if (!currentUser) {
+        return { user: null, error: 'Vous devez être connecté' }
+      }
+
+      // Vérifier les permissions (admin ou modification de son propre profil)
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('role, username')
+        .eq('id', currentUser.id)
+        .single()
+
+      const canEdit = (
+        currentProfile?.role === 'admin' || 
+        currentProfile?.username === 'proprietaire' || 
+        userId === currentUser.id
+      )
+
+      if (!canEdit) {
+        return { user: null, error: 'Permissions insuffisantes' }
+      }
+
+      // Si c'est un utilisateur normal qui modifie son profil, limiter les champs
+      let allowedUpdates = updates
+      if (userId === currentUser.id && currentProfile?.role !== 'admin' && currentProfile?.username !== 'proprietaire') {
+        allowedUpdates = {
+          nom: updates.nom,
+          telephone: updates.telephone
+          // Empêcher la modification du rôle par un non-admin
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({
+          ...allowedUpdates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erreur updateProfile:', error)
+        return { user: null, error: error.message }
+      }
+
+      return { user: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans updateProfile:', error)
+      return { user: null, error: error.message }
+    }
+  },
+
+  // Changer le mot de passe d'un utilisateur (admin seulement)
+  async changePassword(userId, newPassword) {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      
+      if (!currentUser) {
+        return { success: false, error: 'Vous devez être connecté' }
+      }
+
+      // Vérifier les permissions
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('role, username')
+        .eq('id', currentUser.id)
+        .single()
+
+      if (currentProfile?.role !== 'admin' && currentProfile?.username !== 'proprietaire') {
+        return { success: false, error: 'Seuls les administrateurs peuvent changer les mots de passe' }
+      }
+
+      // Utiliser l'API Admin pour changer le mot de passe
+      try {
+        const response = await fetch('/api/admin/change-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          },
+          body: JSON.stringify({ userId, newPassword })
+        })
+
+        const result = await response.json()
+
+        if (!response.ok) {
+          return { success: false, error: result.error || 'Erreur lors du changement de mot de passe' }
+        }
+
+        return { success: true, message: 'Mot de passe modifié avec succès' }
+      } catch (apiError) {
+        console.warn('API changement mot de passe non disponible:', apiError)
+        return { 
+          success: false, 
+          error: 'Changement de mot de passe non disponible. Utilisez le dashboard Supabase pour cette opération.' 
+        }
+      }
+    } catch (error) {
+      console.error('Erreur dans changePassword:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Obtenir les utilisateurs inactifs
+  async getInactiveUsers() {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('actif', false)
+        .order('updated_at', { ascending: false })
+      
+      if (error) {
+        console.error('Erreur getInactiveUsers:', error)
+        return { users: [], error: error.message }
+      }
+      
+      return { users: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getInactiveUsers:', error)
+      return { users: [], error: error.message }
+    }
+  },
+
+  // Obtenir les statistiques des utilisateurs
+  async getUserStats() {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('role, actif')
+        .eq('actif', true)
+      
+      if (error) {
+        console.error('Erreur getUserStats:', error)
+        return { stats: null, error: error.message }
+      }
+
+      const stats = {
+        total: data.length,
+        admins: data.filter(u => u.role === 'admin').length,
+        employes_production: data.filter(u => u.role === 'employe_production').length,
+        employes_boutique: data.filter(u => u.role === 'employe_boutique').length,
+        inactifs: 0 // Sera calculé séparément si nécessaire
+      }
+      
+      return { stats, error: null }
+    } catch (error) {
+      console.error('Erreur dans getUserStats:', error)
+      return { stats: null, error: error.message }
+    }
+  },
+
+  // Rechercher des utilisateurs
+  async searchUsers(searchTerm) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .or(`nom.ilike.%${searchTerm}%,username.ilike.%${searchTerm}%,telephone.ilike.%${searchTerm}%`)
+        .eq('actif', true)
+        .order('nom')
+      
+      if (error) {
+        console.error('Erreur searchUsers:', error)
+        return { users: [], error: error.message }
+      }
+      
+      return { users: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans searchUsers:', error)
+      return { users: [], error: error.message }
+    }
+  },
+
+  // Vérifier si un nom d'utilisateur est disponible
+  async checkUsernameAvailability(username) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', username)
+        .single()
+      
+      if (error && error.code === 'PGRST116') {
+        // Pas trouvé = disponible
+        return { available: true, error: null }
+      }
+      
+      if (error) {
+        console.error('Erreur checkUsernameAvailability:', error)
+        return { available: false, error: error.message }
+      }
+      
+      // Trouvé = non disponible
+      return { available: false, error: null }
+    } catch (error) {
+      console.error('Erreur dans checkUsernameAvailability:', error)
+      return { available: false, error: error.message }
+    }
+  },
+
+  // Obtenir l'historique d'activité d'un utilisateur
+  async getUserActivity(userId, limit = 50) {
+    try {
+      // Récupérer les dernières actions de l'utilisateur
+      const [demandesResult, productionsResult, mouvementsResult] = await Promise.all([
+        supabase
+          .from('demandes')
+          .select('id, created_at, statut, destination')
+          .eq('demandeur_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(limit),
+        
+        supabase
+          .from('productions')
+          .select('id, created_at, produit, quantite, statut')
+          .eq('producteur_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(limit),
+        
+        supabase
+          .from('mouvements_stock')
+          .select('id, created_at, type_mouvement, commentaire')
+          .eq('utilisateur_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(limit)
+      ])
+
+      const activity = [
+        ...(demandesResult.data || []).map(d => ({ ...d, type: 'demande' })),
+        ...(productionsResult.data || []).map(p => ({ ...p, type: 'production' })),
+        ...(mouvementsResult.data || []).map(m => ({ ...m, type: 'mouvement' }))
+      ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, limit)
+
+      return { activity, error: null }
+    } catch (error) {
+      console.error('Erreur dans getUserActivity:', error)
+      return { activity: [], error: error.message }
+    }
+  }
+}
 export default supabase
+
 
 
 
