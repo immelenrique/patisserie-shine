@@ -1609,7 +1609,7 @@ export const comptabiliteService = {
     console.error('Erreur dans getRapportComptable:', error)
     return { error: error.message }
   }
-}
+},
 
 
   // Obtenir l'évolution mensuelle
@@ -1869,5 +1869,6 @@ export const utils = {
 }
 
 export default supabase
+
 
 
