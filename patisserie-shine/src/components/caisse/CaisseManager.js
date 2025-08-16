@@ -1,3 +1,5 @@
+// Correction du fichier src/components/caisse/CaisseManager.js
+
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -22,34 +24,34 @@ export default function CaisseManager({ currentUser }) {
   }, []);
 
   const loadData = async () => {
-  setLoading(true);
-  try {
-    const [stockResult, ventesResult] = await Promise.all([
-      stockBoutiqueService.getStockBoutique(),
-      caisseService.getVentesJour()
-    ]);
+    setLoading(true);
+    try {
+      const [stockResult, ventesResult] = await Promise.all([
+        stockBoutiqueService.getStockBoutique(),
+        caisseService.getVentesJour()
+      ]);
 
-    if (stockResult.error) throw new Error(stockResult.error);
-    if (ventesResult.error) throw new Error(ventesResult.error);
+      if (stockResult.error) throw new Error(stockResult.error);
+      if (ventesResult.error) throw new Error(ventesResult.error);
 
-    // Filtrer seulement les produits avec stock > 0 ET prix défini
-    const produitsDisponibles = (stockResult.stock || []).filter(p => 
-      (p.stock_reel || 0) > 0 && (p.prix_vente || 0) > 0 && p.prix_defini
-    );
+      // Filtrer seulement les produits avec stock > 0 ET prix défini
+      const produitsDisponibles = (stockResult.stock || []).filter(p => 
+        (p.stock_reel || 0) > 0 && (p.prix_vente || 0) > 0 && p.prix_defini
+      );
 
-    setProduitsBoutique(produitsDisponibles);
-    setVentesJour(ventesResult.ventes || []);
-    setError('');
-  } catch (err) {
-    setError(err.message);
-  } finally {
-    setLoading(false);
-  }
-};
+      setProduitsBoutique(produitsDisponibles);
+      setVentesJour(ventesResult.ventes || []);
+      setError('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Fonctions de gestion du panier
   const ajouterAuPanier = (produit) => {
-    const existant = panier.find(item => item.id === produit.id);
+    const existant = panier.find(item => item.id === produit.produit_id);
     
     if (existant) {
       if (existant.quantite >= produit.stock_reel) {
@@ -57,13 +59,13 @@ export default function CaisseManager({ currentUser }) {
         return;
       }
       setPanier(panier.map(item =>
-        item.id === produit.id
+        item.id === produit.produit_id
           ? { ...item, quantite: item.quantite + 1 }
           : item
       ));
     } else {
       setPanier([...panier, {
-        id: produit.id,
+        id: produit.produit_id,
         nom: produit.nom_produit,
         prix: produit.prix_vente,
         quantite: 1,
@@ -79,7 +81,7 @@ export default function CaisseManager({ currentUser }) {
       return;
     }
 
-    const produit = produitsBoutique.find(p => p.id === id);
+    const produit = produitsBoutique.find(p => p.produit_id === id);
     if (nouvelleQuantite > produit.stock_reel) {
       alert(`Stock insuffisant ! Maximum disponible : ${produit.stock_reel}`);
       return;
@@ -315,12 +317,15 @@ export default function CaisseManager({ currentUser }) {
                 {produitsFiltres.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                    Aucun produit disponible à la vente
+                    {produitsBoutique.length === 0 ? 
+                      "Aucun produit disponible à la vente" :
+                      "Aucun produit trouvé pour votre recherche"
+                    }
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {produitsFiltres.map((produit) => (
-                      <div key={produit.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                      <div key={produit.produit_id} className="border rounded-lg p-4 hover:bg-gray-50">
                         <div className="flex justify-between items-start mb-2">
                           <h4 className="font-medium text-gray-900">{produit.nom_produit}</h4>
                           <span className="text-lg font-bold text-green-600">
@@ -576,7 +581,7 @@ export default function CaisseManager({ currentUser }) {
                         <td className="px-6 py-4">
                           <div className="text-sm">
                             {vente.items?.map((item, idx) => (
-                              <div key={idx}>{item.nom} ×{item.quantite}</div>
+                              <div key={idx}>{item.nom_produit || item.nom} ×{item.quantite}</div>
                             ))}
                           </div>
                         </td>
@@ -636,7 +641,7 @@ export default function CaisseManager({ currentUser }) {
               
               {lastReceipt.items.map((item, index) => (
                 <div key={index} className="flex justify-between mb-2">
-                  <span>{item.nom} ×{item.quantite}</span>
+                  <span>{item.nom || item.nom_produit} ×{item.quantite}</span>
                   <span>{utils.formatCFA(item.prix * item.quantite)}</span>
                 </div>
               ))}
