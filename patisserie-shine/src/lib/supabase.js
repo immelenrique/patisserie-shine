@@ -1729,7 +1729,7 @@ export const demandeService = {
       console.error('Erreur dans reject demande:', error)
       return { demande: null, error: error.message }
     }
-  }
+  },
   async getAll() {
     return await productService.getAll()
   },
@@ -2842,6 +2842,7 @@ export const userService = {
   }
 }
 export default supabase
+
 
 
 
