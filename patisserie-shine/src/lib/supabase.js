@@ -1380,7 +1380,7 @@ export const caisseService = {
     console.error('Erreur dans getVentesPeriode:', error)
     return { ventes: [], error: error.message }
   }
-}
+},
 
   // Obtenir les ventes du jour
   async getVentesJour(date = null) {
@@ -1814,6 +1814,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
