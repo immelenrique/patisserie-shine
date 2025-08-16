@@ -1,5 +1,5 @@
-// src/components/layout/index.js
-import { ChefHat, Bell, LogOut, Home, Package, Warehouse, Calculator, ShoppingCart, Users, UserPlus } from 'lucide-react';
+// src/components/layout/index.js - Version mise à jour
+import { ChefHat, Bell, LogOut, Home, Package, Warehouse, Calculator, ShoppingCart, Users, UserPlus, Store, CreditCard, BarChart3 } from 'lucide-react';
 
 // Header Component
 export function Header({ currentUser, stats, onLogout }) {
@@ -16,7 +16,7 @@ export function Header({ currentUser, stats, onLogout }) {
                 <h1 className="text-xl font-bold text-gray-900">
                   Pâtisserie <span className="text-orange-500">Shine</span>
                 </h1>
-                <p className="text-sm text-gray-500">Gestion de stock</p>
+                <p className="text-sm text-gray-500">Gestion complète</p>
               </div>
             </div>
           </div>
@@ -25,9 +25,9 @@ export function Header({ currentUser, stats, onLogout }) {
             <div className="relative">
               <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="h-5 w-5" />
-                {stats?.demandes_en_attente > 0 && (
+                {(stats?.demandes_en_attente > 0 || stats?.stock_atelier_critique > 0 || stats?.produits_stock_critique > 0) && (
                   <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                    {stats.demandes_en_attente}
+                    {(stats?.demandes_en_attente || 0) + (stats?.stock_atelier_critique || 0) + (stats?.produits_stock_critique || 0)}
                   </span>
                 )}
               </button>
@@ -67,18 +67,23 @@ export function Navigation({ tabs, activeTab, onTabChange, stats }) {
     dashboard: Home,
     stock: Package,
     'stock-atelier': Warehouse,
+    'stock-boutique': Store,
     recettes: Calculator,
     demandes: ShoppingCart,
     production: ChefHat,
+    caisse: CreditCard,
+    comptabilite: BarChart3,
     unites: Calculator,
     equipe: Users,
-    users: UserPlus  // Nouvelle icône pour la gestion des utilisateurs
+    users: UserPlus
   };
 
   const tabBadges = {
     stock: stats?.produits_stock_critique,
     'stock-atelier': stats?.stock_atelier_critique,
-    demandes: stats?.demandes_en_attente
+    'stock-boutique': stats?.stock_boutique_critique,
+    demandes: stats?.demandes_en_attente,
+    caisse: stats?.ventes_en_cours
   };
 
   return (
@@ -126,11 +131,11 @@ export function Footer() {
               <ChefHat className="h-4 w-4 text-white" />
             </div>
             <span className="text-sm text-gray-600">
-              © 2025 Pâtisserie Shine - Gestion de stock professionnelle
+              © 2025 Pâtisserie Shine - Gestion complète avec caisse intégrée
             </span>
           </div>
           <div className="flex items-center space-x-4 text-sm text-gray-500">
-            <span>Version 3.0.0</span>
+            <span>Version 4.0.0</span>
             <span>•</span>
             <span>Made in Burkina Faso 🇧🇫</span>
           </div>
