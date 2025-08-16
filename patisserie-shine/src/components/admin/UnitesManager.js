@@ -10,6 +10,8 @@ export default function UnitesManager({ currentUser }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingUnite, setEditingUnite] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     value: '',
     label: ''
@@ -17,6 +19,8 @@ export default function UnitesManager({ currentUser }) {
 
   useEffect(() => {
     loadUnites();
+    // Créer les unités de base si aucune n'existe
+    initializeUnitsIfEmpty();
   }, []);
 
   const loadUnites = async () => {
@@ -25,64 +29,93 @@ export default function UnitesManager({ currentUser }) {
       const { unites, error } = await uniteService.getAll();
       if (error) {
         console.error('Erreur lors du chargement des unités:', error);
+        setError(error);
       } else {
         setUnites(unites);
+        setError('');
       }
     } catch (err) {
       console.error('Erreur:', err);
+      setError('Erreur de connexion');
     } finally {
       setLoading(false);
     }
   };
 
+  const initializeUnitsIfEmpty = async () => {
+    try {
+      await uniteService.createBasicUnitsIfEmpty();
+    } catch (err) {
+      console.warn('Impossible de créer les unités de base:', err);
+    }
+  };
+
   const handleAddUnite = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
+    setError('');
+
     try {
-      // Simulation d'ajout - dans une vraie app cela appellerait l'API
-      const newUnite = {
-        id: Date.now(),
-        value: formData.value,
-        label: formData.label,
-        created_at: new Date().toISOString()
-      };
-      
-      setUnites([...unites, newUnite]);
-      resetForm();
-      setShowAddModal(false);
-      alert('Unité créée avec succès');
+      const { unite, error } = await uniteService.create({
+        value: formData.value.trim(),
+        label: formData.label.trim()
+      });
+
+      if (error) {
+        setError(error);
+      } else {
+        await loadUnites(); // Recharger la liste
+        resetForm();
+        setShowAddModal(false);
+        alert('Unité créée avec succès !');
+      }
     } catch (err) {
       console.error('Erreur:', err);
-      alert('Erreur lors de la création de l\'unité');
+      setError('Erreur lors de la création de l\'unité');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleEditUnite = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
+    setError('');
+
     try {
-      // Simulation de modification
-      const updatedUnites = unites.map(unite => 
-        unite.id === editingUnite.id 
-          ? { ...unite, value: formData.value, label: formData.label, updated_at: new Date().toISOString() }
-          : unite
-      );
-      
-      setUnites(updatedUnites);
-      resetForm();
-      setEditingUnite(null);
-      alert('Unité modifiée avec succès');
+      const { unite, error } = await uniteService.update(editingUnite.id, {
+        value: formData.value.trim(),
+        label: formData.label.trim()
+      });
+
+      if (error) {
+        setError(error);
+      } else {
+        await loadUnites(); // Recharger la liste
+        resetForm();
+        setEditingUnite(null);
+        alert('Unité modifiée avec succès !');
+      }
     } catch (err) {
       console.error('Erreur:', err);
-      alert('Erreur lors de la modification de l\'unité');
+      setError('Erreur lors de la modification de l\'unité');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleDeleteUnite = async (uniteId) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cette unité ?')) return;
+  const handleDeleteUnite = async (uniteId, uniteLabel) => {
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer l'unité "${uniteLabel}" ?`)) return;
     
     try {
-      // Simulation de suppression
-      setUnites(unites.filter(unite => unite.id !== uniteId));
-      alert('Unité supprimée avec succès');
+      const { success, error } = await uniteService.delete(uniteId);
+
+      if (error) {
+        alert('Erreur lors de la suppression : ' + error);
+      } else {
+        await loadUnites(); // Recharger la liste
+        alert('Unité supprimée avec succès !');
+      }
     } catch (err) {
       console.error('Erreur:', err);
       alert('Erreur lors de la suppression de l\'unité');
@@ -95,6 +128,7 @@ export default function UnitesManager({ currentUser }) {
       value: unite.value,
       label: unite.label
     });
+    setError('');
   };
 
   const resetForm = () => {
@@ -102,6 +136,13 @@ export default function UnitesManager({ currentUser }) {
       value: '',
       label: ''
     });
+    setError('');
+  };
+
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setEditingUnite(null);
+    resetForm();
   };
 
   if (loading) {
@@ -135,6 +176,13 @@ export default function UnitesManager({ currentUser }) {
           </button>
         )}
       </div>
+
+      {/* Message d'erreur global */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="text-red-800">{error}</div>
+        </div>
+      )}
       
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
@@ -144,17 +192,24 @@ export default function UnitesManager({ currentUser }) {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Libellé</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Créé le</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                {currentUser.role === 'admin' && (
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                )}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {unites.length === 0 ? (
                 <tr>
-                  <td colSpan="4" className="text-center py-8 text-gray-500">
+                  <td colSpan={currentUser.role === 'admin' ? "4" : "3"} className="text-center py-8 text-gray-500">
                     <Calculator className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                     Aucune unité créée
                     <br />
-                    <span className="text-sm">Ajoutez votre première unité de mesure</span>
+                    <span className="text-sm">
+                      {currentUser.role === 'admin' ? 
+                        'Ajoutez votre première unité de mesure' : 
+                        'Aucune unité disponible'
+                      }
+                    </span>
                   </td>
                 </tr>
               ) : (
@@ -169,28 +224,28 @@ export default function UnitesManager({ currentUser }) {
                       {unite.label}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {utils.formatDate(unite.created_at)}
+                      {unite.created_at ? utils.formatDate(unite.created_at) : '-'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {currentUser.role === 'admin' && (
+                    {currentUser.role === 'admin' && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
                           <button 
                             onClick={() => startEdit(unite)}
-                            className="text-indigo-600 hover:text-indigo-900"
+                            className="text-indigo-600 hover:text-indigo-900 p-1 hover:bg-indigo-50 rounded transition-colors"
                             title="Modifier"
                           >
                             <Edit className="h-4 w-4" />
                           </button>
                           <button 
-                            onClick={() => handleDeleteUnite(unite.id)}
-                            className="text-red-600 hover:text-red-900"
+                            onClick={() => handleDeleteUnite(unite.id, unite.label)}
+                            className="text-red-600 hover:text-red-900 p-1 hover:bg-red-50 rounded transition-colors"
                             title="Supprimer"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
-                      )}
-                    </td>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -201,16 +256,19 @@ export default function UnitesManager({ currentUser }) {
 
       {/* Modal Ajout/Edition Unité */}
       <Modal 
-        isOpen={showAddModal || editingUnite} 
-        onClose={() => {
-          setShowAddModal(false);
-          setEditingUnite(null);
-          resetForm();
-        }} 
+        isOpen={showAddModal || editingUnite !== null} 
+        onClose={handleCloseModal} 
         title={editingUnite ? "Modifier l'Unité" : "Ajouter une Unité"} 
         size="md"
       >
         <form onSubmit={editingUnite ? handleEditUnite : handleAddUnite} className="space-y-4">
+          {/* Message d'erreur dans le modal */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="text-red-800 text-sm">{error}</div>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Code de l'unité *</label>
             <input
@@ -221,6 +279,7 @@ export default function UnitesManager({ currentUser }) {
               placeholder="Ex: kg, ml, pcs"
               required
               maxLength="50"
+              disabled={submitting}
             />
             <p className="text-xs text-gray-500 mt-1">Code court pour identifier l'unité</p>
           </div>
@@ -235,6 +294,7 @@ export default function UnitesManager({ currentUser }) {
               placeholder="Ex: Kilogrammes, Millilitres, Pièces"
               required
               maxLength="100"
+              disabled={submitting}
             />
             <p className="text-xs text-gray-500 mt-1">Nom complet affiché dans l'interface</p>
           </div>
@@ -254,17 +314,25 @@ export default function UnitesManager({ currentUser }) {
           </div>
           
           <div className="flex space-x-4 pt-4">
-            <button type="submit" className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-2 px-4 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200">
-              {editingUnite ? 'Modifier l\'unité' : 'Ajouter l\'unité'}
+            <button 
+              type="submit" 
+              disabled={submitting || !formData.value.trim() || !formData.label.trim()}
+              className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-2 px-4 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submitting ? (
+                <>
+                  <div className="spinner w-4 h-4 inline mr-2"></div>
+                  {editingUnite ? 'Modification...' : 'Création...'}
+                </>
+              ) : (
+                editingUnite ? 'Modifier l\'unité' : 'Ajouter l\'unité'
+              )}
             </button>
             <button 
               type="button" 
-              onClick={() => {
-                setShowAddModal(false);
-                setEditingUnite(null);
-                resetForm();
-              }}
-              className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-all duration-200"
+              onClick={handleCloseModal}
+              disabled={submitting}
+              className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-all duration-200 disabled:opacity-50"
             >
               Annuler
             </button>
