@@ -1222,7 +1222,7 @@ export const comptabiliteService = {
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
     return diffDays > 0 ? Math.round(montantTotal / diffDays) : 0
   }
-}
+},
 
 
   // Rapport comptable complet
@@ -2843,6 +2843,7 @@ export const userService = {
   }
 }
 export default supabase
+
 
 
 
