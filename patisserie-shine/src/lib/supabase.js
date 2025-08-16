@@ -368,9 +368,9 @@ export const productionService = {
         return { production: null, error: 'Utilisateur non connecté' }
       }
 
-      console.log('Création production:', productionData)
+      console.log('Création production avec données:', productionData)
 
-      // Utiliser la fonction PostgreSQL qui gère la déduction automatique
+      // Utiliser la fonction PostgreSQL qui gère la déduction automatique du stock atelier
       const { data, error } = await supabase.rpc('creer_production_avec_deduction', {
         p_produit: productionData.produit,
         p_quantite: productionData.quantite,
@@ -394,7 +394,7 @@ export const productionService = {
       console.log('Production créée avec succès:', data)
 
       // Récupérer les données complètes de la production créée
-      const { data: productionData, error: fetchError } = await supabase
+      const { data: fullProductionData, error: fetchError } = await supabase
         .from('productions')
         .select(`
           *,
@@ -418,7 +418,7 @@ export const productionService = {
       
       return { 
         production: {
-          ...productionData,
+          ...fullProductionData,
           message: data.message
         }, 
         error: null 
@@ -487,7 +487,7 @@ export const productionService = {
     }
   },
 
-  // Obtenir les productions du jour avec consommation d'ingrédients
+  // Obtenir les productions du jour
   async getProductionsDuJour() {
     try {
       const today = new Date().toISOString().split('T')[0]
@@ -511,32 +511,6 @@ export const productionService = {
     } catch (error) {
       console.error('Erreur dans getProductionsDuJour:', error)
       return { productions: [], error: error.message }
-    }
-  },
-
-  // Obtenir l'historique d'utilisation des ingrédients
-  async getHistoriqueUtilisation(limit = 50) {
-    try {
-      const { data, error } = await supabase
-        .from('mouvements_stock')
-        .select(`
-          *,
-          produit:produits(nom, unite:unites(label)),
-          utilisateur:profiles(nom)
-        `)
-        .in('type_mouvement', ['utilisation_production', 'restauration_annulation'])
-        .order('created_at', { ascending: false })
-        .limit(limit)
-      
-      if (error) {
-        console.error('Erreur getHistoriqueUtilisation:', error)
-        return { mouvements: [], error: error.message }
-      }
-      
-      return { mouvements: data || [], error: null }
-    } catch (error) {
-      console.error('Erreur dans getHistoriqueUtilisation:', error)
-      return { mouvements: [], error: error.message }
     }
   }
 }
@@ -613,13 +587,26 @@ export const uniteService = {
 
 // ===================== SERVICES STOCK ATELIER (CORRIGÉ) =====================
 export const stockAtelierService = {
-  // Récupérer l'état du stock atelier (utilise la vue adaptée à votre structure)
+  // Récupérer l'état du stock atelier
   async getStockAtelier() {
     try {
-      const { data, error } = await supabase
-        .from('vue_stock_atelier_usage')
-        .select('*')
-        .order('nom_produit')
+      // Essayer d'abord avec la vue corrigée
+      let data, error;
+      
+      try {
+        ({ data, error } = await supabase
+          .from('vue_stock_atelier_usage')
+          .select('*')
+          .order('nom_produit'))
+      } catch (viewError) {
+        console.warn('Vue vue_stock_atelier_usage indisponible, utilisation de la vue alternative:', viewError)
+        
+        // Fallback sur la vue simple
+        ({ data, error } = await supabase
+          .from('vue_stock_atelier_simple')
+          .select('*')
+          .order('nom_produit'))
+      }
         
       if (error) {
         console.error('Erreur getStockAtelier:', error)
@@ -633,7 +620,7 @@ export const stockAtelierService = {
     }
   },
 
-  // Obtenir l'historique des transferts (utilise votre table directement)
+  // Obtenir l'historique des transferts
   async getHistoriqueTransferts() {
     try {
       const { data, error } = await supabase
@@ -662,7 +649,7 @@ export const stockAtelierService = {
       const transfertsFormated = (data || []).map(item => ({
         id: item.id,
         produit_id: item.produit_id,
-        quantite_transferee: item.quantite_disponible, // Mapping pour compatibilité
+        quantite_transferee: item.quantite_disponible,
         transfere_par: item.transfere_par,
         statut: item.statut,
         created_at: item.created_at,
@@ -677,7 +664,7 @@ export const stockAtelierService = {
     }
   },
 
-  // Obtenir l'historique des consommations (via consommations_atelier)
+  // Obtenir l'historique des consommations
   async getHistoriqueConsommations(limit = 50) {
     try {
       const { data, error } = await supabase
@@ -1147,6 +1134,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
