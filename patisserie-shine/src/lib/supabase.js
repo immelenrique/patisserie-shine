@@ -1086,66 +1086,60 @@ export const stockAtelierService = {
 
 // ===================== SERVICES STOCK BOUTIQUE =====================
 export const stockBoutiqueService = {
-  // Récupérer l'état du stock boutique
- async getStockBoutique() {
-  try {
-    const { data, error } = await supabase
-      .from('stock_boutique')
-      .select(`
-        id,
-        produit_id,
-        quantite_disponible,
-        quantite_vendue,
-        prix_vente,
-        created_at,
-        updated_at,
-        produits!inner(
-          nom,
-          unites(label),
-          prix_vente(prix_vente)
-        )
-      `)
-      .order('created_at', { ascending: false })
-    
-    if (error) {
-      console.error('Erreur getStockBoutique:', error)
+  // Récupérer l'état du stock boutique (correction requête)
+  async getStockBoutique() {
+    try {
+      const { data, error } = await supabase
+        .from('stock_boutique')
+        .select(`
+          id,
+          produit_id,
+          quantite_disponible,
+          quantite_vendue,
+          prix_vente,
+          created_at,
+          updated_at,
+          produits!inner(
+            nom,
+            unites(label)
+          )
+        `)
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        console.error('Erreur getStockBoutique:', error)
+        return { stock: [], error: error.message }
+      }
+      
+      const stockFormate = (data || []).map(item => {
+        const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0)
+        
+        return {
+          id: item.id,
+          produit_id: item.produit_id,
+          nom_produit: item.produits?.nom || 'Produit inconnu',
+          unite: item.produits?.unites?.label || 'unité',
+          quantite_disponible: item.quantite_disponible || 0,
+          quantite_vendue: item.quantite_vendue || 0,
+          stock_reel: stockReel,
+          prix_vente: item.prix_vente || 0,
+          valeur_stock: stockReel * (item.prix_vente || 0),
+          statut_stock: stockReel <= 0 ? 'rupture' :
+                       stockReel <= 5 ? 'critique' :
+                       stockReel <= 10 ? 'faible' : 'normal',
+          prix_defini: (item.prix_vente || 0) > 0,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          derniere_maj: item.updated_at
+        }
+      })
+      
+      return { stock: stockFormate, error: null }
+    } catch (error) {
+      console.error('Erreur dans getStockBoutique:', error)
       return { stock: [], error: error.message }
     }
-    
-    const stockFormate = (data || []).map(item => {
-      // Prendre le prix depuis stock_boutique ou depuis prix_vente
-      const prixVente = item.prix_vente || 
-                       (item.produits?.prix_vente && item.produits.prix_vente.length > 0 ? 
-                        item.produits.prix_vente[0].prix_vente : 0)
-      
-      const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0)
-      
-      return {
-        id: item.id,
-        produit_id: item.produit_id,
-        nom_produit: item.produits?.nom || 'Produit inconnu',
-        unite: item.produits?.unites?.label || 'unité',
-        quantite_disponible: item.quantite_disponible || 0,
-        quantite_vendue: item.quantite_vendue || 0,
-        stock_reel: stockReel,
-        prix_vente: prixVente,
-        valeur_stock: stockReel * prixVente,
-        statut_stock: stockReel <= 0 ? 'rupture' :
-                     stockReel <= 5 ? 'critique' :
-                     stockReel <= 10 ? 'faible' : 'normal',
-        prix_defini: prixVente > 0,
-        created_at: item.created_at,
-        updated_at: item.updated_at,
-        derniere_maj: item.updated_at
-      }
-    })
-    
-    return { stock: stockFormate, error: null }
-  } catch (error) {
-    console.error('Erreur dans getStockBoutique:', error)
-    return { stock: [], error: error.message }
-  }
-},
+  },
 
   // Obtenir l'historique des entrées
   async getHistoriqueEntrees(limit = 50) {
@@ -1158,7 +1152,8 @@ export const stockBoutiqueService = {
           quantite,
           source,
           type_entree,
-          created_at
+          created_at,
+          produits(nom, unites(label))
         `)
         .order('created_at', { ascending: false })
         .limit(limit)
@@ -1168,7 +1163,13 @@ export const stockBoutiqueService = {
         return { entrees: [], error: error.message }
       }
       
-      return { entrees: data || [], error: null }
+      const entreesFormatees = (data || []).map(item => ({
+        ...item,
+        nom_produit: item.produits?.nom || 'Produit inconnu',
+        unite: item.produits?.unites?.label || 'unité'
+      }))
+      
+      return { entrees: entreesFormatees, error: null }
     } catch (error) {
       console.error('Erreur dans getHistoriqueEntrees:', error)
       return { entrees: [], error: error.message }
@@ -1187,7 +1188,8 @@ export const stockBoutiqueService = {
           quantite,
           prix_unitaire,
           total,
-          created_at
+          created_at,
+          ventes(vendeur:profiles(nom))
         `)
         .order('created_at', { ascending: false })
         .limit(limit)
@@ -1197,7 +1199,12 @@ export const stockBoutiqueService = {
         return { sorties: [], error: error.message }
       }
       
-      return { sorties: data || [], error: null }
+      const sortiesFormatees = (data || []).map(item => ({
+        ...item,
+        vendeur: item.ventes?.vendeur
+      }))
+      
+      return { sorties: sortiesFormatees, error: null }
     } catch (error) {
       console.error('Erreur dans getHistoriqueSorties:', error)
       return { sorties: [], error: error.message }
@@ -1207,7 +1214,48 @@ export const stockBoutiqueService = {
 
 // ===================== SERVICES CAISSE =====================
 export const caisseService = {
-  // Enregistrer une vente
+  // Vérifier la disponibilité des produits avec prix
+  async getProduitsDisponiblesCaisse() {
+    try {
+      // Utiliser une requête plus simple qui fonctionne avec le schéma actuel
+      const { data: stockBoutique, error } = await supabase
+        .from('stock_boutique')
+        .select(`
+          produit_id,
+          quantite_disponible,
+          quantite_vendue,
+          prix_vente,
+          produits(nom, unites(label))
+        `)
+        .gt('quantite_disponible', 0)
+        .not('prix_vente', 'is', null)
+        .gt('prix_vente', 0)
+      
+      if (error) {
+        console.error('Erreur getProduitsDisponiblesCaisse:', error)
+        return { produits: [], error: error.message }
+      }
+      
+      const produitsFormates = (stockBoutique || []).map(item => {
+        const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0)
+        return {
+          id: item.produit_id,
+          nom_produit: item.produits?.nom || 'Produit',
+          unite: item.produits?.unites?.label || 'unité',
+          stock_reel: stockReel,
+          prix_vente: item.prix_vente,
+          prix_defini: true
+        }
+      }).filter(p => p.stock_reel > 0)
+      
+      return { produits: produitsFormates, error: null }
+    } catch (error) {
+      console.error('Erreur dans getProduitsDisponiblesCaisse:', error)
+      return { produits: [], error: error.message }
+    }
+  },
+
+  // Enregistrer une vente (méthode manuelle corrigée)
   async enregistrerVente(venteData) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -1216,44 +1264,6 @@ export const caisseService = {
         return { vente: null, error: 'Utilisateur non connecté' }
       }
 
-      // Essayer la fonction PostgreSQL
-      try {
-        const { data, error } = await supabase.rpc('enregistrer_vente_complete', {
-          p_items: JSON.stringify(venteData.items),
-          p_total: venteData.total,
-          p_montant_donne: venteData.montant_donne,
-          p_monnaie_rendue: venteData.monnaie_rendue,
-          p_vendeur_id: venteData.vendeur_id
-        })
-        
-        if (error) throw error
-        
-        if (!data || !data.success) {
-          throw new Error(data?.error || 'Erreur inconnue lors de l\'enregistrement')
-        }
-
-        return { 
-          vente: {
-            id: data.vente_id,
-            numero_ticket: data.numero_ticket,
-            total: venteData.total,
-            items: venteData.items
-          }, 
-          error: null 
-        }
-      } catch (rpcError) {
-        console.warn('RPC échouée, méthode manuelle:', rpcError)
-        return await this.enregistrerVenteManuelle(venteData)
-      }
-    } catch (error) {
-      console.error('Erreur dans enregistrerVente:', error)
-      return { vente: null, error: error.message }
-    }
-  },
-
-  // Méthode manuelle d'enregistrement
-  async enregistrerVenteManuelle(venteData) {
-    try {
       const numeroTicket = 'V-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5)
       
       // Créer la vente
@@ -1297,27 +1307,21 @@ export const caisseService = {
             total: item.quantite * item.prix
           })
         
-        // Mettre à jour le stock boutique manuellement
-        try {
-          // Récupérer le stock actuel
-          const { data: stockActuel } = await supabase
+        // Mettre à jour le stock boutique
+        const { data: stockActuel } = await supabase
+          .from('stock_boutique')
+          .select('quantite_vendue')
+          .eq('produit_id', item.id)
+          .single()
+        
+        if (stockActuel) {
+          await supabase
             .from('stock_boutique')
-            .select('quantite_vendue')
+            .update({
+              quantite_vendue: (stockActuel.quantite_vendue || 0) + item.quantite,
+              updated_at: new Date().toISOString()
+            })
             .eq('produit_id', item.id)
-            .single()
-          
-          if (stockActuel) {
-            // Mettre à jour la quantité vendue
-            await supabase
-              .from('stock_boutique')
-              .update({
-                quantite_vendue: (stockActuel.quantite_vendue || 0) + item.quantite,
-                updated_at: new Date().toISOString()
-              })
-              .eq('produit_id', item.id)
-          }
-        } catch (stockError) {
-          console.warn('Erreur mise à jour stock boutique:', stockError)
         }
       }
       
@@ -1329,7 +1333,7 @@ export const caisseService = {
         error: null 
       }
     } catch (error) {
-      console.error('Erreur enregistrement manuel:', error)
+      console.error('Erreur enregistrerVente:', error)
       return { vente: null, error: error.message }
     }
   },
@@ -1381,119 +1385,19 @@ export const caisseService = {
       console.error('Erreur dans getVentesJour:', error)
       return { ventes: [], error: error.message }
     }
-  },
-
-  // Obtenir les ventes par période
-  async getVentesPeriode(dateDebut, dateFin) {
-    try {
-      const { data: ventes, error } = await supabase
-        .from('ventes')
-        .select(`
-          id,
-          numero_ticket,
-          total,
-          montant_donne,
-          monnaie_rendue,
-          created_at,
-          vendeur:profiles!ventes_vendeur_id_fkey(nom)
-        `)
-        .gte('created_at', dateDebut + 'T00:00:00.000Z')
-        .lte('created_at', dateFin + 'T23:59:59.999Z')
-        .eq('statut', 'validee')
-        .order('created_at', { ascending: false })
-      
-      if (error) {
-        console.error('Erreur getVentesPeriode:', error)
-        return { ventes: [], error: error.message }
-      }
-      
-      return { ventes: ventes || [], error: null }
-    } catch (error) {
-      console.error('Erreur dans getVentesPeriode:', error)
-      return { ventes: [], error: error.message }
-    }
-  },
-
-  // Obtenir les produits les plus vendus
-  async getProduitsTopVentes(limit = 10, periode = 'mois') {
-    try {
-      const { data, error } = await supabase
-        .from('lignes_vente')
-        .select(`
-          nom_produit,
-          quantite,
-          prix_unitaire,
-          total
-        `)
-        .order('total', { ascending: false })
-        .limit(limit)
-      
-      if (error) {
-        console.error('Erreur getProduitsTopVentes:', error)
-        return { produits: [], error: error.message }
-      }
-
-      return { produits: data || [], error: null }
-    } catch (error) {
-      console.error('Erreur dans getProduitsTopVentes:', error)
-      return { produits: [], error: error.message }
-    }
   }
 }
 
+
 // ===================== SERVICES COMPTABILITÉ =====================
 export const comptabiliteService = {
-  // Enregistrer une dépense de stock
-  async enregistrerDepenseStock(productData, utilisateurId) {
-    try {
-      const montantDepense = (productData.prix_achat || 0) * (productData.quantite || 0)
-      
-      // Enregistrer la dépense dans une table de dépenses
-      const { data: depense, error: depenseError } = await supabase
-        .from('depenses_comptables')
-        .insert({
-          type_depense: 'achat_stock',
-          description: `Achat ${productData.nom} - ${productData.quantite} ${productData.unite?.label || 'unité'}`,
-          montant: montantDepense,
-          reference_produit_id: null, // Sera mis à jour après création du produit
-          date_depense: productData.date_achat || new Date().toISOString().split('T')[0],
-          utilisateur_id: utilisateurId,
-          details: JSON.stringify({
-            nom_produit: productData.nom,
-            quantite: productData.quantite,
-            prix_unitaire: productData.prix_achat,
-            unite_id: productData.unite_id,
-            type_operation: 'nouveau_produit'
-          })
-        })
-        .select()
-        .single()
-      
-      if (depenseError) {
-        console.warn('Erreur enregistrement dépense:', depenseError)
-        // Si la table n'existe pas, on essaie de la créer ou on ignore l'erreur
-        if (depenseError.code === '42P01') {
-          console.info('Table depenses_comptables inexistante, dépense non enregistrée')
-          return { depense: null, error: null } // Pas d'erreur bloquante
-        }
-        return { depense: null, error: depenseError.message }
-      }
-      
-      return { depense, error: null }
-    } catch (error) {
-      console.error('Erreur dans enregistrerDepenseStock:', error)
-      return { depense: null, error: error.message }
-    }
-  },
-
-  // Obtenir les dépenses (coûts des achats + production)
+  // Obtenir les dépenses réelles depuis la base
   async getDepenses(dateDebut, dateFin) {
-  try {
-    let depensesStock = 0
-    let detailsDepensesStock = []
-    
-    // 1. Calculer depuis les achats de produits (création/réapprovisionnement)
     try {
+      let depensesStock = 0
+      let detailsDepensesStock = []
+      
+      // 1. Calculer depuis les achats de produits
       const { data: produits, error: produitsError } = await supabase
         .from('produits')
         .select('nom, prix_achat, quantite, date_achat, created_at')
@@ -1511,108 +1415,105 @@ export const comptabiliteService = {
           montant: (p.prix_achat || 0) * (p.quantite || 0)
         }))
       }
-    } catch (stockErr) {
-      console.warn('Erreur calcul dépenses stock:', stockErr)
-    }
 
-    // 2. Ajouter les dépenses de production (coûts ingrédients)
-    let depensesProduction = 0
-    let detailsProduction = []
-    try {
-      const { data: productions, error: prodError } = await supabase
-        .from('productions')
-        .select('produit, cout_ingredients, quantite, date_production')
-        .gte('date_production', dateDebut)
-        .lte('date_production', dateFin)
-        .not('cout_ingredients', 'is', null)
-      
-      if (!prodError && productions) {
-        depensesProduction = productions.reduce((sum, p) => sum + (p.cout_ingredients || 0), 0)
-        detailsProduction = productions.map(p => ({
-          date: p.date_production,
-          type: 'production',
-          description: `Production ${p.produit} (${p.quantite} unités)`,
-          montant: p.cout_ingredients || 0
-        }))
+      // 2. Ajouter les dépenses de production si elles existent
+      let depensesProduction = 0
+      let detailsProduction = []
+      try {
+        const { data: productions, error: prodError } = await supabase
+          .from('productions')
+          .select('produit, cout_ingredients, quantite, date_production')
+          .gte('date_production', dateDebut)
+          .lte('date_production', dateFin)
+          .not('cout_ingredients', 'is', null)
+        
+        if (!prodError && productions) {
+          depensesProduction = productions.reduce((sum, p) => sum + (p.cout_ingredients || 0), 0)
+          detailsProduction = productions.map(p => ({
+            date: p.date_production,
+            type: 'production',
+            description: `Production ${p.produit} (${p.quantite} unités)`,
+            montant: p.cout_ingredients || 0
+          }))
+        }
+      } catch (err) {
+        console.warn('Erreur dépenses production:', err)
       }
-    } catch (err) {
-      console.warn('Erreur dépenses production:', err)
-    }
 
-    const totalDepenses = depensesStock + depensesProduction
-    
-    const details = [
-      ...detailsDepensesStock,
-      ...detailsProduction
-    ].filter(d => d.montant > 0).sort((a, b) => new Date(b.date) - new Date(a.date))
-    
-    return { 
-      depenses: totalDepenses, 
-      details, 
-      repartition: {
-        depenses_stock: depensesStock,
-        depenses_production: depensesProduction
-      },
-      error: null 
+      const totalDepenses = depensesStock + depensesProduction
+      
+      const details = [
+        ...detailsDepensesStock,
+        ...detailsProduction
+      ].filter(d => d.montant > 0).sort((a, b) => new Date(b.date) - new Date(a.date))
+      
+      return { 
+        depenses: totalDepenses, 
+        details, 
+        repartition: {
+          depenses_stock: depensesStock,
+          depenses_production: depensesProduction
+        },
+        error: null 
+      }
+    } catch (error) {
+      console.error('Erreur dans getDepenses:', error)
+      return { 
+        depenses: 0, 
+        details: [], 
+        repartition: { depenses_stock: 0, depenses_production: 0 },
+        error: error.message 
+      }
     }
-  } catch (error) {
-    console.error('Erreur dans getDepenses:', error)
-    return { 
-      depenses: 0, 
-      details: [], 
-      repartition: { depenses_stock: 0, depenses_production: 0 },
-      error: error.message 
-    }
-  }
-},
-  // Obtenir le rapport comptable
+  },
+
+  // Obtenir le rapport comptable avec vraies données
   async getRapportComptable(dateDebut, dateFin) {
-  try {
-    // 1. Récupérer les ventes
-    const ventesResult = await caisseService.getVentesPeriode(dateDebut, dateFin)
-    const ventes = ventesResult.ventes || []
-    
-    const chiffreAffaires = ventes.reduce((sum, v) => sum + (v.total || 0), 0)
-    const nombreVentes = ventes.length
-    const ticketMoyen = nombreVentes > 0 ? chiffreAffaires / nombreVentes : 0
+    try {
+      // 1. Récupérer les ventes réelles
+      const ventesResult = await caisseService.getVentesPeriode(dateDebut, dateFin)
+      const ventes = ventesResult.ventes || []
+      
+      const chiffreAffaires = ventes.reduce((sum, v) => sum + (v.total || 0), 0)
+      const nombreVentes = ventes.length
+      const ticketMoyen = nombreVentes > 0 ? chiffreAffaires / nombreVentes : 0
 
-    // 2. Récupérer les dépenses
-    const depensesResult = await this.getDepenses(dateDebut, dateFin)
-    const totalDepenses = depensesResult.depenses || 0
+      // 2. Récupérer les dépenses réelles
+      const depensesResult = await this.getDepenses(dateDebut, dateFin)
+      const totalDepenses = depensesResult.depenses || 0
 
-    // 3. Calculer la marge
-    const margeBrute = chiffreAffaires - totalDepenses
-    const pourcentageMarge = chiffreAffaires > 0 ? (margeBrute / chiffreAffaires) * 100 : 0
+      // 3. Calculer la marge
+      const margeBrute = chiffreAffaires - totalDepenses
+      const pourcentageMarge = chiffreAffaires > 0 ? (margeBrute / chiffreAffaires) * 100 : 0
 
-    // 4. Calculer les articles vendus
-    const articlesVendus = ventes.reduce((sum, v) => 
-      sum + (v.items?.reduce((s, i) => s + (i.quantite || 0), 0) || 0), 0)
+      // 4. Calculer les articles vendus
+      const articlesVendus = ventes.reduce((sum, v) => 
+        sum + (v.items?.reduce((s, i) => s + (i.quantite || 0), 0) || 0), 0)
 
-    return {
-      periode: { debut: dateDebut, fin: dateFin },
-      finances: {
-        chiffre_affaires: Math.round(chiffreAffaires * 100) / 100,
-        depenses: Math.round(totalDepenses * 100) / 100,
-        marge_brute: Math.round(margeBrute * 100) / 100,
-        pourcentage_marge: Math.round(pourcentageMarge * 100) / 100
-      },
-      ventes: {
-        nombre_transactions: nombreVentes,
-        ticket_moyen: Math.round(ticketMoyen * 100) / 100,
-        articles_vendus: articlesVendus
-      },
-      depenses_details: depensesResult.details || [],
-      repartition_depenses: depensesResult.repartition || {},
-      error: null
+      return {
+        periode: { debut: dateDebut, fin: dateFin },
+        finances: {
+          chiffre_affaires: Math.round(chiffreAffaires * 100) / 100,
+          depenses: Math.round(totalDepenses * 100) / 100,
+          marge_brute: Math.round(margeBrute * 100) / 100,
+          pourcentage_marge: Math.round(pourcentageMarge * 100) / 100
+        },
+        ventes: {
+          nombre_transactions: nombreVentes,
+          ticket_moyen: Math.round(ticketMoyen * 100) / 100,
+          articles_vendus: articlesVendus
+        },
+        depenses_details: depensesResult.details || [],
+        repartition_depenses: depensesResult.repartition || {},
+        error: null
+      }
+    } catch (error) {
+      console.error('Erreur dans getRapportComptable:', error)
+      return { error: error.message }
     }
-  } catch (error) {
-    console.error('Erreur dans getRapportComptable:', error)
-    return { error: error.message }
-  }
-},
+  },
 
-
-  // Obtenir l'évolution mensuelle
+  // Autres méthodes...
   async getEvolutionMensuelle(annee) {
     try {
       const evolution = []
@@ -1636,8 +1537,8 @@ export const comptabiliteService = {
       console.error('Erreur dans getEvolutionMensuelle:', error)
       return { evolution: [], error: error.message }
     }
-  },
-
+  }
+}
   // Exporter les données comptables
   async exporterDonneesComptables(dateDebut, dateFin, format = 'csv') {
     try {
@@ -1869,6 +1770,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
