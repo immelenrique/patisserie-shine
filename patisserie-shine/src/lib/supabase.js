@@ -945,50 +945,180 @@ export const comptabiliteService = {
       return { chiffre: 0, details: [], error: error.message }
     }
   },
+   async enregistrerDepenseStock(productData, utilisateurId) {
+    try {
+      const montantDepense = productData.prix_achat * productData.quantite
+      
+      // Enregistrer la dépense dans une table de dépenses
+      const { data: depense, error: depenseError } = await supabase
+        .from('depenses_comptables')
+        .insert({
+          type_depense: 'achat_stock',
+          description: `Achat ${productData.nom} - ${productData.quantite} ${productData.unite?.label}`,
+          montant: montantDepense,
+          reference_produit_id: null, // Sera mis à jour après création du produit
+          date_depense: productData.date_achat || new Date().toISOString().split('T')[0],
+          utilisateur_id: utilisateurId,
+          details: JSON.stringify({
+            nom_produit: productData.nom,
+            quantite: productData.quantite,
+            prix_unitaire: productData.prix_achat,
+            unite_id: productData.unite_id,
+            type_operation: 'nouveau_produit'
+          })
+        })
+        .select()
+        .single()
+      
+      if (depenseError) {
+        console.warn('Erreur enregistrement dépense:', depenseError)
+        return { depense: null, error: depenseError.message }
+      }
+      
+      return { depense, error: null }
+    } catch (error) {
+      console.error('Erreur dans enregistrerDepenseStock:', error)
+      return { depense: null, error: error.message }
+    }
+  },
+
+  // NOUVELLE MÉTHODE : Enregistrer une dépense de réapprovisionnement
+  async enregistrerDepenseReapprovisionnement(produitId, quantiteAjoutee, prixAchat, utilisateurId) {
+    try {
+      // Récupérer les infos du produit
+      const { data: produit, error: produitError } = await supabase
+        .from('produits')
+        .select('nom, unite:unites(label)')
+        .eq('id', produitId)
+        .single()
+      
+      if (produitError || !produit) {
+        return { depense: null, error: 'Produit introuvable' }
+      }
+
+      const montantDepense = prixAchat * quantiteAjoutee
+      
+      // Enregistrer la dépense
+      const { data: depense, error: depenseError } = await supabase
+        .from('depenses_comptables')
+        .insert({
+          type_depense: 'reapprovisionnement_stock',
+          description: `Réapprovisionnement ${produit.nom} - ${quantiteAjoutee} ${produit.unite?.label}`,
+          montant: montantDepense,
+          reference_produit_id: produitId,
+          date_depense: new Date().toISOString().split('T')[0],
+          utilisateur_id: utilisateurId,
+          details: JSON.stringify({
+            nom_produit: produit.nom,
+            quantite_ajoutee: quantiteAjoutee,
+            prix_unitaire: prixAchat,
+            type_operation: 'reapprovisionnement'
+          })
+        })
+        .select()
+        .single()
+      
+      if (depenseError) {
+        console.warn('Erreur enregistrement dépense réappro:', depenseError)
+        return { depense: null, error: depenseError.message }
+      }
+      
+      return { depense, error: null }
+    } catch (error) {
+      console.error('Erreur dans enregistrerDepenseReapprovisionnement:', error)
+      return { depense: null, error: error.message }
+    }
+  },
+
 
   // Obtenir les dépenses (coûts des ingrédients utilisés)
   async getDepenses(dateDebut, dateFin) {
     try {
-      // Essayer d'abord avec la fonction RPC
+      // 1. Dépenses de production (coûts ingrédients)
+      let depensesProduction = 0
       try {
-        const { data, error } = await supabase.rpc('get_depenses_periode', {
-          p_date_debut: dateDebut,
-          p_date_fin: dateFin
-        })
+        const { data: productions, error: prodError } = await supabase
+          .from('productions')
+          .select('cout_ingredients, quantite, date_production')
+          .gte('date_production', dateDebut)
+          .lte('date_production', dateFin)
+          .not('cout_ingredients', 'is', null)
         
-        if (!error && data) {
-          return { 
-            depenses: data.total || 0, 
-            details: data.details || [], 
-            error: null 
-          }
+        if (!prodError && productions) {
+          depensesProduction = productions.reduce((sum, p) => sum + (p.cout_ingredients || 0), 0)
         }
-      } catch (rpcError) {
-        console.warn('RPC get_depenses_periode échouée, calcul manuel:', rpcError)
+      } catch (err) {
+        console.warn('Erreur dépenses production:', err)
       }
 
-      // Méthode alternative : calcul depuis les productions
-      const { data: productions, error } = await supabase
-        .from('productions')
-        .select('cout_ingredients, quantite, date_production')
-        .gte('date_production', dateDebut)
-        .lte('date_production', dateFin)
-        .not('cout_ingredients', 'is', null)
+      // 2. Dépenses d'achat de stock (nouveaux produits + réappros)
+      let depensesStock = 0
+      let detailsDepensesStock = []
       
-      if (error) {
-        console.error('Erreur récupération productions:', error)
-        return { depenses: 0, details: [], error: error.message }
+      try {
+        // Vérifier si la table depenses_comptables existe
+        const { data: depensesStockData, error: stockError } = await supabase
+          .from('depenses_comptables')
+          .select('*')
+          .gte('date_depense', dateDebut)
+          .lte('date_depense', dateFin)
+          .in('type_depense', ['achat_stock', 'reapprovisionnement_stock'])
+        
+        if (!stockError && depensesStockData) {
+          depensesStock = depensesStockData.reduce((sum, d) => sum + (d.montant || 0), 0)
+          detailsDepensesStock = depensesStockData.map(d => ({
+            date: d.date_depense,
+            type: d.type_depense,
+            description: d.description,
+            montant: d.montant
+          }))
+        }
+      } catch (stockErr) {
+        console.warn('Table depenses_comptables indisponible, calcul alternatif:', stockErr)
+        
+        // Méthode alternative : calculer depuis les achats de produits
+        try {
+          const { data: nouveauxProduits, error: npError } = await supabase
+            .from('produits')
+            .select('nom, prix_achat, quantite, date_achat')
+            .gte('date_achat', dateDebut)
+            .lte('date_achat', dateFin)
+          
+          if (!npError && nouveauxProduits) {
+            depensesStock = nouveauxProduits.reduce((sum, p) => 
+              sum + ((p.prix_achat || 0) * (p.quantite || 0)), 0
+            )
+            detailsDepensesStock = nouveauxProduits.map(p => ({
+              date: p.date_achat,
+              type: 'achat_produit',
+              description: `Achat ${p.nom}`,
+              montant: (p.prix_achat || 0) * (p.quantite || 0)
+            }))
+          }
+        } catch (altErr) {
+          console.warn('Méthode alternative échouée:', altErr)
+        }
       }
 
-      const depenses = (productions || []).reduce((sum, p) => sum + (p.cout_ingredients || 0), 0)
+      const totalDepenses = depensesProduction + depensesStock
+      
+      const details = [
+        ...detailsDepensesStock,
+        {
+          date: dateDebut,
+          type: 'production',
+          description: 'Coûts de production',
+          montant: depensesProduction
+        }
+      ].filter(d => d.montant > 0)
       
       return { 
-        depenses, 
-        details: (productions || []).map(p => ({
-          date: p.date_production,
-          montant: p.cout_ingredients,
-          quantite: p.quantite
-        })), 
+        depenses: totalDepenses, 
+        details, 
+        repartition: {
+          depenses_stock: depensesStock,
+          depenses_production: depensesProduction
+        },
         error: null 
       }
     } catch (error) {
@@ -996,7 +1126,6 @@ export const comptabiliteService = {
       return { depenses: 0, details: [], error: error.message }
     }
   },
-
   // Calculer la marge brute
   async getMargesBrutes(dateDebut, dateFin) {
     try {
@@ -1030,6 +1159,71 @@ export const comptabiliteService = {
       return { marge: 0, pourcentage: 0, error: error.message }
     }
   },
+  // NOUVELLE MÉTHODE : Obtenir le rapport détaillé des dépenses
+  async getRapportDepenses(dateDebut, dateFin) {
+    try {
+      const depensesResult = await this.getDepenses(dateDebut, dateFin)
+      
+      if (depensesResult.error) {
+        return { rapport: null, error: depensesResult.error }
+      }
+
+      // Analyser les dépenses par catégorie
+      const categoriesDepenses = {}
+      
+      depensesResult.details.forEach(detail => {
+        const categorie = detail.type
+        if (!categoriesDepenses[categorie]) {
+          categoriesDepenses[categorie] = {
+            nom: this.getLibelleCategorie(categorie),
+            montant: 0,
+            nombre_operations: 0
+          }
+        }
+        categoriesDepenses[categorie].montant += detail.montant
+        categoriesDepenses[categorie].nombre_operations += 1
+      })
+
+      const rapport = {
+        periode: { debut: dateDebut, fin: dateFin },
+        total_depenses: depensesResult.depenses,
+        categories: categoriesDepenses,
+        details: depensesResult.details,
+        repartition: depensesResult.repartition,
+        moyenne_quotidienne: this.calculerMoyenneQuotidienne(
+          depensesResult.depenses, 
+          dateDebut, 
+          dateFin
+        )
+      }
+      
+      return { rapport, error: null }
+    } catch (error) {
+      console.error('Erreur dans getRapportDepenses:', error)
+      return { rapport: null, error: error.message }
+    }
+  },
+
+  // Méthodes utilitaires
+  getLibelleCategorie(typeDepense) {
+    const libelles = {
+      'achat_stock': 'Achats de Stock',
+      'reapprovisionnement_stock': 'Réapprovisionnements',
+      'production': 'Coûts de Production',
+      'achat_produit': 'Nouveaux Produits'
+    }
+    return libelles[typeDepense] || typeDepense
+  },
+
+  calculerMoyenneQuotidienne(montantTotal, dateDebut, dateFin) {
+    const debut = new Date(dateDebut)
+    const fin = new Date(dateFin)
+    const diffTime = Math.abs(fin - debut)
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
+    return diffDays > 0 ? Math.round(montantTotal / diffDays) : 0
+  }
+}
+
 
   // Rapport comptable complet
   async getRapportComptable(dateDebut, dateFin) {
@@ -1169,28 +1363,166 @@ export const comptabiliteService = {
 
 
 // ===================== SERVICES PRODUITS =====================
-export const productService = {
-  // Récupérer tous les produits
-  async getAll() {
+export const productServiceCorrected = {
+  // Créer un nouveau produit AVEC enregistrement de la dépense
+  async create(productData) {
     try {
-      const { data, error } = await supabase
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { product: null, error: 'Utilisateur non connecté' }
+      }
+
+      // 1. Créer le produit
+      const { data: produit, error: produitError } = await supabase
+        .from('produits')
+        .insert({
+          nom: productData.nom,
+          date_achat: productData.date_achat || new Date().toISOString().split('T')[0],
+          prix_achat: productData.prix_achat,
+          quantite: productData.quantite,
+          quantite_restante: productData.quantite,
+          unite_id: productData.unite_id,
+          created_by: user.id
+        })
+        .select(`
+          *,
+          unite:unites(id, value, label)
+        `)
+        .single()
+      
+      if (produitError) {
+        console.error('Erreur create produit:', produitError)
+        return { product: null, error: produitError.message }
+      }
+
+      // 2. Enregistrer la dépense comptable
+      try {
+        const depenseResult = await comptabiliteService.enregistrerDepenseStock(
+          { ...productData, unite: produit.unite }, 
+          user.id
+        )
+        
+        if (depenseResult.depense) {
+          // Mettre à jour la référence produit dans la dépense
+          await supabase
+            .from('depenses_comptables')
+            .update({ reference_produit_id: produit.id })
+            .eq('id', depenseResult.depense.id)
+        }
+      } catch (depenseError) {
+        console.warn('Erreur enregistrement dépense (produit créé quand même):', depenseError)
+      }
+
+      // 3. Enregistrer le mouvement de stock
+      try {
+        await supabase
+          .from('mouvements_stock')
+          .insert({
+            produit_id: produit.id,
+            type_mouvement: 'entree',
+            quantite: productData.quantite,
+            quantite_avant: 0,
+            quantite_apres: productData.quantite,
+            utilisateur_id: user.id,
+            raison: 'Création nouveau produit',
+            commentaire: `Nouveau produit: ${productData.nom} - ${productData.quantite} ${produit.unite?.label}`
+          })
+      } catch (mouvementError) {
+        console.warn('Erreur enregistrement mouvement:', mouvementError)
+      }
+      
+      return { product: produit, error: null }
+    } catch (error) {
+      console.error('Erreur dans create produit:', error)
+      return { product: null, error: error.message }
+    }
+  },
+
+  // Méthode pour réapprovisionner un produit existant
+  async reapprovisionner(produitId, quantiteAjoutee, nouveauPrixAchat) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' }
+      }
+
+      // 1. Récupérer le produit actuel
+      const { data: produit, error: getError } = await supabase
         .from('produits')
         .select(`
           *,
-          unite:unites(id, value, label),
-          created_by_profile:profiles!produits_created_by_fkey(nom)
+          unite:unites(id, value, label)
         `)
-        .order('nom')
+        .eq('id', produitId)
+        .single()
       
-      if (error) {
-        console.error('Erreur getAll produits:', error)
-        return { products: [], error: error.message }
+      if (getError || !produit) {
+        return { success: false, error: 'Produit introuvable' }
       }
+
+      const nouvelleQuantiteTotale = (produit.quantite || 0) + quantiteAjoutee
+      const nouvelleQuantiteRestante = (produit.quantite_restante || 0) + quantiteAjoutee
+
+      // 2. Mettre à jour le produit
+      const { data: produitMisAJour, error: updateError } = await supabase
+        .from('produits')
+        .update({
+          quantite: nouvelleQuantiteTotale,
+          quantite_restante: nouvelleQuantiteRestante,
+          prix_achat: nouveauPrixAchat || produit.prix_achat, // Mettre à jour le prix si fourni
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', produitId)
+        .select(`
+          *,
+          unite:unites(id, value, label)
+        `)
+        .single()
       
-      return { products: data || [], error: null }
+      if (updateError) {
+        return { success: false, error: updateError.message }
+      }
+
+      // 3. Enregistrer la dépense comptable
+      try {
+        await comptabiliteService.enregistrerDepenseReapprovisionnement(
+          produitId,
+          quantiteAjoutee,
+          nouveauPrixAchat || produit.prix_achat,
+          user.id
+        )
+      } catch (depenseError) {
+        console.warn('Erreur enregistrement dépense réappro:', depenseError)
+      }
+
+      // 4. Enregistrer le mouvement de stock
+      try {
+        await supabase
+          .from('mouvements_stock')
+          .insert({
+            produit_id: produitId,
+            type_mouvement: 'entree',
+            quantite: quantiteAjoutee,
+            quantite_avant: produit.quantite_restante,
+            quantite_apres: nouvelleQuantiteRestante,
+            utilisateur_id: user.id,
+            raison: 'Réapprovisionnement',
+            commentaire: `Réappro ${produit.nom} +${quantiteAjoutee} ${produit.unite?.label}`
+          })
+      } catch (mouvementError) {
+        console.warn('Erreur enregistrement mouvement:', mouvementError)
+      }
+
+      return { 
+        success: true, 
+        product: produitMisAJour,
+        message: `✅ Réapprovisionnement effectué : +${quantiteAjoutee} ${produit.unite?.label}. Nouveau stock : ${nouvelleQuantiteRestante}`
+      }
     } catch (error) {
-      console.error('Erreur dans getAll produits:', error)
-      return { products: [], error: error.message }
+      console.error('Erreur dans reapprovisionner:', error)
+      return { success: false, error: error.message }
     }
   },
 
@@ -1399,7 +1731,19 @@ export const demandeService = {
       return { demande: null, error: error.message }
     }
   }
+  async getAll() {
+    return await productService.getAll()
+  },
+
+  async update(productId, productData) {
+    return await productService.update(productId, productData)
+  },
+
+  async getLowStock() {
+    return await productService.getLowStock()
+  }
 }
+
 
 // ===================== SERVICES PRODUCTION =====================
 // Service de production mis à jour dans src/lib/supabase.js
@@ -2499,6 +2843,7 @@ export const userService = {
   }
 }
 export default supabase
+
 
 
 
