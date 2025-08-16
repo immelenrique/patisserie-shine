@@ -97,6 +97,202 @@ export const authService = {
     }
   }
 }
+// Ajout à améliorer dans src/lib/supabase.js
+
+export const uniteService = {
+  // Récupérer toutes les unités
+  async getAll() {
+    try {
+      const { data, error } = await supabase
+        .from('unites')
+        .select('*')
+        .order('label')
+      
+      if (error) {
+        console.error('Erreur getAll unites:', error)
+        return { unites: [], error: error.message }
+      }
+      
+      return { unites: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getAll unites:', error)
+      return { unites: [], error: error.message }
+    }
+  },
+
+  // NOUVELLE MÉTHODE : Créer une unité
+  async create(uniteData) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { unite: null, error: 'Utilisateur non connecté' }
+      }
+
+      const { data, error } = await supabase
+        .from('unites')
+        .insert({
+          value: uniteData.value,
+          label: uniteData.label
+        })
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('Erreur create unite:', error)
+        return { unite: null, error: error.message }
+      }
+      
+      return { unite: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans create unite:', error)
+      return { unite: null, error: error.message }
+    }
+  },
+
+  // NOUVELLE MÉTHODE : Supprimer une unité
+  async delete(uniteId) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' }
+      }
+
+      // Vérifier qu'aucun produit n'utilise cette unité
+      const { data: produitsUtilisant, error: checkError } = await supabase
+        .from('produits')
+        .select('id')
+        .eq('unite_id', uniteId)
+        .limit(1)
+
+      if (checkError) {
+        return { success: false, error: checkError.message }
+      }
+
+      if (produitsUtilisant && produitsUtilisant.length > 0) {
+        return { success: false, error: 'Cette unité est utilisée par des produits existants' }
+      }
+
+      const { error } = await supabase
+        .from('unites')
+        .delete()
+        .eq('id', uniteId)
+
+      if (error) {
+        console.error('Erreur delete unite:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, message: 'Unité supprimée avec succès' }
+    } catch (error) {
+      console.error('Erreur dans delete unite:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // NOUVELLE MÉTHODE : Mettre à jour une unité
+  async update(uniteId, uniteData) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { unite: null, error: 'Utilisateur non connecté' }
+      }
+
+      const { data, error } = await supabase
+        .from('unites')
+        .update({
+          value: uniteData.value,
+          label: uniteData.label
+        })
+        .eq('id', uniteId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erreur update unite:', error)
+        return { unite: null, error: error.message }
+      }
+
+      return { unite: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans update unite:', error)
+      return { unite: null, error: error.message }
+    }
+  },
+
+  // NOUVELLE MÉTHODE : Créer les unités de base si elles n'existent pas
+  async createBasicUnitsIfEmpty() {
+    try {
+      // Vérifier s'il y a déjà des unités
+      const { data: existingUnits } = await supabase
+        .from('unites')
+        .select('id')
+        .limit(1)
+
+      if (existingUnits && existingUnits.length > 0) {
+        return { success: true, message: 'Les unités existent déjà' }
+      }
+
+      // Créer les unités de base
+      const basicUnits = [
+        { value: 'kg', label: 'Kilogrammes' },
+        { value: 'g', label: 'Grammes' },
+        { value: 'L', label: 'Litres' },
+        { value: 'ml', label: 'Millilitres' },
+        { value: 'pcs', label: 'Pièces' },
+        { value: 'unite', label: 'Unité' },
+        { value: 'ccafe', label: 'Cuillères à café' },
+        { value: 'csoup', label: 'Cuillères à soupe' },
+        { value: 'tasse', label: 'Tasses' },
+        { value: 'boites', label: 'Boîtes' },
+        { value: 'sacs', label: 'Sacs' },
+        { value: 'sachets', label: 'Sachets' }
+      ]
+
+      const { data, error } = await supabase
+        .from('unites')
+        .insert(basicUnits)
+        .select()
+
+      if (error) {
+        console.error('Erreur création unités de base:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { 
+        success: true, 
+        message: `${data.length} unités de base créées avec succès`,
+        unites: data 
+      }
+    } catch (error) {
+      console.error('Erreur dans createBasicUnitsIfEmpty:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // NOUVELLE MÉTHODE : Rechercher des unités
+  async search(searchTerm) {
+    try {
+      const { data, error } = await supabase
+        .from('unites')
+        .select('*')
+        .or(`value.ilike.%${searchTerm}%,label.ilike.%${searchTerm}%`)
+        .order('label')
+      
+      if (error) {
+        console.error('Erreur search unites:', error)
+        return { unites: [], error: error.message }
+      }
+      
+      return { unites: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans search unites:', error)
+      return { unites: [], error: error.message }
+    }
+  }
+}
 // ===================== SERVICES STOCK BOUTIQUE =====================
 // ===================== SERVICES STOCK BOUTIQUE CORRIGÉS =====================
 export const stockBoutiqueService = {
@@ -2842,6 +3038,7 @@ export const userService = {
   }
 }
 export default supabase
+
 
 
 
