@@ -1336,7 +1336,51 @@ export const caisseService = {
       console.error('Erreur enregistrerVente:', error)
       return { vente: null, error: error.message }
     }
-  },
+  },async getVentesPeriode(dateDebut, dateFin) {
+  try {
+    const { data: ventes, error } = await supabase
+      .from('ventes')
+      .select(`
+        id,
+        numero_ticket,
+        total,
+        montant_donne,
+        monnaie_rendue,
+        created_at,
+        vendeur:profiles!ventes_vendeur_id_fkey(nom)
+      `)
+      .gte('created_at', dateDebut + 'T00:00:00.000Z')
+      .lte('created_at', dateFin + 'T23:59:59.999Z')
+      .eq('statut', 'validee')
+      .order('created_at', { ascending: false })
+    
+    if (error) {
+      console.error('Erreur getVentesPeriode:', error)
+      return { ventes: [], error: error.message }
+    }
+    
+    // Récupérer les items pour chaque vente
+    const ventesAvecItems = await Promise.all(
+      (ventes || []).map(async (vente) => {
+        try {
+          const { data: items } = await supabase
+            .from('lignes_vente')
+            .select('*')
+            .eq('vente_id', vente.id)
+          
+          return { ...vente, items: items || [] }
+        } catch (err) {
+          return { ...vente, items: [] }
+        }
+      })
+    )
+    
+    return { ventes: ventesAvecItems, error: null }
+  } catch (error) {
+    console.error('Erreur dans getVentesPeriode:', error)
+    return { ventes: [], error: error.message }
+  }
+}
 
   // Obtenir les ventes du jour
   async getVentesJour(date = null) {
@@ -1770,6 +1814,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
