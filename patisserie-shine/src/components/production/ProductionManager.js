@@ -85,46 +85,62 @@ export default function ProductionManager({ currentUser }) {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setError('');
-    
-    try {
-      const result = await productionService.create({
-        ...formData,
-        quantite: parseFloat(formData.quantite)
-      });
+  e.preventDefault();
+  setSubmitting(true);
+  setError('');
+  
+  try {
+    const result = await productionService.create({
+      ...formData,
+      quantite: parseFloat(formData.quantite)
+    });
 
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-
-      // Afficher un message de succès avec les détails
-      if (result.production?.message) {
-        alert(`✅ Production créée avec succès !\n\n${result.production.message}`);
-      } else {
-        alert('✅ Production créée avec succès !');
-      }
-
-      // Réinitialiser le formulaire
-      setShowAddModal(false);
-      setFormData({
-        produit: '',
-        quantite: '',
-        destination: 'Boutique',
-        date_production: new Date().toISOString().split('T')[0]
-      });
-      setRecetteInfo(null);
-      
-      // Recharger les données
-      loadData();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSubmitting(false);
+    if (result.error) {
+      setError(result.error);
+      return;
     }
-  };
+
+    // Si destination est Boutique, vérifier le prix de vente
+    if (formData.destination === 'Boutique') {
+      // Trouver l'ID du produit depuis le nom
+      const produitTrouve = produits.find(p => p.nom === formData.produit);
+      
+      if (produitTrouve) {
+        // Vérifier si le produit a un prix de vente défini
+        const { data: prixVente } = await supabase
+          .from('prix_vente')
+          .select('prix_vente')
+          .eq('produit_id', produitTrouve.id)
+          .single();
+
+        if (!prixVente || !prixVente.prix_vente) {
+          alert(`⚠️ Production créée avec succès !\n\nATTENTION: Le produit "${formData.produit}" n'a pas de prix de vente défini.\nIl ne sera pas disponible en boutique tant que le prix n'est pas défini dans l'onglet "Prix Vente".`);
+        } else {
+          alert(`✅ Production créée avec succès !\n\n${result.production?.message || ''}\n\nProduit ajouté à la boutique avec le prix de vente: ${utils.formatCFA(prixVente.prix_vente)}`);
+        }
+      }
+    } else {
+      alert(`✅ Production créée avec succès !\n\n${result.production?.message || ''}`);
+    }
+
+    // Réinitialiser le formulaire
+    setShowAddModal(false);
+    setFormData({
+      produit: '',
+      quantite: '',
+      destination: 'Boutique',
+      date_production: new Date().toISOString().split('T')[0]
+    });
+    setRecetteInfo(null);
+    
+    // Recharger les données
+    loadData();
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   const calculatedStats = {
     totalProductions: productions.length,
