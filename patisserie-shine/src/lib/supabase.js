@@ -1581,8 +1581,7 @@ export const comptabiliteService = {
       console.error('Erreur dans getEvolutionMensuelle:', error)
       return { evolution: [], error: error.message }
     }
-  }
-}
+  },
   // Exporter les données comptables
   async exporterDonneesComptables(dateDebut, dateFin, format = 'csv') {
     try {
@@ -1814,6 +1813,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
