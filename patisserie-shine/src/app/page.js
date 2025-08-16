@@ -140,6 +140,10 @@ export default function PatisserieApp() {
         return <ProductionManager currentUser={currentUser} />;
       case 'caisse':
         return <CaisseManager currentUser={currentUser} />;
+      case 'prix-vente':
+        return (currentUser.role === 'admin' || currentUser.username === 'proprietaire') ? 
+          <PrixVenteManager currentUser={currentUser} /> : 
+          <Dashboard stats={stats} loading={!stats} />;
       case 'comptabilite':
         return currentUser.role === 'admin' ? 
           <ComptabiliteManager currentUser={currentUser} /> : 
@@ -184,4 +188,5 @@ export default function PatisserieApp() {
     </div>
   );
 }
+
 
