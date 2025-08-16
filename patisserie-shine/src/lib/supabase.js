@@ -1087,53 +1087,65 @@ export const stockAtelierService = {
 // ===================== SERVICES STOCK BOUTIQUE =====================
 export const stockBoutiqueService = {
   // Récupérer l'état du stock boutique
-  async getStockBoutique() {
-    try {
-      const { data, error } = await supabase
-        .from('stock_boutique')
-        .select(`
-          id,
-          produit_id,
-          quantite_disponible,
-          quantite_vendue,
-          prix_vente,
-          created_at,
-          updated_at,
-          produits!inner(
-            nom,
-            unites(label)
-          )
-        `)
-        .order('created_at', { ascending: false })
+ async getStockBoutique() {
+  try {
+    const { data, error } = await supabase
+      .from('stock_boutique')
+      .select(`
+        id,
+        produit_id,
+        quantite_disponible,
+        quantite_vendue,
+        prix_vente,
+        created_at,
+        updated_at,
+        produits!inner(
+          nom,
+          unites(label),
+          prix_vente(prix_vente)
+        )
+      `)
+      .order('created_at', { ascending: false })
+    
+    if (error) {
+      console.error('Erreur getStockBoutique:', error)
+      return { stock: [], error: error.message }
+    }
+    
+    const stockFormate = (data || []).map(item => {
+      // Prendre le prix depuis stock_boutique ou depuis prix_vente
+      const prixVente = item.prix_vente || 
+                       (item.produits?.prix_vente && item.produits.prix_vente.length > 0 ? 
+                        item.produits.prix_vente[0].prix_vente : 0)
       
-      if (error) {
-        console.error('Erreur getStockBoutique:', error)
-        return { stock: [], error: error.message }
-      }
+      const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0)
       
-      const stockFormate = (data || []).map(item => ({
+      return {
         id: item.id,
         produit_id: item.produit_id,
         nom_produit: item.produits?.nom || 'Produit inconnu',
         unite: item.produits?.unites?.label || 'unité',
         quantite_disponible: item.quantite_disponible || 0,
         quantite_vendue: item.quantite_vendue || 0,
-        stock_reel: (item.quantite_disponible || 0) - (item.quantite_vendue || 0),
-        prix_vente: item.prix_vente || 0,
-        statut_stock: ((item.quantite_disponible || 0) - (item.quantite_vendue || 0)) <= 0 ? 'rupture' :
-                     ((item.quantite_disponible || 0) - (item.quantite_vendue || 0)) <= 5 ? 'critique' :
-                     ((item.quantite_disponible || 0) - (item.quantite_vendue || 0)) <= 10 ? 'faible' : 'normal',
+        stock_reel: stockReel,
+        prix_vente: prixVente,
+        valeur_stock: stockReel * prixVente,
+        statut_stock: stockReel <= 0 ? 'rupture' :
+                     stockReel <= 5 ? 'critique' :
+                     stockReel <= 10 ? 'faible' : 'normal',
+        prix_defini: prixVente > 0,
         created_at: item.created_at,
         updated_at: item.updated_at,
         derniere_maj: item.updated_at
-      }))
-      
-      return { stock: stockFormate, error: null }
-    } catch (error) {
-      console.error('Erreur dans getStockBoutique:', error)
-      return { stock: [], error: error.message }
-    }
-  },
+      }
+    })
+    
+    return { stock: stockFormate, error: null }
+  } catch (error) {
+    console.error('Erreur dans getStockBoutique:', error)
+    return { stock: [], error: error.message }
+  }
+},
 
   // Obtenir l'historique des entrées
   async getHistoriqueEntrees(limit = 50) {
@@ -1476,100 +1488,83 @@ export const comptabiliteService = {
 
   // Obtenir les dépenses (coûts des achats + production)
   async getDepenses(dateDebut, dateFin) {
+  try {
+    let depensesStock = 0
+    let detailsDepensesStock = []
+    
+    // 1. Calculer depuis les achats de produits (création/réapprovisionnement)
     try {
-      let depensesStock = 0
-      let detailsDepensesStock = []
+      const { data: produits, error: produitsError } = await supabase
+        .from('produits')
+        .select('nom, prix_achat, quantite, date_achat, created_at')
+        .gte('date_achat', dateDebut)
+        .lte('date_achat', dateFin)
       
-      // 1. Essayer avec la table depenses_comptables (si elle existe)
-      try {
-        const { data: depensesStockData, error: stockError } = await supabase
-          .from('depenses_comptables')
-          .select('*')
-          .gte('date_depense', dateDebut)
-          .lte('date_depense', dateFin)
-          .in('type_depense', ['achat_stock', 'reapprovisionnement_stock'])
-        
-        if (!stockError && depensesStockData) {
-          depensesStock = depensesStockData.reduce((sum, d) => sum + (d.montant || 0), 0)
-          detailsDepensesStock = depensesStockData.map(d => ({
-            date: d.date_depense,
-            type: d.type_depense,
-            description: d.description,
-            montant: d.montant
-          }))
-        }
-      } catch (stockErr) {
-        console.warn('Table depenses_comptables indisponible, calcul depuis les produits:', stockErr)
+      if (!produitsError && produits) {
+        depensesStock = produits.reduce((sum, p) => 
+          sum + ((p.prix_achat || 0) * (p.quantite || 0)), 0
+        )
+        detailsDepensesStock = produits.map(p => ({
+          date: p.date_achat || p.created_at,
+          type: 'achat_stock',
+          description: `Achat ${p.nom} - ${p.quantite} unités`,
+          montant: (p.prix_achat || 0) * (p.quantite || 0)
+        }))
       }
-      
-      // 2. Si pas de table spécialisée, calculer depuis les achats de produits
-      if (depensesStock === 0) {
-        try {
-          const { data: nouveauxProduits, error: npError } = await supabase
-            .from('produits')
-            .select('nom, prix_achat, quantite, date_achat')
-            .gte('date_achat', dateDebut)
-            .lte('date_achat', dateFin)
-          
-          if (!npError && nouveauxProduits) {
-            depensesStock = nouveauxProduits.reduce((sum, p) => 
-              sum + ((p.prix_achat || 0) * (p.quantite || 0)), 0
-            )
-            detailsDepensesStock = nouveauxProduits.map(p => ({
-              date: p.date_achat,
-              type: 'achat_produit',
-              description: `Achat ${p.nom}`,
-              montant: (p.prix_achat || 0) * (p.quantite || 0)
-            }))
-          }
-        } catch (altErr) {
-          console.warn('Erreur calcul dépenses depuis produits:', altErr)
-        }
-      }
-
-      // 3. Dépenses de production (coûts ingrédients)
-      let depensesProduction = 0
-      try {
-        const { data: productions, error: prodError } = await supabase
-          .from('productions')
-          .select('cout_ingredients, quantite, date_production')
-          .gte('date_production', dateDebut)
-          .lte('date_production', dateFin)
-          .not('cout_ingredients', 'is', null)
-        
-        if (!prodError && productions) {
-          depensesProduction = productions.reduce((sum, p) => sum + (p.cout_ingredients || 0), 0)
-        }
-      } catch (err) {
-        console.warn('Erreur dépenses production:', err)
-      }
-
-      const totalDepenses = depensesStock + depensesProduction
-      
-      const details = [
-        ...detailsDepensesStock,
-        ...(depensesProduction > 0 ? [{
-          date: dateDebut,
-          type: 'production',
-          description: 'Coûts de production',
-          montant: depensesProduction
-        }] : [])
-      ].filter(d => d.montant > 0)
-      
-      return { 
-        depenses: totalDepenses, 
-        details, 
-        repartition: {
-          depenses_stock: depensesStock,
-          depenses_production: depensesProduction
-        },
-        error: null 
-      }
-    } catch (error) {
-      console.error('Erreur dans getDepenses:', error)
-      return { depenses: 0, details: [], error: error.message }
+    } catch (stockErr) {
+      console.warn('Erreur calcul dépenses stock:', stockErr)
     }
-  },
+
+    // 2. Ajouter les dépenses de production (coûts ingrédients)
+    let depensesProduction = 0
+    let detailsProduction = []
+    try {
+      const { data: productions, error: prodError } = await supabase
+        .from('productions')
+        .select('produit, cout_ingredients, quantite, date_production')
+        .gte('date_production', dateDebut)
+        .lte('date_production', dateFin)
+        .not('cout_ingredients', 'is', null)
+      
+      if (!prodError && productions) {
+        depensesProduction = productions.reduce((sum, p) => sum + (p.cout_ingredients || 0), 0)
+        detailsProduction = productions.map(p => ({
+          date: p.date_production,
+          type: 'production',
+          description: `Production ${p.produit} (${p.quantite} unités)`,
+          montant: p.cout_ingredients || 0
+        }))
+      }
+    } catch (err) {
+      console.warn('Erreur dépenses production:', err)
+    }
+
+    const totalDepenses = depensesStock + depensesProduction
+    
+    const details = [
+      ...detailsDepensesStock,
+      ...detailsProduction
+    ].filter(d => d.montant > 0).sort((a, b) => new Date(b.date) - new Date(a.date))
+    
+    return { 
+      depenses: totalDepenses, 
+      details, 
+      repartition: {
+        depenses_stock: depensesStock,
+        depenses_production: depensesProduction
+      },
+      error: null 
+    }
+  } catch (error) {
+    console.error('Erreur dans getDepenses:', error)
+    return { 
+      depenses: 0, 
+      details: [], 
+      repartition: { depenses_stock: 0, depenses_production: 0 },
+      error: error.message 
+    }
+  }
+},
   // Obtenir le rapport comptable
   async getRapportComptable(dateDebut, dateFin) {
   try {
@@ -1874,4 +1869,5 @@ export const utils = {
 }
 
 export default supabase
+
 
