@@ -469,8 +469,7 @@ export const stockBoutiqueService = {
 }
 
 // ===================== SERVICES CAISSE CORRIGÉS =====================
-/ ===================== SERVICE CAISSE CORRIGÉ =====================
-// Évite les erreurs 406 et gère mieux les permissions
+
 
 export const caisseServiceCorrected = {
   // Enregistrer une vente avec vérification robuste
@@ -2415,6 +2414,7 @@ export const userService = {
   }
 }
 export default supabase
+
 
 
 
