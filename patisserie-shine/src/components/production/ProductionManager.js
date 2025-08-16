@@ -1,81 +1,93 @@
 "use client";
+
 import { useState, useEffect } from 'react';
 import { productionService, recetteService, utils } from '../../lib/supabase';
-import { Plus, ChefHat, Calendar, MapPin, User, AlertTriangle, CheckCircle, Clock, Package } from 'lucide-react';
+import { Plus, ChefHat, Calendar, MapPin, User, AlertTriangle, CheckCircle, Clock, Package, Info } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
 
-
-const [productions, setProductions] = useState([]);
-const [produitsRecettes, setProduitsRecettes] = useState([]);
-const [loading, setLoading] = useState(true);
-const [error, setError] = useState('');
-const [showAddModal, setShowAddModal] = useState(false);
-const [formData, setFormData] = useState({
+export default function ProductionManager({ currentUser }) {
+  const [productions, setProductions] = useState([]);
+  const [produitsRecettes, setProduitsRecettes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formData, setFormData] = useState({
     produit: '',
     quantite: '',
     destination: 'Boutique',
     date_production: new Date().toISOString().split('T')[0]
-});
-const [ingredientsVerification, setIngredientsVerification] = useState(null);
-
+  });
+  const [recetteInfo, setRecetteInfo] = useState(null);
 
   useEffect(() => {
     loadData();
-}, []);
+  }, []);
+
+  // Charger les informations de la recette quand le produit change
+  useEffect(() => {
+    if (formData.produit) {
+      loadRecetteInfo();
+    } else {
+      setRecetteInfo(null);
+    }
+  }, [formData.produit]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-        const [productionsResult, produitsResult] = await Promise.all([
-            productionService.getAll(),
-            recetteService.getProduitsRecettes()
-        ]);
-        ...
-        setProductions(productionsResult.productions);
-        setProduitsRecettes(produitsResult.produits);
-        setError('');
+      const [productionsResult, produitsResult] = await Promise.all([
+        productionService.getAll(),
+        recetteService.getProduitsRecettes()
+      ]);
+
+      if (productionsResult.error) throw new Error(productionsResult.error);
+      if (produitsResult.error) throw new Error(produitsResult.error);
+
+      setProductions(productionsResult.productions);
+      setProduitsRecettes(produitsResult.produits);
+      setError('');
     } catch (err) {
-        setError(err.message);
+      setError(err.message);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
-};
+  };
 
+  const loadRecetteInfo = async () => {
+    try {
+      const { recettes, error } = await recetteService.getRecettesProduit(formData.produit);
+      
+      if (error) {
+        console.error('Erreur chargement recette:', error);
+        return;
+      }
 
-  const verifierIngredients = async () => {
-  if (!formData.produit || !formData.quantite) {
-    setIngredientsVerification(null);
-    return;
-  }
+      if (recettes && recettes.length > 0) {
+        const coutTotal = recettes.reduce((sum, r) => {
+          const produit = r.produit_ingredient;
+          if (produit && produit.prix_achat && produit.quantite) {
+            return sum + ((produit.prix_achat / produit.quantite) * r.quantite_necessaire);
+          }
+          return sum;
+        }, 0);
 
-  try {
-    const result = await recetteService.verifierDisponibiliteIngredients(
-      formData.produit,
-      parseFloat(formData.quantite)
-    );
-
-    if (result.error) {
-      setError(result.error);
-      setIngredientsVerification(null);
-      return;
+        setRecetteInfo({
+          ingredients: recettes,
+          coutUnitaire: coutTotal,
+          nombreIngredients: recettes.length
+        });
+      }
+    } catch (err) {
+      console.error('Erreur dans loadRecetteInfo:', err);
     }
-
-    setIngredientsVerification(result);
-    setError('');
-  } catch (err) {
-    setError(err.message);
-    setIngredientsVerification(null);
-  }
-};
-
-
-  
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
+    setError('');
     
-   
-
     try {
       const result = await productionService.create({
         ...formData,
@@ -87,6 +99,14 @@ const [ingredientsVerification, setIngredientsVerification] = useState(null);
         return;
       }
 
+      // Afficher un message de succès avec les détails
+      if (result.production?.message) {
+        alert(`✅ Production créée avec succès !\n\n${result.production.message}`);
+      } else {
+        alert('✅ Production créée avec succès !');
+      }
+
+      // Réinitialiser le formulaire
       setShowAddModal(false);
       setFormData({
         produit: '',
@@ -94,29 +114,14 @@ const [ingredientsVerification, setIngredientsVerification] = useState(null);
         destination: 'Boutique',
         date_production: new Date().toISOString().split('T')[0]
       });
-      setIngredientsVerification(null);
-      setError('');
+      setRecetteInfo(null);
+      
+      // Recharger les données
       loadData();
     } catch (err) {
       setError(err.message);
-    }
-  };
-
-  const getStatutColor = (statut) => {
-    switch (statut) {
-      case 'termine': return 'badge-success';
-      case 'en_cours': return 'badge-warning';
-      case 'annule': return 'badge-error';
-      default: return 'badge-info';
-    }
-  };
-
-  const getStatutLabel = (statut) => {
-    switch (statut) {
-      case 'termine': return 'Terminé';
-      case 'en_cours': return 'En cours';
-      case 'annule': return 'Annulé';
-      default: return statut;
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -145,7 +150,7 @@ const [ingredientsVerification, setIngredientsVerification] = useState(null);
             <ChefHat className="w-8 h-8 text-orange-600 mr-3" />
             Production - Produits Finis
           </h1>
-          <p className="text-gray-600">Enregistrement des produits finis créés à partir des recettes</p>
+          <p className="text-gray-600">Enregistrement des produits finis avec déduction automatique des ingrédients</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'employe_production') && (
           <button
@@ -178,6 +183,21 @@ const [ingredientsVerification, setIngredientsVerification] = useState(null);
           </div>
         </div>
       )}
+
+      {/* Message d'information sur le processus */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-start">
+          <Info className="w-5 h-5 text-blue-600 mr-2 mt-0.5" />
+          <div className="text-blue-800">
+            <h4 className="font-medium mb-1">Processus de production automatique</h4>
+            <p className="text-sm">
+              ✓ Les ingrédients sont automatiquement déduits du stock principal<br/>
+              ✓ Les soldes mis à jour sont disponibles immédiatement dans l'atelier<br/>
+              ✓ Le coût de production est calculé automatiquement selon vos recettes
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Statistiques rapides */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -309,6 +329,7 @@ const [ingredientsVerification, setIngredientsVerification] = useState(null);
                     onChange={(e) => setFormData({...formData, produit: e.target.value})}
                     className="form-input w-full"
                     required
+                    disabled={submitting}
                   >
                     <option value="">Sélectionner un produit</option>
                     {produitsRecettes.map((produit) => (
@@ -324,7 +345,7 @@ const [ingredientsVerification, setIngredientsVerification] = useState(null);
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Quantité produite *
+                    Quantité à produire *
                   </label>
                   <input
                     type="number"
@@ -335,6 +356,7 @@ const [ingredientsVerification, setIngredientsVerification] = useState(null);
                     className="form-input w-full"
                     placeholder="1.0"
                     required
+                    disabled={submitting}
                   />
                   <p className="text-xs text-gray-500 mt-1">
                     Multiplicateur de la recette (ex: 2 = double portion)
@@ -351,6 +373,7 @@ const [ingredientsVerification, setIngredientsVerification] = useState(null);
                     value={formData.destination}
                     onChange={(e) => setFormData({...formData, destination: e.target.value})}
                     className="form-input w-full"
+                    disabled={submitting}
                   >
                     <option value="Boutique">Boutique</option>
                     <option value="Commande">Commande client</option>
@@ -370,67 +393,43 @@ const [ingredientsVerification, setIngredientsVerification] = useState(null);
                     onChange={(e) => setFormData({...formData, date_production: e.target.value})}
                     className="form-input w-full"
                     required
+                    disabled={submitting}
                   />
                 </div>
               </div>
 
-              {/* Vérification des ingrédients */}
-              {ingredientsVerification && (
-                <div className="border rounded-lg p-4">
+              {/* Informations sur la recette sélectionnée */}
+              {recetteInfo && formData.quantite && (
+                <div className="border rounded-lg p-4 bg-gray-50">
                   <h4 className="font-medium mb-3 flex items-center">
-                    {ingredientsVerification?.disponible ? (
-                      <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-red-600 mr-2" />
-                    )}
-                    Vérification des ingrédients dans l'atelier
+                    <Package className="w-5 h-5 text-blue-600 mr-2" />
+                    Aperçu de la production
                   </h4>
-              
-                  <div className="space-y-2">
-                    {ingredientsVerification.details.map((detail, index) => (
-                      <div 
-                        key={index}
-                        className={`flex justify-between items-center p-3 rounded ${
-                          detail.suffisant ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
-                        }`}
-                      >
-                        <div className="flex items-center">
-                          <Package className="w-4 h-4 mr-2 text-gray-500" />
-                          <span className="font-medium">{detail.ingredient}</span>
-                        </div>
-                        <div className="text-sm text-right">
-                          <div className={detail.suffisant ? 'text-green-700' : 'text-red-700'}>
-                            <strong>Requis:</strong> {utils.formatNumber(detail.quantite_necessaire, 2)} {detail.unite}
-                          </div>
-                          <div className="text-gray-600">
-                            <strong>Disponible:</strong> {utils.formatNumber(detail.stock_disponible, 2)} {detail.unite}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-              
-                    {!ingredientsVerification.disponible && (
-                      <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded">
-                        <p className="text-red-700 text-sm">
-                          <AlertTriangle className="w-4 h-4 inline mr-1" />
-                          Stock insuffisant dans l'atelier. Actions nécessaires :
-                        </p>
-                        <ul className="mt-2 text-sm text-red-700 space-y-1">
-                          <li>• Créer des demandes pour les ingrédients manquants</li>
-                          <li>• Faire valider les demandes par un admin/responsable production</li>
-                          <li>• Les ingrédients validés s'ajouteront automatiquement au stock atelier</li>
-                        </ul>
-                      </div>
-                    )}
-              
-                    {ingredientsVerification.disponible && (
-                      <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
-                        <p className="text-green-700 text-sm">
-                          <CheckCircle className="w-4 h-4 inline mr-1" />
-                          Enregistrer votre production.
-                        </p>
-                      </div>
-                    )}
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div className="bg-white p-3 rounded border">
+                      <p className="text-gray-600">Ingrédients nécessaires</p>
+                      <p className="font-semibold text-lg">{recetteInfo.nombreIngredients}</p>
+                    </div>
+                    <div className="bg-white p-3 rounded border">
+                      <p className="text-gray-600">Coût unitaire estimé</p>
+                      <p className="font-semibold text-lg text-green-600">
+                        {utils.formatCFA(recetteInfo.coutUnitaire)}
+                      </p>
+                    </div>
+                    <div className="bg-white p-3 rounded border">
+                      <p className="text-gray-600">Coût total estimé</p>
+                      <p className="font-semibold text-lg text-blue-600">
+                        {utils.formatCFA(recetteInfo.coutUnitaire * parseFloat(formData.quantite || 0))}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
+                    <p className="text-green-700 text-sm">
+                      <CheckCircle className="w-4 h-4 inline mr-1" />
+                      Les ingrédients seront automatiquement déduits du stock principal lors de la création.
+                    </p>
                   </div>
                 </div>
               )}
@@ -440,23 +439,32 @@ const [ingredientsVerification, setIngredientsVerification] = useState(null);
                   type="button"
                   onClick={() => {
                     setShowAddModal(false);
-                    setIngredientsVerification(null);
+                    setRecetteInfo(null);
                     setError('');
                   }}
                   className="btn-secondary"
+                  disabled={submitting}
                 >
                   Annuler
                 </button>
                 <button 
                   type="submit" 
                   className="btn-primary"
-                  
+                  disabled={submitting}
                 >
-                  <ChefHat className="w-4 h-4" />
-                  Enregistrer Production
+                  {submitting ? (
+                    <>
+                      <div className="spinner w-4 h-4"></div>
+                      Création...
+                    </>
+                  ) : (
+                    <>
+                      <ChefHat className="w-4 h-4" />
+                      Enregistrer Production
+                    </>
+                  )}
                 </button>
               </div>
-
             </form>
           </div>
         </div>
