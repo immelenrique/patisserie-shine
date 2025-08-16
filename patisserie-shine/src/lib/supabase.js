@@ -99,6 +99,8 @@ export const authService = {
 }
 // Ajout à améliorer dans src/lib/supabase.js
 
+// Section uniteService corrigée pour src/lib/supabase.js
+
 export const uniteService = {
   // Récupérer toutes les unités
   async getAll() {
@@ -120,13 +122,24 @@ export const uniteService = {
     }
   },
 
-  // NOUVELLE MÉTHODE : Créer une unité
+  // Créer une unité
   async create(uniteData) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       
       if (!user) {
         return { unite: null, error: 'Utilisateur non connecté' }
+      }
+
+      // Vérifier si l'unité existe déjà
+      const { data: existingUnite } = await supabase
+        .from('unites')
+        .select('id')
+        .eq('value', uniteData.value)
+        .maybeSingle()
+
+      if (existingUnite) {
+        return { unite: null, error: `L'unité "${uniteData.value}" existe déjà` }
       }
 
       const { data, error } = await supabase
@@ -150,7 +163,7 @@ export const uniteService = {
     }
   },
 
-  // NOUVELLE MÉTHODE : Supprimer une unité
+  // Supprimer une unité
   async delete(uniteId) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -191,7 +204,7 @@ export const uniteService = {
     }
   },
 
-  // NOUVELLE MÉTHODE : Mettre à jour une unité
+  // Mettre à jour une unité
   async update(uniteId, uniteData) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -200,11 +213,24 @@ export const uniteService = {
         return { unite: null, error: 'Utilisateur non connecté' }
       }
 
+      // Vérifier si le nouveau code existe déjà (sauf pour l'unité courante)
+      const { data: existingUnite } = await supabase
+        .from('unites')
+        .select('id')
+        .eq('value', uniteData.value)
+        .neq('id', uniteId)
+        .maybeSingle()
+
+      if (existingUnite) {
+        return { unite: null, error: `L'unité "${uniteData.value}" existe déjà` }
+      }
+
       const { data, error } = await supabase
         .from('unites')
         .update({
           value: uniteData.value,
-          label: uniteData.label
+          label: uniteData.label,
+          updated_at: new Date().toISOString()
         })
         .eq('id', uniteId)
         .select()
@@ -222,7 +248,7 @@ export const uniteService = {
     }
   },
 
-  // NOUVELLE MÉTHODE : Créer les unités de base si elles n'existent pas
+  // Créer les unités de base si elles n'existent pas
   async createBasicUnitsIfEmpty() {
     try {
       // Vérifier s'il y a déjà des unités
@@ -272,7 +298,7 @@ export const uniteService = {
     }
   },
 
-  // NOUVELLE MÉTHODE : Rechercher des unités
+  // Rechercher des unités
   async search(searchTerm) {
     try {
       const { data, error } = await supabase
@@ -3038,6 +3064,7 @@ export const userService = {
   }
 }
 export default supabase
+
 
 
 
