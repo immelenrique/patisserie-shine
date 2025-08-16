@@ -1161,8 +1161,165 @@ export const utils = {
     }).format(number || 0)
   }
 }
+export const userService = {
+  // Récupérer tous les utilisateurs
+  async getAll() {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        console.error('Erreur getAll users:', error)
+        return { users: [], error: error.message }
+      }
+      
+      return { users: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getAll users:', error)
+      return { users: [], error: error.message }
+    }
+  },
 
+  // Créer un nouvel utilisateur (méthode simplifiée côté client)
+  async createUser(userData) {
+    try {
+      // Vérifier que l'utilisateur actuel a les permissions
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      
+      if (!currentUser) {
+        return { user: null, error: 'Vous devez être connecté pour créer un utilisateur' }
+      }
+
+      // Récupérer le profil de l'utilisateur actuel
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('role, username')
+        .eq('id', currentUser.id)
+        .single()
+
+      // Vérifier les permissions
+      if (currentProfile?.role !== 'admin' && currentProfile?.username !== 'proprietaire') {
+        return { user: null, error: 'Vous n\'avez pas les permissions pour créer des utilisateurs' }
+      }
+
+      // Vérifier que le nom d'utilisateur n'existe pas déjà
+      const { data: existingUser } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', userData.username)
+        .single()
+
+      if (existingUser) {
+        return { user: null, error: `Le nom d'utilisateur "${userData.username}" existe déjà` }
+      }
+
+      // Créer l'utilisateur via l'API Supabase Auth (nécessite une route API)
+      const response = await fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentUser.access_token}`
+        },
+        body: JSON.stringify({
+          username: userData.username,
+          nom: userData.nom,
+          telephone: userData.telephone,
+          role: userData.role,
+          password: userData.password
+        })
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        return { user: null, error: result.error || 'Erreur lors de la création' }
+      }
+
+      return { user: result.user, error: null }
+    } catch (error) {
+      console.error('Erreur dans createUser:', error)
+      return { user: null, error: error.message }
+    }
+  },
+
+  // Version alternative : Création manuelle via insertion directe
+  async createUserSimple(userData) {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      
+      if (!currentUser) {
+        return { user: null, error: 'Vous devez être connecté' }
+      }
+
+      // Vérifier les permissions
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('role, username')
+        .eq('id', currentUser.id)
+        .single()
+
+      if (currentProfile?.role !== 'admin' && currentProfile?.username !== 'proprietaire') {
+        return { user: null, error: 'Permissions insuffisantes' }
+      }
+
+      // Simuler la création (pour démonstration)
+      // Dans un vrai environnement, ceci créerait un utilisateur via une fonction Supabase
+      const newUserId = crypto.randomUUID()
+      const newUser = {
+        id: newUserId,
+        username: userData.username,
+        nom: userData.nom,
+        telephone: userData.telephone,
+        role: userData.role,
+        actif: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+
+      // Note: Cette insertion échouera car 'id' doit correspondre à un utilisateur auth.users
+      // C'est pourquoi nous avons besoin d'une route API ou d'une fonction Supabase
+      const { data, error } = await supabase
+        .from('profiles')
+        .insert(newUser)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erreur insertion profil:', error)
+        return { 
+          user: null, 
+          error: 'Impossible de créer l\'utilisateur. Utilisez le dashboard Supabase ou configurez une route API.' 
+        }
+      }
+
+      return { user: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans createUserSimple:', error)
+      return { user: null, error: error.message }
+    }
+  },
+
+  // Supprimer un utilisateur (désactivation)
+  async deleteUser(userId) {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      
+      if (!currentUser) {
+        return { success: false, error: 'Vous devez être connecté' }
+      }
+
+      // Vérifier les permissions
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('role, username')
+        .eq('id', currentUser.id)
+        .single()
+
+      if (currentProfile?.role !== 'admin' && currentProfile?.username
 export default supabase
+
 
 
 
