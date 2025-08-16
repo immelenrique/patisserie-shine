@@ -1,5 +1,3 @@
-// src/app/page.js - Mise à jour pour inclure la gestion des utilisateurs
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -18,7 +16,7 @@ import ProductionManager from '../components/production/ProductionManager';
 import RecettesManager from '../components/production/RecettesManager';
 import UnitesManager from '../components/admin/UnitesManager';
 import TeamManager from '../components/admin/TeamManager';
-import UserManagement from '../components/admin/UserManagement'; // Nouveau composant
+import UserManagement from '../components/admin/UserManagement';
 
 export default function PatisserieApp() {
   const [currentUser, setCurrentUser] = useState(null);
