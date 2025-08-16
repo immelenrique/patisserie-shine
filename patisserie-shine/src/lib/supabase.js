@@ -469,8 +469,11 @@ export const stockBoutiqueService = {
 }
 
 // ===================== SERVICES CAISSE CORRIGÉS =====================
-export const caisseService = {
-  // Enregistrer une vente complète (VERSION ROBUSTE)
+/ ===================== SERVICE CAISSE CORRIGÉ =====================
+// Évite les erreurs 406 et gère mieux les permissions
+
+export const caisseServiceCorrected = {
+  // Enregistrer une vente avec vérification robuste
   async enregistrerVente(venteData) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -479,7 +482,7 @@ export const caisseService = {
         return { vente: null, error: 'Utilisateur non connecté' }
       }
 
-      console.log('Enregistrement vente:', venteData)
+      console.log('Données de vente:', venteData)
 
       // Essayer d'abord la fonction PostgreSQL
       try {
@@ -491,35 +494,28 @@ export const caisseService = {
           p_vendeur_id: venteData.vendeur_id
         })
         
-        if (error) throw error
+        if (error) {
+          console.warn('RPC échouée:', error)
+          throw error
+        }
         
         if (!data || !data.success) {
           throw new Error(data?.error || 'Erreur inconnue lors de l\'enregistrement')
         }
 
-        // Récupérer les données complètes de la vente
-        const { data: venteComplete } = await supabase
-          .from('ventes')
-          .select(`
-            *,
-            vendeur:profiles!ventes_vendeur_id_fkey(nom)
-          `)
-          .eq('id', data.vente_id)
-          .single()
-
+        console.log('Vente RPC réussie:', data)
         return { 
           vente: {
-            ...venteComplete,
+            id: data.vente_id,
             numero_ticket: data.numero_ticket,
-            items: venteData.items // Garder les items originaux
+            total: venteData.total,
+            items: venteData.items
           }, 
           error: null 
         }
       } catch (rpcError) {
         console.warn('RPC échouée, méthode manuelle:', rpcError)
-        
-        // Méthode alternative : transaction manuelle
-        return await this.enregistrerVenteManuelle(venteData)
+        return await this.enregistrerVenteManuelleCorrigee(venteData)
       }
     } catch (error) {
       console.error('Erreur dans enregistrerVente:', error)
@@ -527,13 +523,74 @@ export const caisseService = {
     }
   },
 
-  // Méthode de fallback pour enregistrer une vente manuellement
-  async enregistrerVenteManuelle(venteData) {
+  // Méthode manuelle corrigée
+  async enregistrerVenteManuelleCorrigee(venteData) {
     try {
-      // Générer un numéro de ticket simple
-      const numeroTicket = 'T-' + Date.now()
+      // 1. Vérifier le stock pour chaque article AVANT de commencer
+      const verificationsStock = await Promise.all(
+        venteData.items.map(async (item) => {
+          try {
+            // Requête simple pour éviter les erreurs 406
+            const { data: stock, error } = await supabase
+              .from('stock_boutique')
+              .select('quantite_disponible, quantite_vendue')
+              .eq('produit_id', item.id)
+              .maybeSingle()
+            
+            if (error) {
+              console.error('Erreur vérification stock:', error)
+              return {
+                produit: item.nom,
+                disponible: 0,
+                demande: item.quantite,
+                suffisant: false,
+                error: error.message
+              }
+            }
+            
+            const stockDisponible = stock ? 
+              (stock.quantite_disponible || 0) - (stock.quantite_vendue || 0) : 0
+            
+            return {
+              produit: item.nom,
+              produit_id: item.id,
+              disponible: stockDisponible,
+              demande: item.quantite,
+              suffisant: stockDisponible >= item.quantite,
+              stock_data: stock
+            }
+          } catch (err) {
+            console.error('Erreur item:', item.nom, err)
+            return {
+              produit: item.nom,
+              disponible: 0,
+              demande: item.quantite,
+              suffisant: false,
+              error: err.message
+            }
+          }
+        })
+      )
+
+      // Vérifier si tous les articles ont un stock suffisant
+      const articlesSansStock = verificationsStock.filter(v => !v.suffisant)
       
-      // 1. Créer la vente
+      if (articlesSansStock.length > 0) {
+        const erreurs = articlesSansStock.map(v => 
+          `${v.produit}: ${v.disponible} disponible, ${v.demande} demandé`
+        ).join('; ')
+        
+        return { 
+          vente: null, 
+          error: `Stock insuffisant pour: ${erreurs}`,
+          details: verificationsStock
+        }
+      }
+
+      // 2. Si tout est OK, procéder à la vente
+      const numeroTicket = 'V-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5)
+      
+      // Créer la vente
       const { data: vente, error: venteError } = await supabase
         .from('ventes')
         .insert({
@@ -547,60 +604,92 @@ export const caisseService = {
         .select()
         .single()
       
-      if (venteError) throw venteError
-      
-      // 2. Traiter chaque article
-      for (const item of venteData.items) {
-        // Vérifier le stock
-        const { data: stockBoutique } = await supabase
-          .from('stock_boutique')
-          .select('quantite_disponible, quantite_vendue')
-          .eq('produit_id', item.id)
-          .single()
-        
-        const stockDisponible = (stockBoutique?.quantite_disponible || 0) - (stockBoutique?.quantite_vendue || 0)
-        
-        if (stockDisponible < item.quantite) {
-          throw new Error(`Stock insuffisant pour ${item.nom}: ${stockDisponible} disponible, ${item.quantite} demandé`)
-        }
-        
-        // Insérer la ligne de vente
-        await supabase
-          .from('lignes_vente')
-          .insert({
-            vente_id: vente.id,
-            produit_id: item.id,
-            nom_produit: item.nom,
-            quantite: item.quantite,
-            prix_unitaire: item.prix,
-            total: item.quantite * item.prix
-          })
-        
-        // Insérer dans les sorties
-        await supabase
-          .from('sorties_boutique')
-          .insert({
-            vente_id: vente.id,
-            produit_id: item.id,
-            quantite: item.quantite,
-            prix_unitaire: item.prix,
-            total: item.quantite * item.prix
-          })
-        
-        // Mettre à jour le stock boutique
-        await supabase
-          .from('stock_boutique')
-          .update({
-            quantite_vendue: (stockBoutique?.quantite_vendue || 0) + item.quantite,
-            updated_at: new Date().toISOString()
-          })
-          .eq('produit_id', item.id)
+      if (venteError) {
+        console.error('Erreur création vente:', venteError)
+        throw venteError
       }
+      
+      console.log('Vente créée:', vente)
+
+      // 3. Traiter chaque article individuellement
+      const resultatsArticles = []
+      
+      for (const item of venteData.items) {
+        try {
+          // Insérer la ligne de vente
+          const { error: ligneError } = await supabase
+            .from('lignes_vente')
+            .insert({
+              vente_id: vente.id,
+              produit_id: item.id,
+              nom_produit: item.nom,
+              quantite: item.quantite,
+              prix_unitaire: item.prix,
+              total: item.quantite * item.prix
+            })
+          
+          if (ligneError) {
+            console.error('Erreur ligne vente:', ligneError)
+            throw ligneError
+          }
+          
+          // Insérer dans les sorties
+          const { error: sortieError } = await supabase
+            .from('sorties_boutique')
+            .insert({
+              vente_id: vente.id,
+              produit_id: item.id,
+              quantite: item.quantite,
+              prix_unitaire: item.prix,
+              total: item.quantite * item.prix
+            })
+          
+          if (sortieError) {
+            console.error('Erreur sortie boutique:', sortieError)
+            throw sortieError
+          }
+          
+          // Mettre à jour le stock boutique
+          const verification = verificationsStock.find(v => v.produit_id === item.id)
+          const nouvelleQuantiteVendue = (verification.stock_data?.quantite_vendue || 0) + item.quantite
+          
+          const { error: stockError } = await supabase
+            .from('stock_boutique')
+            .update({
+              quantite_vendue: nouvelleQuantiteVendue,
+              updated_at: new Date().toISOString()
+            })
+            .eq('produit_id', item.id)
+          
+          if (stockError) {
+            console.error('Erreur mise à jour stock:', stockError)
+            throw stockError
+          }
+          
+          resultatsArticles.push({
+            produit: item.nom,
+            quantite: item.quantite,
+            status: 'OK'
+          })
+          
+        } catch (itemError) {
+          console.error(`Erreur traitement ${item.nom}:`, itemError)
+          resultatsArticles.push({
+            produit: item.nom,
+            quantite: item.quantite,
+            status: 'ERREUR',
+            error: itemError.message
+          })
+        }
+      }
+      
+      console.log('Résultats articles:', resultatsArticles)
       
       return { 
         vente: {
           ...vente,
-          items: venteData.items
+          items: venteData.items,
+          resultats_articles: resultatsArticles
         }, 
         error: null 
       }
@@ -610,7 +699,118 @@ export const caisseService = {
     }
   },
 
-  // Obtenir les ventes du jour (VERSION SIMPLIFIÉE)
+  // Méthode de diagnostic pour tester le système
+  async diagnostiquerSysteme() {
+    try {
+      const diagnostic = {
+        permissions: {},
+        tables: {},
+        fonctions: {},
+        sample_stock: {}
+      }
+      
+      // Test d'accès aux tables
+      try {
+        const { data: stockTest, error: stockError } = await supabase
+          .from('stock_boutique')
+          .select('id, produit_id, quantite_disponible, quantite_vendue')
+          .limit(3)
+        
+        diagnostic.tables.stock_boutique = stockError ? 
+          `ERREUR: ${stockError.message}` : 
+          `OK (${stockTest?.length || 0} enregistrements)`
+      } catch (e) {
+        diagnostic.tables.stock_boutique = `EXCEPTION: ${e.message}`
+      }
+      
+      try {
+        const { data: ventesTest, error: ventesError } = await supabase
+          .from('ventes')
+          .select('id, numero_ticket, total')
+          .limit(3)
+        
+        diagnostic.tables.ventes = ventesError ? 
+          `ERREUR: ${ventesError.message}` : 
+          `OK (${ventesTest?.length || 0} enregistrements)`
+      } catch (e) {
+        diagnostic.tables.ventes = `EXCEPTION: ${e.message}`
+      }
+      
+      // Test des fonctions
+      try {
+        const { data: funcTest, error: funcError } = await supabase.rpc('diagnostic_complet_stock_boutique')
+        diagnostic.fonctions.diagnostic_complet = funcError ? 
+          `ERREUR: ${funcError.message}` : 
+          'OK'
+      } catch (e) {
+        diagnostic.fonctions.diagnostic_complet = `EXCEPTION: ${e.message}`
+      }
+      
+      // Échantillon de stock
+      try {
+        const { data: produits } = await supabase
+          .from('produits')
+          .select('id, nom')
+          .limit(5)
+        
+        if (produits && produits.length > 0) {
+          for (const produit of produits) {
+            try {
+              const { data: stock } = await supabase
+                .from('stock_boutique')
+                .select('quantite_disponible, quantite_vendue, prix_vente')
+                .eq('produit_id', produit.id)
+                .maybeSingle()
+              
+              diagnostic.sample_stock[produit.nom] = stock ? {
+                disponible: stock.quantite_disponible || 0,
+                vendu: stock.quantite_vendue || 0,
+                reel: (stock.quantite_disponible || 0) - (stock.quantite_vendue || 0),
+                prix: stock.prix_vente || 0
+              } : 'Non en stock'
+            } catch (e) {
+              diagnostic.sample_stock[produit.nom] = `Erreur: ${e.message}`
+            }
+          }
+        }
+      } catch (e) {
+        diagnostic.sample_stock = `Erreur produits: ${e.message}`
+      }
+      
+      return { diagnostic, error: null }
+    } catch (error) {
+      return { diagnostic: null, error: error.message }
+    }
+  },
+
+  // Méthode simple pour tester une vente
+  async testerVenteSimple(produitId, quantite = 1) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' }
+      }
+
+      // Utiliser la fonction de test SQL
+      const { data, error } = await supabase.rpc('test_vente_simple', {
+        p_produit_id: produitId,
+        p_quantite: quantite,
+        p_prix_unitaire: 500,
+        p_vendeur_id: user.id
+      })
+      
+      if (error) {
+        return { success: false, error: error.message }
+      }
+      
+      return { success: true, resultat: data }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Autres méthodes simplifiées
   async getVentesJour(date = null) {
     try {
       const dateRecherche = date || new Date().toISOString().split('T')[0]
@@ -618,7 +818,12 @@ export const caisseService = {
       const { data: ventes, error } = await supabase
         .from('ventes')
         .select(`
-          *,
+          id,
+          numero_ticket,
+          total,
+          montant_donne,
+          monnaie_rendue,
+          created_at,
           vendeur:profiles!ventes_vendeur_id_fkey(nom)
         `)
         .gte('created_at', dateRecherche + 'T00:00:00.000Z')
@@ -626,7 +831,10 @@ export const caisseService = {
         .eq('statut', 'validee')
         .order('created_at', { ascending: false })
       
-      if (error) throw error
+      if (error) {
+        console.error('Erreur getVentesJour:', error)
+        return { ventes: [], error: error.message }
+      }
       
       // Récupérer les items pour chaque vente
       const ventesAvecItems = await Promise.all(
@@ -639,6 +847,7 @@ export const caisseService = {
             
             return { ...vente, items: items || [] }
           } catch (err) {
+            console.error('Erreur items vente:', err)
             return { ...vente, items: [] }
           }
         })
@@ -649,47 +858,35 @@ export const caisseService = {
       console.error('Erreur dans getVentesJour:', error)
       return { ventes: [], error: error.message }
     }
-  },
+  }
+}
 
-  // Autres méthodes simplifiées...
-  async getVentesPeriode(dateDebut, dateFin) {
-    // Implémentation similaire à getVentesJour avec une plage de dates
-    return this.getVentesJour() // Fallback simple
-  },
+// Export par défaut pour compatibilité
+export default caisseServiceCorrected
 
-  async getProduitsTopVentes(limite = 10, periode = 'mois') {
-    try {
-      // Requête simplifiée pour les top ventes
-      const { data, error } = await supabase
-        .from('lignes_vente')
-        .select('nom_produit, quantite, total')
-        .order('created_at', { ascending: false })
-        .limit(100)
-      
-      if (error) throw error
-      
-      // Grouper et trier manuellement
-      const grouped = {}
-      data.forEach(item => {
-        if (!grouped[item.nom_produit]) {
-          grouped[item.nom_produit] = {
-            nom_produit: item.nom_produit,
-            quantite_vendue: 0,
-            chiffre_affaires: 0
-          }
-        }
-        grouped[item.nom_produit].quantite_vendue += item.quantite
-        grouped[item.nom_produit].chiffre_affaires += item.total
-      })
-      
-      const produits = Object.values(grouped)
-        .sort((a, b) => b.chiffre_affaires - a.chiffre_affaires)
-        .slice(0, limite)
-      
-      return { produits, error: null }
-    } catch (error) {
-      return { produits: [], error: error.message }
-    }
+// Fonction utilitaire pour tester le système complet
+export const testerSystemeComplet = async () => {
+  console.log('=== TEST SYSTÈME COMPLET ===')
+  
+  // 1. Diagnostic
+  console.log('1. Diagnostic...')
+  const diag = await caisseServiceCorrected.diagnostiquerSysteme()
+  console.log('Diagnostic:', diag)
+  
+  // 2. Test vente simple
+  console.log('2. Test vente simple...')
+  const testVente = await caisseServiceCorrected.testerVenteSimple(1, 1)
+  console.log('Test vente:', testVente)
+  
+  // 3. Vérifier les ventes du jour
+  console.log('3. Ventes du jour...')
+  const ventes = await caisseServiceCorrected.getVentesJour()
+  console.log('Ventes:', ventes)
+  
+  return {
+    diagnostic: diag,
+    test_vente: testVente,
+    ventes_jour: ventes
   }
 }
 // ===================== SERVICES COMPTABILITÉ =====================
@@ -2218,6 +2415,7 @@ export const userService = {
   }
 }
 export default supabase
+
 
 
 
