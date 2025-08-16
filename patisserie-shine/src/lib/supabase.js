@@ -469,9 +469,8 @@ export const stockBoutiqueService = {
 }
 
 // ===================== SERVICES CAISSE CORRIGÉS =====================
-
-
-export const caisseServiceCorrected = {
+// ===================== SERVICES CAISSE COMPLETS =====================
+export const caisseService = {
   // Enregistrer une vente avec vérification robuste
   async enregistrerVente(venteData) {
     try {
@@ -514,7 +513,7 @@ export const caisseServiceCorrected = {
         }
       } catch (rpcError) {
         console.warn('RPC échouée, méthode manuelle:', rpcError)
-        return await this.enregistrerVenteManuelleCorrigee(venteData)
+        return await this.enregistrerVenteManuelle(venteData)
       }
     } catch (error) {
       console.error('Erreur dans enregistrerVente:', error)
@@ -523,7 +522,7 @@ export const caisseServiceCorrected = {
   },
 
   // Méthode manuelle corrigée
-  async enregistrerVenteManuelleCorrigee(venteData) {
+  async enregistrerVenteManuelle(venteData) {
     try {
       // 1. Vérifier le stock pour chaque article AVANT de commencer
       const verificationsStock = await Promise.all(
@@ -698,118 +697,7 @@ export const caisseServiceCorrected = {
     }
   },
 
-  // Méthode de diagnostic pour tester le système
-  async diagnostiquerSysteme() {
-    try {
-      const diagnostic = {
-        permissions: {},
-        tables: {},
-        fonctions: {},
-        sample_stock: {}
-      }
-      
-      // Test d'accès aux tables
-      try {
-        const { data: stockTest, error: stockError } = await supabase
-          .from('stock_boutique')
-          .select('id, produit_id, quantite_disponible, quantite_vendue')
-          .limit(3)
-        
-        diagnostic.tables.stock_boutique = stockError ? 
-          `ERREUR: ${stockError.message}` : 
-          `OK (${stockTest?.length || 0} enregistrements)`
-      } catch (e) {
-        diagnostic.tables.stock_boutique = `EXCEPTION: ${e.message}`
-      }
-      
-      try {
-        const { data: ventesTest, error: ventesError } = await supabase
-          .from('ventes')
-          .select('id, numero_ticket, total')
-          .limit(3)
-        
-        diagnostic.tables.ventes = ventesError ? 
-          `ERREUR: ${ventesError.message}` : 
-          `OK (${ventesTest?.length || 0} enregistrements)`
-      } catch (e) {
-        diagnostic.tables.ventes = `EXCEPTION: ${e.message}`
-      }
-      
-      // Test des fonctions
-      try {
-        const { data: funcTest, error: funcError } = await supabase.rpc('diagnostic_complet_stock_boutique')
-        diagnostic.fonctions.diagnostic_complet = funcError ? 
-          `ERREUR: ${funcError.message}` : 
-          'OK'
-      } catch (e) {
-        diagnostic.fonctions.diagnostic_complet = `EXCEPTION: ${e.message}`
-      }
-      
-      // Échantillon de stock
-      try {
-        const { data: produits } = await supabase
-          .from('produits')
-          .select('id, nom')
-          .limit(5)
-        
-        if (produits && produits.length > 0) {
-          for (const produit of produits) {
-            try {
-              const { data: stock } = await supabase
-                .from('stock_boutique')
-                .select('quantite_disponible, quantite_vendue, prix_vente')
-                .eq('produit_id', produit.id)
-                .maybeSingle()
-              
-              diagnostic.sample_stock[produit.nom] = stock ? {
-                disponible: stock.quantite_disponible || 0,
-                vendu: stock.quantite_vendue || 0,
-                reel: (stock.quantite_disponible || 0) - (stock.quantite_vendue || 0),
-                prix: stock.prix_vente || 0
-              } : 'Non en stock'
-            } catch (e) {
-              diagnostic.sample_stock[produit.nom] = `Erreur: ${e.message}`
-            }
-          }
-        }
-      } catch (e) {
-        diagnostic.sample_stock = `Erreur produits: ${e.message}`
-      }
-      
-      return { diagnostic, error: null }
-    } catch (error) {
-      return { diagnostic: null, error: error.message }
-    }
-  },
-
-  // Méthode simple pour tester une vente
-  async testerVenteSimple(produitId, quantite = 1) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) {
-        return { success: false, error: 'Utilisateur non connecté' }
-      }
-
-      // Utiliser la fonction de test SQL
-      const { data, error } = await supabase.rpc('test_vente_simple', {
-        p_produit_id: produitId,
-        p_quantite: quantite,
-        p_prix_unitaire: 500,
-        p_vendeur_id: user.id
-      })
-      
-      if (error) {
-        return { success: false, error: error.message }
-      }
-      
-      return { success: true, resultat: data }
-    } catch (error) {
-      return { success: false, error: error.message }
-    }
-  },
-
-  // Autres méthodes simplifiées
+  // Obtenir les ventes du jour
   async getVentesJour(date = null) {
     try {
       const dateRecherche = date || new Date().toISOString().split('T')[0]
@@ -857,35 +745,428 @@ export const caisseServiceCorrected = {
       console.error('Erreur dans getVentesJour:', error)
       return { ventes: [], error: error.message }
     }
+  },
+
+  // Obtenir les ventes par période
+  async getVentesPeriode(dateDebut, dateFin) {
+    try {
+      const { data: ventes, error } = await supabase
+        .from('ventes')
+        .select(`
+          id,
+          numero_ticket,
+          total,
+          montant_donne,
+          monnaie_rendue,
+          created_at,
+          vendeur:profiles!ventes_vendeur_id_fkey(nom)
+        `)
+        .gte('created_at', dateDebut + 'T00:00:00.000Z')
+        .lte('created_at', dateFin + 'T23:59:59.999Z')
+        .eq('statut', 'validee')
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        console.error('Erreur getVentesPeriode:', error)
+        return { ventes: [], error: error.message }
+      }
+      
+      // Récupérer les items pour chaque vente
+      const ventesAvecItems = await Promise.all(
+        (ventes || []).map(async (vente) => {
+          try {
+            const { data: items } = await supabase
+              .from('lignes_vente')
+              .select('*')
+              .eq('vente_id', vente.id)
+            
+            return { ...vente, items: items || [] }
+          } catch (err) {
+            console.error('Erreur items vente:', err)
+            return { ...vente, items: [] }
+          }
+        })
+      )
+      
+      return { ventes: ventesAvecItems, error: null }
+    } catch (error) {
+      console.error('Erreur dans getVentesPeriode:', error)
+      return { ventes: [], error: error.message }
+    }
+  },
+
+  // Obtenir les produits les plus vendus
+  async getProduitsTopVentes(limit = 10, periode = 'mois') {
+    try {
+      let dateDebut;
+      const maintenant = new Date();
+      
+      switch (periode) {
+        case 'jour':
+          dateDebut = new Date().toISOString().split('T')[0] + 'T00:00:00.000Z';
+          break;
+        case 'semaine':
+          const semaineDerniere = new Date(maintenant.getTime() - 7 * 24 * 60 * 60 * 1000);
+          dateDebut = semaineDerniere.toISOString();
+          break;
+        case 'mois':
+        default:
+          const moisDernier = new Date(maintenant.getFullYear(), maintenant.getMonth() - 1, 1);
+          dateDebut = moisDernier.toISOString();
+          break;
+      }
+
+      // Agrégation des ventes par produit
+      const { data: ventesData, error } = await supabase
+        .from('lignes_vente')
+        .select(`
+          nom_produit,
+          quantite,
+          prix_unitaire,
+          total,
+          vente:ventes!inner(created_at)
+        `)
+        .gte('vente.created_at', dateDebut)
+        .order('total', { ascending: false })
+      
+      if (error) {
+        console.error('Erreur getProduitsTopVentes:', error)
+        return { produits: [], error: error.message }
+      }
+
+      // Grouper et sommer par produit
+      const produitsGroupes = {}
+      
+      ventesData?.forEach(item => {
+        const nom = item.nom_produit
+        if (!produitsGroupes[nom]) {
+          produitsGroupes[nom] = {
+            nom_produit: nom,
+            quantite_vendue: 0,
+            chiffre_affaires: 0,
+            nombre_transactions: 0
+          }
+        }
+        
+        produitsGroupes[nom].quantite_vendue += item.quantite || 0
+        produitsGroupes[nom].chiffre_affaires += item.total || 0
+        produitsGroupes[nom].nombre_transactions += 1
+      })
+
+      // Convertir en tableau et trier
+      const produitsArray = Object.values(produitsGroupes)
+        .sort((a, b) => b.chiffre_affaires - a.chiffre_affaires)
+        .slice(0, limit)
+      
+      return { produits: produitsArray, error: null }
+    } catch (error) {
+      console.error('Erreur dans getProduitsTopVentes:', error)
+      return { produits: [], error: error.message }
+    }
+  },
+
+  // Obtenir les statistiques de vente
+  async getStatistiquesVentes(periode = 'mois') {
+    try {
+      const ventesResult = await this.getVentesPeriode(
+        // Calculer les dates selon la période
+        new Date(new Date().getFullYear(), new Date().getMonth() - (periode === 'mois' ? 1 : 0), 1).toISOString().split('T')[0],
+        new Date().toISOString().split('T')[0]
+      )
+
+      if (ventesResult.error) {
+        return { stats: null, error: ventesResult.error }
+      }
+
+      const ventes = ventesResult.ventes || []
+      
+      const stats = {
+        nombre_ventes: ventes.length,
+        chiffre_affaires: ventes.reduce((sum, v) => sum + (v.total || 0), 0),
+        ticket_moyen: ventes.length > 0 ? 
+          ventes.reduce((sum, v) => sum + (v.total || 0), 0) / ventes.length : 0,
+        articles_vendus: ventes.reduce((sum, v) => 
+          sum + (v.items?.reduce((s, i) => s + (i.quantite || 0), 0) || 0), 0
+        )
+      }
+      
+      return { stats, error: null }
+    } catch (error) {
+      console.error('Erreur dans getStatistiquesVentes:', error)
+      return { stats: null, error: error.message }
+    }
   }
 }
 
+// ===================== SERVICES COMPTABILITÉ COMPLETS =====================
+export const comptabiliteService = {
+  // Obtenir le chiffre d'affaires par période
+  async getChiffreAffaires(dateDebut, dateFin) {
+    try {
+      // Essayer d'abord avec la fonction RPC
+      try {
+        const { data, error } = await supabase.rpc('get_chiffre_affaires', {
+          p_date_debut: dateDebut,
+          p_date_fin: dateFin
+        })
+        
+        if (!error && data) {
+          return { 
+            chiffre: data.total || 0, 
+            details: data.details || [], 
+            error: null 
+          }
+        }
+      } catch (rpcError) {
+        console.warn('RPC get_chiffre_affaires échouée, calcul manuel:', rpcError)
+      }
 
-// Fonction utilitaire pour tester le système complet
-export const testerSystemeComplet = async () => {
-  console.log('=== TEST SYSTÈME COMPLET ===')
-  
-  // 1. Diagnostic
-  console.log('1. Diagnostic...')
-  const diag = await caisseServiceCorrected.diagnostiquerSysteme()
-  console.log('Diagnostic:', diag)
-  
-  // 2. Test vente simple
-  console.log('2. Test vente simple...')
-  const testVente = await caisseServiceCorrected.testerVenteSimple(1, 1)
-  console.log('Test vente:', testVente)
-  
-  // 3. Vérifier les ventes du jour
-  console.log('3. Ventes du jour...')
-  const ventes = await caisseServiceCorrected.getVentesJour()
-  console.log('Ventes:', ventes)
-  
-  return {
-    diagnostic: diag,
-    test_vente: testVente,
-    ventes_jour: ventes
+      // Méthode alternative : calcul direct
+      const ventesResult = await caisseService.getVentesPeriode(dateDebut, dateFin)
+      
+      if (ventesResult.error) {
+        return { chiffre: 0, details: [], error: ventesResult.error }
+      }
+
+      const ventes = ventesResult.ventes || []
+      const chiffre = ventes.reduce((sum, v) => sum + (v.total || 0), 0)
+      
+      return { 
+        chiffre, 
+        details: ventes.map(v => ({
+          date: v.created_at,
+          montant: v.total,
+          ticket: v.numero_ticket
+        })), 
+        error: null 
+      }
+    } catch (error) {
+      console.error('Erreur dans getChiffreAffaires:', error)
+      return { chiffre: 0, details: [], error: error.message }
+    }
+  },
+
+  // Obtenir les dépenses (coûts des ingrédients utilisés)
+  async getDepenses(dateDebut, dateFin) {
+    try {
+      // Essayer d'abord avec la fonction RPC
+      try {
+        const { data, error } = await supabase.rpc('get_depenses_periode', {
+          p_date_debut: dateDebut,
+          p_date_fin: dateFin
+        })
+        
+        if (!error && data) {
+          return { 
+            depenses: data.total || 0, 
+            details: data.details || [], 
+            error: null 
+          }
+        }
+      } catch (rpcError) {
+        console.warn('RPC get_depenses_periode échouée, calcul manuel:', rpcError)
+      }
+
+      // Méthode alternative : calcul depuis les productions
+      const { data: productions, error } = await supabase
+        .from('productions')
+        .select('cout_ingredients, quantite, date_production')
+        .gte('date_production', dateDebut)
+        .lte('date_production', dateFin)
+        .not('cout_ingredients', 'is', null)
+      
+      if (error) {
+        console.error('Erreur récupération productions:', error)
+        return { depenses: 0, details: [], error: error.message }
+      }
+
+      const depenses = (productions || []).reduce((sum, p) => sum + (p.cout_ingredients || 0), 0)
+      
+      return { 
+        depenses, 
+        details: (productions || []).map(p => ({
+          date: p.date_production,
+          montant: p.cout_ingredients,
+          quantite: p.quantite
+        })), 
+        error: null 
+      }
+    } catch (error) {
+      console.error('Erreur dans getDepenses:', error)
+      return { depenses: 0, details: [], error: error.message }
+    }
+  },
+
+  // Calculer la marge brute
+  async getMargesBrutes(dateDebut, dateFin) {
+    try {
+      const [caResult, depensesResult] = await Promise.all([
+        this.getChiffreAffaires(dateDebut, dateFin),
+        this.getDepenses(dateDebut, dateFin)
+      ])
+
+      if (caResult.error || depensesResult.error) {
+        return { 
+          marge: 0, 
+          pourcentage: 0, 
+          error: caResult.error || depensesResult.error 
+        }
+      }
+
+      const chiffreAffaires = caResult.chiffre
+      const depenses = depensesResult.depenses
+      const marge = chiffreAffaires - depenses
+      const pourcentage = chiffreAffaires > 0 ? (marge / chiffreAffaires) * 100 : 0
+
+      return {
+        chiffre_affaires: chiffreAffaires,
+        depenses: depenses,
+        marge: marge,
+        pourcentage: Math.round(pourcentage * 100) / 100,
+        error: null
+      }
+    } catch (error) {
+      console.error('Erreur dans getMargesBrutes:', error)
+      return { marge: 0, pourcentage: 0, error: error.message }
+    }
+  },
+
+  // Rapport comptable complet
+  async getRapportComptable(dateDebut, dateFin) {
+    try {
+      const [margesResult, ventesResult, produitsResult] = await Promise.all([
+        this.getMargesBrutes(dateDebut, dateFin),
+        caisseService.getVentesPeriode(dateDebut, dateFin),
+        caisseService.getProduitsTopVentes(5, 'custom')
+      ])
+
+      const nombreVentes = ventesResult.ventes?.length || 0
+      const ticketMoyen = nombreVentes > 0 ? margesResult.chiffre_affaires / nombreVentes : 0
+
+      return {
+        periode: { debut: dateDebut, fin: dateFin },
+        finances: {
+          chiffre_affaires: margesResult.chiffre_affaires || 0,
+          depenses: margesResult.depenses || 0,
+          marge_brute: margesResult.marge || 0,
+          pourcentage_marge: margesResult.pourcentage || 0
+        },
+        ventes: {
+          nombre_transactions: nombreVentes,
+          ticket_moyen: Math.round(ticketMoyen * 100) / 100,
+          articles_vendus: ventesResult.ventes?.reduce((sum, v) => 
+            sum + (v.items?.reduce((s, i) => s + (i.quantite || 0), 0) || 0), 0) || 0
+        },
+        produits_top: produitsResult.produits || [],
+        error: margesResult.error || ventesResult.error || produitsResult.error
+      }
+    } catch (error) {
+      console.error('Erreur dans getRapportComptable:', error)
+      return { error: error.message }
+    }
+  },
+
+  // Obtenir l'évolution mensuelle
+  async getEvolutionMensuelle(annee) {
+    try {
+      // Essayer d'abord avec la fonction RPC
+      try {
+        const { data, error } = await supabase.rpc('get_evolution_mensuelle', {
+          p_annee: annee
+        })
+        
+        if (!error && data) {
+          return { evolution: data, error: null }
+        }
+      } catch (rpcError) {
+        console.warn('RPC get_evolution_mensuelle échouée, calcul manuel:', rpcError)
+      }
+
+      // Méthode alternative : calculer manuellement
+      const evolution = []
+      
+      for (let mois = 1; mois <= 12; mois++) {
+        const dateDebut = `${annee}-${mois.toString().padStart(2, '0')}-01`
+        const dateFin = `${annee}-${mois.toString().padStart(2, '0')}-${new Date(annee, mois, 0).getDate()}`
+        
+        const ventesResult = await caisseService.getVentesPeriode(dateDebut, dateFin)
+        const ventes = ventesResult.ventes || []
+        
+        evolution.push({
+          mois: mois,
+          chiffre_affaires: ventes.reduce((sum, v) => sum + (v.total || 0), 0),
+          nb_ventes: ventes.length,
+          articles_vendus: ventes.reduce((sum, v) => 
+            sum + (v.items?.reduce((s, i) => s + (i.quantite || 0), 0) || 0), 0
+          )
+        })
+      }
+      
+      return { evolution, error: null }
+    } catch (error) {
+      console.error('Erreur dans getEvolutionMensuelle:', error)
+      return { evolution: [], error: error.message }
+    }
+  },
+
+  // Exporter les données comptables
+  async exporterDonneesComptables(dateDebut, dateFin, format = 'csv') {
+    try {
+      const rapport = await this.getRapportComptable(dateDebut, dateFin)
+      
+      if (rapport.error) {
+        return { success: false, error: rapport.error }
+      }
+
+      const donnees = {
+        rapport: rapport,
+        ventes: (await caisseService.getVentesPeriode(dateDebut, dateFin)).ventes
+      }
+
+      if (format === 'csv') {
+        const csvContent = this.genererCSV(donnees)
+        return { success: true, content: csvContent, filename: `comptabilite_${dateDebut}_${dateFin}.csv` }
+      } else {
+        const jsonContent = JSON.stringify(donnees, null, 2)
+        return { success: true, content: jsonContent, filename: `comptabilite_${dateDebut}_${dateFin}.json` }
+      }
+    } catch (error) {
+      console.error('Erreur dans exporterDonneesComptables:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Générer CSV pour export
+  genererCSV(donnees) {
+    const lignes = []
+    
+    // En-tête du rapport
+    lignes.push('RAPPORT COMPTABLE PATISSERIE SHINE')
+    lignes.push(`Période: ${donnees.rapport.periode.debut} - ${donnees.rapport.periode.fin}`)
+    lignes.push('')
+    
+    // Résumé financier
+    lignes.push('RESUME FINANCIER')
+    lignes.push('Indicateur,Montant')
+    lignes.push(`Chiffre d'affaires,${donnees.rapport.finances.chiffre_affaires}`)
+    lignes.push(`Dépenses,${donnees.rapport.finances.depenses}`)
+    lignes.push(`Marge brute,${donnees.rapport.finances.marge_brute}`)
+    lignes.push(`Pourcentage marge,${donnees.rapport.finances.pourcentage_marge}%`)
+    lignes.push('')
+    
+    // Détail des ventes
+    lignes.push('DETAIL DES VENTES')
+    lignes.push('Date,Ticket,Produits,Total,Vendeur')
+    
+    donnees.ventes.forEach(vente => {
+      const produits = vente.items?.map(i => `${i.nom_produit} x${i.quantite}`).join('; ') || ''
+      lignes.push(`${vente.created_at.split('T')[0]},${vente.numero_ticket},"${produits}",${vente.total},${vente.vendeur?.nom || ''}`)
+    })
+    
+    return lignes.join('\n')
   }
 }
+
 // ===================== SERVICES COMPTABILITÉ =====================
 export const comptabiliteService = {
   // Obtenir le chiffre d'affaires par période
@@ -2412,6 +2693,7 @@ export const userService = {
   }
 }
 export default supabase
+
 
 
 
