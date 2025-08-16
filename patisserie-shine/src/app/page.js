@@ -1,9 +1,11 @@
+// src/app/page.js - Mise à jour pour inclure la gestion des utilisateurs
+
 "use client";
 
 import { useState, useEffect } from 'react';
 import { authService, statsService } from '../lib/supabase';
 
-// Import des composants avec chemins relatifs corrects
+// Import des composants
 import LoginForm from '../components/auth/LoginForm';
 import { Header, Navigation, Footer } from '../components/layout';
 import Dashboard from '../components/dashboard/Dashboard';
@@ -16,6 +18,7 @@ import ProductionManager from '../components/production/ProductionManager';
 import RecettesManager from '../components/production/RecettesManager';
 import UnitesManager from '../components/admin/UnitesManager';
 import TeamManager from '../components/admin/TeamManager';
+import UserManagement from '../components/admin/UserManagement'; // Nouveau composant
 
 export default function PatisserieApp() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -68,21 +71,31 @@ export default function PatisserieApp() {
     }
   };
 
-  // Navigation tabs
+  // Navigation tabs avec le nouvel onglet de gestion des utilisateurs
   const tabs = [
     { id: 'dashboard', label: 'Tableau de Bord', adminOnly: false },
     { id: 'stock', label: 'Stock Principal', adminOnly: false },
     { id: 'stock-atelier', label: 'Stock Atelier', adminOnly: true },
     { id: 'recettes', label: 'Recettes', adminOnly: true },
     { id: 'demandes', label: 'Demandes', adminOnly: false },
-    { id: 'production', label: 'Produit par atelier', adminOnly: false },
+    { id: 'production', label: 'Production', adminOnly: false },
     { id: 'unites', label: 'Unités', adminOnly: true },
-    { id: 'equipe', label: 'Équipe', adminOnly: true }
+    { id: 'equipe', label: 'Équipe', adminOnly: true },
+    { 
+      id: 'users', 
+      label: 'Utilisateurs', 
+      adminOnly: true, 
+      proprietaireOnly: true // Nouveau flag pour le propriétaire
+    }
   ];
 
-  const visibleTabs = tabs.filter(tab => 
-    !tab.adminOnly || currentUser?.role === 'admin'
-  );
+  // Filtrer les onglets selon les permissions
+  const visibleTabs = tabs.filter(tab => {
+    if (tab.proprietaireOnly) {
+      return currentUser?.role === 'admin' || currentUser?.username === 'proprietaire';
+    }
+    return !tab.adminOnly || currentUser?.role === 'admin';
+  });
 
   if (loading) {
     return (
@@ -124,6 +137,11 @@ export default function PatisserieApp() {
         return currentUser.role === 'admin' ? 
           <TeamManager currentUser={currentUser} /> : 
           <Dashboard stats={stats} loading={!stats} />;
+      case 'users':
+        // Nouveau cas pour la gestion des utilisateurs
+        return (currentUser.role === 'admin' || currentUser.username === 'proprietaire') ? 
+          <UserManagement currentUser={currentUser} /> : 
+          <Dashboard stats={stats} loading={!stats} />;
       default:
         return <Dashboard stats={stats} loading={!stats} />;
     }
@@ -152,4 +170,3 @@ export default function PatisserieApp() {
     </div>
   );
 }
-
