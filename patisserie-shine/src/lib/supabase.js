@@ -706,6 +706,43 @@ async definirPrixVenteRecette(nomProduit, prixVente) {
 },
 
 
+// Définir prix de vente pour un produit recette
+async definirPrixVenteRecette(nomProduit, prixVente) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { success: false, error: 'Utilisateur non connecté' }
+    }
+
+    // Créer une entrée dans une table prix_vente_recettes 
+    // (ou utiliser une table générique pour les prix)
+    const { data, error } = await supabase
+      .from('prix_vente_recettes')
+      .upsert({
+        nom_produit: nomProduit,
+        prix_vente: prixVente,
+        defini_par: user.id,
+        actif: true
+      })
+      .select()
+
+    if (error) {
+      console.error('Erreur définition prix recette:', error)
+      return { success: false, error: error.message }
+    }
+
+    return { 
+      success: true, 
+      message: `Prix de vente défini pour ${nomProduit}: ${utils.formatCFA(prixVente)}`
+    }
+  } catch (error) {
+    console.error('Erreur dans definirPrixVenteRecette:', error)
+    return { success: false, error: error.message }
+  }
+},
+
+
       
 
   // Obtenir les prix de vente définis
@@ -769,6 +806,119 @@ export const demandeService = {
       return { demandes: [], error: error.message }
     }
   },
+  // Valider une demande avec gestion automatique des prix boutique
+async validateWithBoutiqueCheck(demandeId) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { result: null, error: 'Utilisateur non connecté' }
+    }
+
+    // Récupérer les informations de la demande
+    const { data: demande, error: demandeError } = await supabase
+      .from('demandes')
+      .select(`
+        *,
+        produit:produits(
+          id, nom, prix_achat,
+          unite:unites(label)
+        )
+      `)
+      .eq('id', demandeId)
+      .eq('statut', 'en_attente')
+      .single()
+
+    if (demandeError || !demande) {
+      return { result: null, error: 'Demande introuvable ou déjà traitée' }
+    }
+
+    // Si destination = Boutique, vérifier le prix de vente
+    let prixVenteDisponible = null
+    if (demande.destination === 'Boutique') {
+      const { data: prixVente } = await supabase
+        .from('prix_vente_produits')
+        .select('prix')
+        .eq('produit_id', demande.produit_id)
+        .eq('actif', true)
+        .single()
+
+      prixVenteDisponible = prixVente?.prix || null
+    }
+
+    // Utiliser la fonction RPC améliorée pour valider
+    const { data, error } = await supabase.rpc('valider_demande_avec_boutique', {
+      demande_id_input: demandeId.toString(),
+      p_valideur_id: user.id,
+      p_prix_vente_boutique: prixVenteDisponible
+    })
+    
+    if (error) {
+      console.error('Erreur RPC valider_demande_avec_boutique:', error)
+      return { result: null, error: error.message }
+    }
+    
+    return { 
+      result: data, 
+      error: null,
+      message: demande.destination === 'Boutique' && prixVenteDisponible ? 
+        `Demande validée ! Produit ajouté à la boutique avec prix: ${utils.formatCFA(prixVenteDisponible)}` :
+        demande.destination === 'Boutique' ? 
+        'Demande validée ! ⚠️ Produit ajouté à la boutique SANS prix de vente. Définissez le prix dans "Prix Vente".' :
+        'Demande validée avec succès !'
+    }
+  } catch (error) {
+    console.error('Erreur dans validateWithBoutiqueCheck:', error)
+    return { result: null, error: error.message }
+  }
+},
+
+// Modifier la méthode create pour supporter les nouvelles fonctionnalités
+async createProduction(productionData) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { production: null, error: 'Utilisateur non connecté' }
+    }
+
+    // Utiliser la fonction PostgreSQL modifiée qui :
+    // 1. Déduit les ingrédients du stock atelier
+    // 2. N'ajoute PAS au stock principal
+    // 3. Ajoute directement au stock boutique selon la destination
+    const { data, error } = await supabase.rpc('creer_production_nouvelle_logique', {
+      p_produit: productionData.produit,
+      p_quantite: productionData.quantite,
+      p_destination: productionData.destination || 'Boutique',
+      p_date_production: productionData.date_production || new Date().toISOString().split('T')[0],
+      p_producteur_id: user.id,
+      p_prix_vente: productionData.prix_vente || null
+    })
+    
+    if (error) {
+      console.error('Erreur RPC create production:', error)
+      return { production: null, error: error.message }
+    }
+
+    if (!data || !data.success) {
+      const errorMessage = data?.error || 'Erreur inconnue lors de la création'
+      console.error('Erreur création production:', errorMessage)
+      return { production: null, error: errorMessage }
+    }
+
+    return { 
+      production: {
+        id: data.production_id,
+        message: data.message
+      }, 
+      error: null 
+    }
+  } catch (error) {
+    console.error('Erreur dans createProduction:', error)
+    return { production: null, error: error.message }
+  }
+},
+
 
   // Créer une nouvelle demande
   async create(demandeData) {
@@ -1898,6 +2048,7 @@ export const comptabiliteService = {
   }
 },
 
+
   // Rapport comptable avec calculs corrects
   async getRapportComptable(dateDebut, dateFin) {
     try {
@@ -2312,6 +2463,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
