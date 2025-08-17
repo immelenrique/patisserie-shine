@@ -85,56 +85,52 @@ export default function ProductionManager({ currentUser }) {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-    setError('');
-    
-    try {
-      const result = await productionService.createProduction({
-        ...formData,
-        quantite: parseFloat(formData.quantite),
-        prix_vente: formData.destination === 'Boutique' && formData.prix_vente ? parseFloat(formData.prix_vente) : null
-      });
+  e.preventDefault();
+  setSubmitting(true);
+  setError('');
+  
+  try {
+    // NE PLUS envoyer prix_vente, laisser la logique backend récupérer le prix de la recette
+    const result = await productionService.createProduction({
+      produit: formData.produit,
+      quantite: parseFloat(formData.quantite),
+      destination: formData.destination,
+      date_production: formData.date_production
+      // ❌ Supprimé: prix_vente: formData.prix_vente 
+    });
 
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-
-      let message = `✅ Production créée avec succès !\n\n${result.production?.message || ''}`;
-      
-      if (formData.destination === 'Boutique') {
-        if (formData.prix_vente) {
-          message += `\n\n🏪 Produit ajouté au stock boutique avec prix de vente: ${utils.formatCFA(parseFloat(formData.prix_vente))}`;
-        } else {
-          message += `\n\n⚠️ ATTENTION: Le produit a été ajouté au stock boutique mais SANS prix de vente.\nIl ne sera pas disponible en caisse tant que le prix n'est pas défini dans l'onglet "Prix Vente".`;
-        }
-      } else {
-        message += `\n\n📦 Produit stocké pour: ${formData.destination}`;
-      }
-      
-      alert(message);
-
-      // Réinitialiser le formulaire
-      setShowAddModal(false);
-      setFormData({
-        produit: '',
-        quantite: '',
-        destination: 'Boutique',
-        date_production: new Date().toISOString().split('T')[0],
-        prix_vente: ''
-      });
-      setRecetteInfo(null);
-      
-      // Recharger les données
-      loadData();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSubmitting(false);
+    if (result.error) {
+      setError(result.error);
+      return;
     }
-  };
 
+    let message = `✅ Production créée avec succès !\n\n${result.production?.message || ''}`;
+    
+    if (formData.destination === 'Boutique') {
+      message += `\n\n🏪 Produit ajouté au stock boutique avec le prix défini dans la recette`;
+    } else {
+      message += `\n\n📦 Produit stocké pour: ${formData.destination}`;
+    }
+    
+    alert(message);
+
+    // Réinitialiser le formulaire SANS le champ prix_vente
+    setShowAddModal(false);
+    setFormData({
+      produit: '',
+      quantite: '',
+      destination: 'Boutique',
+      date_production: new Date().toISOString().split('T')[0]
+    });
+    setRecetteInfo(null);
+    
+    loadData();
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setSubmitting(false);
+  }
+};
   const calculatedStats = {
     totalProductions: productions.length,
     productionsJour: productions.filter(p => p.date_production === new Date().toISOString().split('T')[0]).length,
