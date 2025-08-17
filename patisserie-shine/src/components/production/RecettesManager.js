@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Plus, ChefHat, Calculator, Trash2, Package, Copy } from 'lucide-react';
+import { Plus, ChefHat, Calculator, Trash2, Package, Copy, DollarSign } from 'lucide-react';
 import { Card, Modal } from '../ui';
 import { recetteService, productService, utils } from '../../lib/supabase';
 
@@ -18,10 +18,13 @@ export default function RecettesManager({ currentUser }) {
     quantite: ''
   });
   const [besoins, setBesoins] = useState([]);
+  
+  // Nouveau state pour le prix de vente
+  const [prixVenteRecette, setPrixVenteRecette] = useState('');
+  const [definirPrixVente, setDefinirPrixVente] = useState(false);
 
   useEffect(() => {
     loadData();
-    // Ajouter un premier ingrédient par défaut
     ajouterIngredient();
   }, []);
 
@@ -51,7 +54,6 @@ export default function RecettesManager({ currentUser }) {
     }
   };
 
-  // Ajouter un ingrédient à la liste temporaire
   const ajouterIngredient = () => {
     setIngredients([...ingredients, {
       id: Date.now(),
@@ -60,7 +62,6 @@ export default function RecettesManager({ currentUser }) {
     }]);
   };
 
-  // Ajouter plusieurs ingrédients d'un coup
   const ajouterPlusieursProduits = () => {
     const nouveauxIngredients = [];
     for (let i = 0; i < 3; i++) {
@@ -73,38 +74,61 @@ export default function RecettesManager({ currentUser }) {
     setIngredients([...ingredients, ...nouveauxIngredients]);
   };
 
-  // Supprimer un ingrédient de la liste
   const supprimerIngredient = (id) => {
     setIngredients(ingredients.filter(ing => ing.id !== id));
   };
 
-  // Mettre à jour un ingrédient
   const updateIngredient = (id, field, value) => {
     setIngredients(ingredients.map(ing => 
       ing.id === id ? { ...ing, [field]: value } : ing
     ));
   };
 
-  // Dupliquer un ingrédient
   const dupliquerIngredient = (id) => {
     const ingredient = ingredients.find(ing => ing.id === id);
     if (ingredient) {
       setIngredients([...ingredients, {
         ...ingredient,
         id: Date.now(),
-        quantite_necessaire: '' // Reset la quantité
+        quantite_necessaire: ''
       }]);
     }
   };
 
-  // Sauvegarder la recette complète
+  // Calculer le coût total de la recette
+  const calculerCoutRecette = () => {
+    const ingredientsValides = getIngredientsValides();
+    return ingredientsValides.reduce((sum, ing) => {
+      const produit = products.find(p => p.id === parseInt(ing.produit_ingredient_id));
+      if (produit && produit.prix_achat && produit.quantite) {
+        const coutUnitaire = produit.prix_achat / produit.quantite;
+        return sum + (coutUnitaire * parseFloat(ing.quantite_necessaire));
+      }
+      return sum;
+    }, 0);
+  };
+
+  // Calculer la marge si prix de vente défini
+  const calculerMargeRecette = () => {
+    if (!prixVenteRecette) return { marge: 0, pourcentage: 0 };
+    
+    const coutTotal = calculerCoutRecette();
+    const prixVente = parseFloat(prixVenteRecette);
+    const marge = prixVente - coutTotal;
+    const pourcentageMarge = coutTotal > 0 ? (marge / coutTotal) * 100 : 0;
+    
+    return {
+      marge: marge,
+      pourcentage: pourcentageMarge
+    };
+  };
+
   const handleSaveRecette = async () => {
     if (!selectedProduit || ingredients.length === 0) {
       alert('Veuillez sélectionner un produit et ajouter au moins un ingrédient');
       return;
     }
 
-    // Vérifier que tous les ingrédients ont des données
     const ingredientsValides = ingredients.filter(ing => 
       ing.produit_ingredient_id && ing.quantite_necessaire && parseFloat(ing.quantite_necessaire) > 0
     );
@@ -128,14 +152,44 @@ export default function RecettesManager({ currentUser }) {
         }
       }
 
+      // Si prix de vente défini, l'enregistrer
+      if (definirPrixVente && prixVenteRecette) {
+        try {
+          // Créer un ID temporaire pour le produit recette
+          const produitRecetteId = `recette_${selectedProduit.toLowerCase().replace(/\s+/g, '_')}`;
+          
+          const { success, error: prixError } = await productService.definirPrixVenteRecette(
+            selectedProduit,
+            parseFloat(prixVenteRecette)
+          );
+
+          if (prixError) {
+            console.warn('Erreur définition prix vente:', prixError);
+          } else {
+            console.log('Prix de vente défini pour la recette:', selectedProduit);
+          }
+        } catch (prixErr) {
+          console.warn('Erreur prix vente recette:', prixErr);
+        }
+      }
+
       // Recharger les données et fermer le modal
       await loadData();
       setShowAddModal(false);
       setSelectedProduit('');
       setIngredients([]);
-      // Re-ajouter un ingrédient par défaut pour la prochaine fois
+      setPrixVenteRecette('');
+      setDefinirPrixVente(false);
       setTimeout(() => ajouterIngredient(), 100);
-      alert(`Recette créée avec succès ! ${ingredientsValides.length} ingrédient(s) ajouté(s).`);
+      
+      let message = `Recette créée avec succès ! ${ingredientsValides.length} ingrédient(s) ajouté(s).`;
+      if (definirPrixVente && prixVenteRecette) {
+        message += `\n\nPrix de vente défini: ${utils.formatCFA(parseFloat(prixVenteRecette))}`;
+        const marge = calculerMargeRecette();
+        message += `\nMarge: ${utils.formatCFA(marge.marge)} (${Math.round(marge.pourcentage)}%)`;
+      }
+      
+      alert(message);
     } catch (err) {
       console.error('Erreur:', err);
       alert('Erreur lors de la création de la recette');
@@ -170,7 +224,6 @@ export default function RecettesManager({ currentUser }) {
     return acc;
   }, {});
 
-  // Obtenir les ingrédients valides (avec données remplies)
   const getIngredientsValides = () => {
     return ingredients.filter(ing => 
       ing.produit_ingredient_id && ing.quantite_necessaire && parseFloat(ing.quantite_necessaire) > 0
@@ -315,6 +368,8 @@ export default function RecettesManager({ currentUser }) {
           setShowAddModal(false);
           setSelectedProduit('');
           setIngredients([]);
+          setPrixVenteRecette('');
+          setDefinirPrixVente(false);
           setTimeout(() => ajouterIngredient(), 100);
         }} 
         title="Créer une Nouvelle Recette" 
@@ -436,7 +491,6 @@ export default function RecettesManager({ currentUser }) {
                         </button>
                       </div>
                       
-                      {/* Affichage des infos produit sélectionné */}
                       {produitSelectionne && (
                         <div className="md:col-span-4 mt-2 pt-2 border-t border-gray-300">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-gray-600">
@@ -470,16 +524,77 @@ export default function RecettesManager({ currentUser }) {
                   <span>Total ingrédients: {ingredients.length}</span>
                   <span className="font-medium text-blue-800">
                     Valides: {getIngredientsValides().length} | 
-                    Coût estimé: {utils.formatCFA(
-                      getIngredientsValides().reduce((sum, ing) => {
-                        const produit = products.find(p => p.id === parseInt(ing.produit_ingredient_id));
-                        if (produit && ing.quantite_necessaire) {
-                          return sum + ((parseFloat(ing.quantite_necessaire) / produit.quantite) * produit.prix_achat);
-                        }
-                        return sum;
-                      }, 0)
-                    )}
+                    Coût estimé: {utils.formatCFA(calculerCoutRecette())}
                   </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Nouvelle section: Prix de vente */}
+          <div className="border-t pt-4">
+            <div className="flex items-center space-x-3 mb-4">
+              <input
+                type="checkbox"
+                id="definir_prix_vente"
+                checked={definirPrixVente}
+                onChange={(e) => {
+                  setDefinirPrixVente(e.target.checked);
+                  if (!e.target.checked) setPrixVenteRecette('');
+                }}
+                className="w-4 h-4 text-orange-600 bg-gray-100 border-gray-300 rounded focus:ring-orange-500"
+              />
+              <label htmlFor="definir_prix_vente" className="flex items-center text-sm font-medium text-gray-700">
+                <DollarSign className="w-4 h-4 mr-2 text-orange-600" />
+                Définir le prix de vente pour ce produit
+              </label>
+            </div>
+
+            {definirPrixVente && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-orange-700 mb-2">
+                      Prix de vente unitaire (CFA) *
+                    </label>
+                    <input
+                      type="number"
+                      step="25"
+                      min="0"
+                      value={prixVenteRecette}
+                      onChange={(e) => setPrixVenteRecette(e.target.value)}
+                      className="w-full px-3 py-2 border border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      placeholder="2500"
+                      required={definirPrixVente}
+                    />
+                  </div>
+
+                  {prixVenteRecette && getIngredientsValides().length > 0 && (
+                    <div className="self-end">
+                      <div className="bg-white border border-orange-300 rounded-lg p-3">
+                        <h4 className="text-sm font-medium text-orange-700 mb-2">Marge calculée</h4>
+                        <div className="text-xs space-y-1">
+                          <div>Coût de production: {utils.formatCFA(calculerCoutRecette())}</div>
+                          <div>Prix de vente: {utils.formatCFA(parseFloat(prixVenteRecette))}</div>
+                          <div className="border-t pt-1">
+                            <div className={`font-semibold ${calculerMargeRecette().marge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              Marge: {calculerMargeRecette().marge >= 0 ? '+' : ''}{utils.formatCFA(calculerMargeRecette().marge)}
+                            </div>
+                            <div className={`text-xs ${calculerMargeRecette().pourcentage >= 20 ? 'text-green-600' : 'text-yellow-600'}`}>
+                              {Math.round(calculerMargeRecette().pourcentage)}% de marge
+                              {calculerMargeRecette().pourcentage < 20 && ' (⚠️ Faible)'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 text-xs text-orange-700">
+                  ✓ Le prix sera automatiquement disponible pour les productions destinées à la boutique
+                  <br />
+                  ✓ Produits vendables directement en caisse après production
                 </div>
               </div>
             )}
@@ -492,17 +607,18 @@ export default function RecettesManager({ currentUser }) {
               <li>• Utilisez le bouton "Dupliquer" pour des ingrédients similaires</li>
               <li>• Le coût est calculé automatiquement selon vos prix d'achat</li>
               <li>• Seuls les ingrédients valides (complets) seront sauvegardés</li>
-              <li>• Vous pouvez modifier/compléter une recette existante</li>
+              <li>• {definirPrixVente ? '✓ Prix de vente défini pour vente directe' : '📝 Définissez le prix de vente pour vendre en boutique'}</li>
             </ul>
           </div>
 
           <div className="flex space-x-4 pt-4">
             <button 
               onClick={handleSaveRecette}
-              disabled={!selectedProduit || getIngredientsValides().length === 0}
+              disabled={!selectedProduit || getIngredientsValides().length === 0 || (definirPrixVente && !prixVenteRecette)}
               className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-3 px-4 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
             >
               Créer la recette ({getIngredientsValides().length} ingrédient{getIngredientsValides().length > 1 ? 's' : ''})
+              {definirPrixVente && prixVenteRecette && ` + Prix ${utils.formatCFA(parseFloat(prixVenteRecette))}`}
             </button>
             <button 
               type="button" 
@@ -510,6 +626,8 @@ export default function RecettesManager({ currentUser }) {
                 setShowAddModal(false);
                 setSelectedProduit('');
                 setIngredients([]);
+                setPrixVenteRecette('');
+                setDefinirPrixVente(false);
                 setTimeout(() => ajouterIngredient(), 100);
               }}
               className="flex-1 bg-gray-200 text-gray-800 py-3 px-4 rounded-lg hover:bg-gray-300 transition-all duration-200 font-medium"
@@ -520,7 +638,7 @@ export default function RecettesManager({ currentUser }) {
         </div>
       </Modal>
 
-      {/* Modal Calcul Besoins */}
+      {/* Modal Calcul Besoins - Inchangé */}
       <Modal 
         isOpen={showCalculModal} 
         onClose={() => {
