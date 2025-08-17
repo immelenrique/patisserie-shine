@@ -124,77 +124,118 @@ export default function RecettesManager({ currentUser }) {
   };
 
   const handleSaveRecette = async () => {
-    if (!selectedProduit || ingredients.length === 0) {
-      alert('Veuillez sélectionner un produit et ajouter au moins un ingrédient');
+  if (!selectedProduit || ingredients.length === 0) {
+    alert('Veuillez sélectionner un produit et ajouter au moins un ingrédient');
+    return;
+  }
+
+  const ingredientsValides = ingredients.filter(ing => 
+    ing.produit_ingredient_id && ing.quantite_necessaire && parseFloat(ing.quantite_necessaire) > 0
+  );
+
+  if (ingredientsValides.length === 0) {
+    alert('Veuillez remplir au moins un ingrédient avec une quantité valide');
+    return;
+  }
+
+  try {
+    // 🔧 VÉRIFIER D'ABORD SI LA RECETTE EXISTE DÉJÀ
+    const { data: recetteExistante } = await supabase
+      .from('recettes')
+      .select('nom_produit')
+      .eq('nom_produit', selectedProduit)
+      .limit(1);
+
+    if (recetteExistante && recetteExistante.length > 0) {
+      const confirmer = confirm(
+        `Une recette existe déjà pour "${selectedProduit}".\n\n` +
+        `Voulez-vous :\n` +
+        `• OK = Remplacer la recette existante\n` +
+        `• Annuler = Garder l'existante`
+      );
+      
+      if (!confirmer) {
+        return; // Annuler la création
+      }
+      
+      // Supprimer l'ancienne recette
+      await supabase
+        .from('recettes')
+        .delete()
+        .eq('nom_produit', selectedProduit);
+      
+      console.log('🗑️ Ancienne recette supprimée pour:', selectedProduit);
+    }
+
+    // Sauvegarder chaque ingrédient valide
+    const resultats = [];
+    for (const ingredient of ingredientsValides) {
+      const { data, error } = await recetteService.create({
+        nom_produit: selectedProduit,
+        produit_ingredient_id: parseInt(ingredient.produit_ingredient_id),
+        quantite_necessaire: parseFloat(ingredient.quantite_necessaire)
+      });
+
+      if (error) {
+        console.error('Erreur ajout ingrédient:', error);
+        resultats.push({ success: false, error });
+      } else {
+        resultats.push({ success: true, data });
+      }
+    }
+
+    // Vérifier les résultats
+    const echecs = resultats.filter(r => !r.success);
+    if (echecs.length > 0) {
+      alert(`Erreur lors de l'ajout de ${echecs.length} ingrédient(s). Vérifiez la console.`);
       return;
     }
 
-    const ingredientsValides = ingredients.filter(ing => 
-      ing.produit_ingredient_id && ing.quantite_necessaire && parseFloat(ing.quantite_necessaire) > 0
-    );
+    // Si prix de vente défini, l'enregistrer dans prix_vente_recettes
+    if (definirPrixVente && prixVenteRecette) {
+      try {
+        const { error: prixError } = await supabase
+          .from('prix_vente_recettes')
+          .upsert({
+            nom_produit: selectedProduit,
+            prix_vente: parseFloat(prixVenteRecette),
+            defini_par: user.id,
+            actif: true,
+            updated_at: new Date().toISOString()
+          });
 
-    if (ingredientsValides.length === 0) {
-      alert('Veuillez remplir au moins un ingrédient avec une quantité valide');
-      return;
+        if (prixError) {
+          console.warn('Erreur sauvegarde prix recette:', prixError);
+        } else {
+          console.log('✅ Prix de vente recette sauvegardé:', selectedProduit);
+        }
+      } catch (prixErr) {
+        console.warn('Exception prix vente recette:', prixErr);
+      }
     }
 
-    try {
-      // Sauvegarder chaque ingrédient valide
-      for (const ingredient of ingredientsValides) {
-        const { error } = await recetteService.create({
-          nom_produit: selectedProduit,
-          produit_ingredient_id: parseInt(ingredient.produit_ingredient_id),
-          quantite_necessaire: parseFloat(ingredient.quantite_necessaire)
-        });
-
-        if (error) {
-          console.error('Erreur ajout ingrédient:', error);
-        }
-      }
-
-      // Si prix de vente défini, l'enregistrer
-      if (definirPrixVente && prixVenteRecette) {
-        try {
-          // Créer un ID temporaire pour le produit recette
-          const produitRecetteId = `recette_${selectedProduit.toLowerCase().replace(/\s+/g, '_')}`;
-          
-          const { success, error: prixError } = await productService.definirPrixVenteRecette(
-            selectedProduit,
-            parseFloat(prixVenteRecette)
-          );
-
-          if (prixError) {
-            console.warn('Erreur définition prix vente:', prixError);
-          } else {
-            console.log('Prix de vente défini pour la recette:', selectedProduit);
-          }
-        } catch (prixErr) {
-          console.warn('Erreur prix vente recette:', prixErr);
-        }
-      }
-
-      // Recharger les données et fermer le modal
-      await loadData();
-      setShowAddModal(false);
-      setSelectedProduit('');
-      setIngredients([]);
-      setPrixVenteRecette('');
-      setDefinirPrixVente(false);
-      setTimeout(() => ajouterIngredient(), 100);
-      
-      let message = `Recette créée avec succès ! ${ingredientsValides.length} ingrédient(s) ajouté(s).`;
-      if (definirPrixVente && prixVenteRecette) {
-        message += `\n\nPrix de vente défini: ${utils.formatCFA(parseFloat(prixVenteRecette))}`;
-        const marge = calculerMargeRecette();
-        message += `\nMarge: ${utils.formatCFA(marge.marge)} (${Math.round(marge.pourcentage)}%)`;
-      }
-      
-      alert(message);
-    } catch (err) {
-      console.error('Erreur:', err);
-      alert('Erreur lors de la création de la recette');
+    // Recharger les données et fermer le modal
+    await loadData();
+    setShowAddModal(false);
+    setSelectedProduit('');
+    setIngredients([]);
+    setPrixVenteRecette('');
+    setDefinirPrixVente(false);
+    setTimeout(() => ajouterIngredient(), 100);
+    
+    let message = `Recette créée avec succès ! ${ingredientsValides.length} ingrédient(s) ajouté(s).`;
+    if (definirPrixVente && prixVenteRecette) {
+      message += `\n\nPrix de vente défini: ${utils.formatCFA(parseFloat(prixVenteRecette))}`;
+      const marge = calculerMargeRecette();
+      message += `\nMarge: ${utils.formatCFA(marge.marge)} (${Math.round(marge.pourcentage)}%)`;
     }
-  };
+    
+    alert(message);
+  } catch (err) {
+    console.error('Erreur générale:', err);
+    alert('Erreur lors de la création de la recette: ' + err.message);
+  }
+};
 
   const handleCalculBesoins = async (e) => {
     e.preventDefault();
