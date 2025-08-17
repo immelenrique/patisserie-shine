@@ -1793,77 +1793,65 @@ export const stockAtelierService = {
 // ===================== SERVICES STOCK BOUTIQUE =====================
 export const stockBoutiqueService = {
   // Récupérer l'état du stock boutique (VERSION FINALE CORRIGÉE)
-  async getStockBoutique() {
-    try {
-      // Essayer d'abord la vue finale
-      const { data, error } = await supabase
-        .from('vue_stock_boutique_final')
-        .select('*')
-        .order('stock_created_at', { ascending: false })
-      
-      if (error) {
-        console.warn('Vue finale échouée, essai de la vue simple:', error)
+ async getStockBoutique() {
+  try {
+    const { data, error } = await supabase
+      .from('stock_boutique')
+      .select(`
+        id,
+        produit_id,
+        nom_produit,
+        quantite_disponible,
+        quantite_vendue,
+        prix_vente,
+        created_at,
+        updated_at
+      `)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      return { stock: [], error: error.message };
+    }
+    
+    // 🔧 CORRIGER LES PRIX EN TEMPS RÉEL
+    const stockCorrige = await Promise.all(
+      (data || []).map(async (item) => {
+        let prixCorrect = item.prix_vente || 0;
         
-        // Fallback vers la vue simple
-        const { data: simpleData, error: simpleError } = await supabase
-          .from('vue_stock_boutique_simple')
-          .select('*')
-          .order('created_at', { ascending: false })
-        
-        if (simpleError) {
-          console.warn('Vue simple échouée, requête directe:', simpleError)
+        // Si pas de prix ou prix à 0, chercher le prix correct
+        if (!prixCorrect || prixCorrect <= 0) {
+          const { data: prixData } = await supabase.rpc('get_prix_vente_produit', {
+            nom_produit_param: item.nom_produit
+          });
           
-          // Fallback final : requête directe
-          return await this.getStockBoutiqueDirecte()
+          prixCorrect = prixData || 0;
+          
+          // Mettre à jour le stock boutique avec le prix correct
+          if (prixCorrect > 0) {
+            await supabase
+              .from('stock_boutique')
+              .update({ prix_vente: prixCorrect })
+              .eq('id', item.id);
+          }
         }
         
-        // Formater les données de la vue simple
-        const stockFormate = (simpleData || []).map(item => ({
-          id: item.id,
-          produit_id: item.produit_id,
-          nom_produit: `Produit ${item.produit_id || 'Inconnu'}`,
-          unite: 'unité',
-          quantite_disponible: item.quantite_disponible || 0,
-          quantite_vendue: item.quantite_vendue || 0,
-          stock_reel: item.stock_reel,
-          prix_vente: item.prix_vente || 0,
-          valeur_stock: item.stock_reel * (item.prix_vente || 0),
-          statut_stock: item.statut_stock_calcule || 'normal',
-          prix_defini: (item.prix_vente || 0) > 0,
-          created_at: item.created_at,
-          updated_at: item.updated_at,
-          derniere_maj: item.updated_at
-        }))
+        const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0);
         
-        return { stock: stockFormate, error: null }
-      }
-      
-      // Formater les données de la vue finale
-      const stockFormate = (data || []).map(item => ({
-        id: item.stock_id || item.id,
-        produit_id: item.produit_id,
-        nom_produit: item.nom_produit,
-        unite: item.unite_label,
-        quantite_disponible: item.quantite_disponible || 0,
-        quantite_vendue: item.quantite_vendue || 0,
-        stock_reel: item.stock_reel,
-        prix_vente: item.prix_vente || 0,
-        valeur_stock: item.valeur_stock || 0,
-        statut_stock: item.statut_stock || 'normal',
-        prix_defini: item.prix_defini || false,
-        created_at: item.stock_created_at || item.created_at,
-        updated_at: item.stock_updated_at || item.updated_at,
-        derniere_maj: item.stock_updated_at || item.updated_at
-      }))
-      
-      return { stock: stockFormate, error: null }
-    } catch (error) {
-      console.error('Erreur dans getStockBoutique:', error)
-      
-      // Fallback final en cas d'erreur totale
-      return await this.getStockBoutiqueDirecte()
-    }
-  },
+        return {
+          ...item,
+          stock_reel: stockReel,
+          prix_vente: prixCorrect,
+          valeur_stock: stockReel * prixCorrect,
+          prix_defini: prixCorrect > 0
+        };
+      })
+    );
+    
+    return { stock: stockCorrige, error: null };
+  } catch (error) {
+    return { stock: [], error: error.message };
+  }
+},
   async synchroniserPrixRecettes() {
   try {
     console.log('🔄 Synchronisation forcée des prix recettes...');
@@ -3026,6 +3014,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
