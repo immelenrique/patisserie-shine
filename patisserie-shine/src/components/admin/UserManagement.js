@@ -398,7 +398,7 @@ export default function UserManagement({ currentUser }) {
               value={formData.telephone}
               onChange={(e) => setFormData({...formData, telephone: e.target.value})}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              placeholder="Ex: +225 01 02 03 04 05"
+              placeholder="Ex: +226 70 00 01 02 03"
             />
           </div>
 
