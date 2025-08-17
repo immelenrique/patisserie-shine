@@ -124,6 +124,30 @@ export default function RecettesManager({ currentUser }) {
   };
 
   const handleSaveRecette = async () => {
+  // Si prix de vente défini, l'enregistrer dans prix_vente_recettes
+if (definirPrixVente && prixVenteRecette) {
+  try {
+    console.log('💰 Sauvegarde prix recette:', selectedProduit, prixVenteRecette);
+    
+    const { error: prixError } = await supabase
+      .from('prix_vente_recettes')
+      .upsert({
+        nom_produit: selectedProduit,  // ✅ Correspond au produit de la recette
+        prix_vente: parseFloat(prixVenteRecette),
+        defini_par: user.id,
+        actif: true,
+        updated_at: new Date().toISOString()
+      });
+
+    if (prixError) {
+      console.warn('Erreur sauvegarde prix recette:', prixError);
+    } else {
+      console.log('✅ Prix de vente recette sauvegardé:', selectedProduit, prixVenteRecette);
+    }
+  } catch (prixErr) {
+    console.warn('Exception prix vente recette:', prixErr);
+  }
+}
   if (!selectedProduit || ingredients.length === 0) {
     alert('Veuillez sélectionner un produit et ajouter au moins un ingrédient');
     return;
