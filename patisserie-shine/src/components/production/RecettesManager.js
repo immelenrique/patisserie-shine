@@ -123,31 +123,9 @@ export default function RecettesManager({ currentUser }) {
     };
   };
 
-  const handleSaveRecette = async () => {
-  // Si prix de vente défini, l'enregistrer dans prix_vente_recettes
-if (definirPrixVente && prixVenteRecette) {
-  try {
-    console.log('💰 Sauvegarde prix recette:', selectedProduit, prixVenteRecette);
-    
-    const { error: prixError } = await supabase
-      .from('prix_vente_recettes')
-      .upsert({
-        nom_produit: selectedProduit,  // ✅ Correspond au produit de la recette
-        prix_vente: parseFloat(prixVenteRecette),
-        defini_par: user.id,
-        actif: true,
-        updated_at: new Date().toISOString()
-      });
+  // 🔧 CORRECTION SYNTAXE - Remplacer ENTIÈREMENT handleSaveRecette dans RecettesManager.js
 
-    if (prixError) {
-      console.warn('Erreur sauvegarde prix recette:', prixError);
-    } else {
-      console.log('✅ Prix de vente recette sauvegardé:', selectedProduit, prixVenteRecette);
-    }
-  } catch (prixErr) {
-    console.warn('Exception prix vente recette:', prixErr);
-  }
-}
+const handleSaveRecette = async () => {
   if (!selectedProduit || ingredients.length === 0) {
     alert('Veuillez sélectionner un produit et ajouter au moins un ingrédient');
     return;
@@ -163,7 +141,15 @@ if (definirPrixVente && prixVenteRecette) {
   }
 
   try {
-    // 🔧 VÉRIFIER D'ABORD SI LA RECETTE EXISTE DÉJÀ
+    // Obtenir l'utilisateur actuel
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      alert('Utilisateur non connecté');
+      return;
+    }
+
+    // Vérifier si la recette existe déjà
     const { data: recetteExistante } = await supabase
       .from('recettes')
       .select('nom_produit')
@@ -179,7 +165,7 @@ if (definirPrixVente && prixVenteRecette) {
       );
       
       if (!confirmer) {
-        return; // Annuler la création
+        return;
       }
       
       // Supprimer l'ancienne recette
@@ -217,61 +203,37 @@ if (definirPrixVente && prixVenteRecette) {
 
     // Si prix de vente défini, l'enregistrer dans prix_vente_recettes
     if (definirPrixVente && prixVenteRecette && parseFloat(prixVenteRecette) > 0) {
-  console.log('💰 DÉBUT sauvegarde prix recette...');
-  console.log('📊 Données:', { selectedProduit, prixVenteRecette, userId: user.id });
-
-  try {
-    // 🔧 SUPPRESSION DE L'ANCIEN PRIX (si existe)
-    const { error: deleteError } = await supabase
-      .from('prix_vente_recettes')
-      .delete()
-      .eq('nom_produit', selectedProduit);
-
-    if (deleteError) {
-      console.warn('⚠️ Erreur suppression ancien prix:', deleteError);
-    }
-
-    // 🔧 INSERTION DU NOUVEAU PRIX
-    const { data: insertData, error: insertError } = await supabase
-      .from('prix_vente_recettes')
-      .insert({
-        nom_produit: selectedProduit,
-        prix_vente: parseFloat(prixVenteRecette),
-        defini_par: user.id,
-        actif: true
-      })
-      .select();
-
-    if (insertError) {
-      console.error('❌ Erreur insertion prix:', insertError);
-      alert('⚠️ Recette créée mais erreur prix: ' + insertError.message);
-    } else {
-      console.log('✅ Prix inséré:', insertData);
+      console.log('💰 Sauvegarde prix recette:', selectedProduit, prixVenteRecette);
       
-      // 🔧 VÉRIFICATION IMMÉDIATE
-      const { data: verifData, error: verifError } = await supabase
-        .from('prix_vente_recettes')
-        .select('*')
-        .eq('nom_produit', selectedProduit)
-        .eq('actif', true);
+      try {
+        // Supprimer l'ancien prix si existe
+        await supabase
+          .from('prix_vente_recettes')
+          .delete()
+          .eq('nom_produit', selectedProduit);
 
-      if (verifError) {
-        console.error('❌ Erreur vérification:', verifError);
-      } else {
-        console.log('🔍 Vérification OK:', verifData);
-        if (verifData && verifData.length > 0) {
-          console.log('✅ PRIX CONFIRMÉ EN BASE !');
+        // Insérer le nouveau prix
+        const { data: prixData, error: prixError } = await supabase
+          .from('prix_vente_recettes')
+          .insert({
+            nom_produit: selectedProduit,
+            prix_vente: parseFloat(prixVenteRecette),
+            defini_par: user.id,
+            actif: true
+          })
+          .select();
+
+        if (prixError) {
+          console.error('❌ Erreur sauvegarde prix:', prixError);
+          alert('Recette créée mais erreur prix: ' + prixError.message);
         } else {
-          console.error('❌ Prix non trouvé après insertion !');
+          console.log('✅ Prix de vente recette sauvegardé:', prixData);
         }
+      } catch (prixErr) {
+        console.error('❌ Exception prix vente recette:', prixErr);
+        alert('Recette créée mais exception prix: ' + prixErr.message);
       }
     }
-  } catch (err) {
-    console.error('❌ Exception sauvegarde prix:', err);
-    alert('⚠️ Recette créée mais exception prix: ' + err.message);
-  }
-} else {
-  console.log('ℹ️ Pas de prix à sauvegarder');
 
     // Recharger les données et fermer le modal
     await loadData();
@@ -282,6 +244,7 @@ if (definirPrixVente && prixVenteRecette) {
     setDefinirPrixVente(false);
     setTimeout(() => ajouterIngredient(), 100);
     
+    // Message de succès
     let message = `Recette créée avec succès ! ${ingredientsValides.length} ingrédient(s) ajouté(s).`;
     if (definirPrixVente && prixVenteRecette) {
       message += `\n\nPrix de vente défini: ${utils.formatCFA(parseFloat(prixVenteRecette))}`;
@@ -290,30 +253,12 @@ if (definirPrixVente && prixVenteRecette) {
     }
     
     alert(message);
+
   } catch (err) {
     console.error('Erreur générale:', err);
     alert('Erreur lors de la création de la recette: ' + err.message);
   }
-}
-
-  const handleCalculBesoins = async (e) => {
-    e.preventDefault();
-    try {
-      const { besoins, error } = await recetteService.calculerStockNecessaire(
-        calculData.nom_produit,
-        parseFloat(calculData.quantite)
-      );
-
-      if (error) {
-        alert('Erreur lors du calcul: ' + error);
-      } else {
-        setBesoins(besoins);
-      }
-    } catch (err) {
-      console.error('Erreur:', err);
-      alert('Erreur lors du calcul');
-    }
-  };
+};
 
   // Grouper les recettes par produit
   const recettesGroupees = recettes.reduce((acc, recette) => {
