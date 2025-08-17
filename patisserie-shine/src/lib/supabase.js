@@ -1393,40 +1393,31 @@ export const productionService = {
       return { production: null, error: 'Utilisateur non connecté' }
     }
 
-    // Utiliser la fonction PostgreSQL modifiée qui :
-    // 1. Déduit les ingrédients du stock atelier
-    // 2. N'ajoute PAS au stock principal
-    // 3. Ajoute directement au stock boutique selon la destination
-    const { data, error } = await supabase.rpc('creer_production_nouvelle_logique', {
+    // 🔧 RÉCUPÉRER LE PRIX CORRECT
+    const { data: prixCorrect } = await supabase.rpc('get_prix_vente_produit', {
+      nom_produit_param: productionData.produit
+    });
+
+    if (productionData.destination === 'Boutique' && (!prixCorrect || prixCorrect <= 0)) {
+      return { 
+        production: null, 
+        error: `Aucun prix de vente défini pour "${productionData.produit}". Définissez d'abord le prix dans les recettes.` 
+      };
+    }
+
+    // Utiliser la fonction RPC avec le prix correct
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('creer_production_nouvelle_logique', {
       p_produit: productionData.produit,
       p_quantite: productionData.quantite,
       p_destination: productionData.destination || 'Boutique',
       p_date_production: productionData.date_production || new Date().toISOString().split('T')[0],
       p_producteur_id: user.id,
-      p_prix_vente: productionData.prix_vente || null
-    })
+      p_prix_vente: prixCorrect  // 🔧 PRIX CORRECT
+    });
     
-    if (error) {
-      console.error('Erreur RPC create production:', error)
-      return { production: null, error: error.message }
-    }
-
-    if (!data || !data.success) {
-      const errorMessage = data?.error || 'Erreur inconnue lors de la création'
-      console.error('Erreur création production:', errorMessage)
-      return { production: null, error: errorMessage }
-    }
-
-    return { 
-      production: {
-        id: data.production_id,
-        message: data.message
-      }, 
-      error: null 
-    }
+    // ... reste du code
   } catch (error) {
-    console.error('Erreur dans createProduction:', error)
-    return { production: null, error: error.message }
+    return { production: null, error: error.message };
   }
 },
 
@@ -3035,6 +3026,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
