@@ -599,13 +599,15 @@ async createWithPriceOption(productData) {
       return { product: null, error: 'Utilisateur non connecté' }
     }
 
-    // 1. Créer le produit dans le stock principal uniquement
+    console.log('🔧 Création produit avec données:', productData);
+
+    // 1. Créer le produit dans le stock principal
     const { data: produit, error: produitError } = await supabase
       .from('produits')
       .insert({
         nom: productData.nom,
         date_achat: productData.date_achat || new Date().toISOString().split('T')[0],
-        prix_achat: productData.prix_achat, // Prix unitaire calculé
+        prix_achat: productData.prix_achat, // Prix unitaire
         quantite: productData.quantite,
         quantite_restante: productData.quantite,
         unite_id: productData.unite_id,
@@ -618,16 +620,65 @@ async createWithPriceOption(productData) {
       .single()
     
     if (produitError) {
-      console.error('Erreur create produit:', produitError)
+      console.error('❌ Erreur create produit:', produitError)
       return { product: null, error: produitError.message }
     }
 
-    // 2. Enregistrer la dépense comptable avec le prix total
+    console.log('✅ Produit créé:', produit);
+
+    // 2. Si prix de vente défini, l'enregistrer IMMÉDIATEMENT
+    if (productData.definir_prix_vente && productData.prix_vente) {
+      console.log('💰 Sauvegarde prix de vente:', productData.prix_vente);
+      
+      try {
+        // CORRECTION CRITIQUE: Calculer correctement la marge
+        const prixAchatUnitaire = productData.prix_achat; // Déjà unitaire
+        const prixVente = parseFloat(productData.prix_vente);
+        const marge = prixVente - prixAchatUnitaire;
+        const pourcentageMarge = prixAchatUnitaire > 0 ? (marge / prixAchatUnitaire) * 100 : 0;
+
+        console.log('📊 Calculs marge:', {
+          prixAchatUnitaire,
+          prixVente,
+          marge,
+          pourcentageMarge
+        });
+
+        const { data: prixData, error: prixError } = await supabase
+          .from('prix_vente_produits')
+          .insert({
+            produit_id: produit.id,
+            prix: prixVente,  // IMPORTANT: utiliser 'prix' pas 'prix_vente'
+            marge_pourcentage: Math.round(pourcentageMarge * 100) / 100,
+            actif: true
+          })
+          .select()
+        
+        if (prixError) {
+          console.error('❌ Erreur sauvegarde prix:', prixError);
+          console.warn('Produit créé mais sans prix de vente');
+        } else {
+          console.log('✅ Prix de vente sauvegardé:', prixData);
+          
+          // VÉRIFICATION IMMÉDIATE
+          const { data: verification } = await supabase
+            .from('prix_vente_produits')
+            .select('*')
+            .eq('produit_id', produit.id);
+          
+          console.log('🔍 Vérification immédiate prix:', verification);
+        }
+      } catch (prixErr) {
+        console.error('❌ Exception prix vente:', prixErr);
+      }
+    }
+
+    // 3. Enregistrer la dépense comptable
     try {
       const depenseResult = await comptabiliteService.enregistrerDepenseStock(
         { 
           ...productData, 
-          prix_achat: productData.prix_achat_total, // Utiliser le prix total pour la comptabilité
+          prix_achat: productData.prix_achat_total || (productData.prix_achat * productData.quantite),
           unite: produit.unite 
         }, 
         user.id
@@ -643,28 +694,9 @@ async createWithPriceOption(productData) {
       console.warn('Erreur enregistrement dépense:', depenseError)
     }
 
-    // 3. Si prix de vente défini, l'enregistrer pour futures demandes
-    if (productData.definir_prix_vente && productData.prix_vente) {
-      try {
-        await supabase
-          .from('prix_vente_produits')
-          .upsert({
-            produit_id: produit.id,
-            prix: productData.prix_vente,
-            marge_pourcentage: Math.round(((productData.prix_vente - productData.prix_achat) / productData.prix_achat) * 10000) / 100,
-            actif: true,
-            defini_par: user.id
-          })
-        
-        console.log(`Prix de vente défini pour ${produit.nom}: ${utils.formatCFA(productData.prix_vente)}`)
-      } catch (prixError) {
-        console.warn('Erreur définition prix vente:', prixError)
-      }
-    }
-
     return { product: produit, error: null }
   } catch (error) {
-    console.error('Erreur dans createWithPriceOption:', error)
+    console.error('❌ Erreur dans createWithPriceOption:', error)
     return { product: null, error: error.message }
   }
 },
@@ -2754,6 +2786,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
