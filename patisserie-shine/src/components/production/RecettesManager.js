@@ -294,7 +294,7 @@ if (definirPrixVente && prixVenteRecette) {
     console.error('Erreur générale:', err);
     alert('Erreur lors de la création de la recette: ' + err.message);
   }
-};
+}
 
   const handleCalculBesoins = async (e) => {
     e.preventDefault();
