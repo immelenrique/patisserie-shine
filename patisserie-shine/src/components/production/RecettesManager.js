@@ -216,27 +216,62 @@ if (definirPrixVente && prixVenteRecette) {
     }
 
     // Si prix de vente défini, l'enregistrer dans prix_vente_recettes
-    if (definirPrixVente && prixVenteRecette) {
-      try {
-        const { error: prixError } = await supabase
-          .from('prix_vente_recettes')
-          .upsert({
-            nom_produit: selectedProduit,
-            prix_vente: parseFloat(prixVenteRecette),
-            defini_par: user.id,
-            actif: true,
-            updated_at: new Date().toISOString()
-          });
+    if (definirPrixVente && prixVenteRecette && parseFloat(prixVenteRecette) > 0) {
+  console.log('💰 DÉBUT sauvegarde prix recette...');
+  console.log('📊 Données:', { selectedProduit, prixVenteRecette, userId: user.id });
 
-        if (prixError) {
-          console.warn('Erreur sauvegarde prix recette:', prixError);
+  try {
+    // 🔧 SUPPRESSION DE L'ANCIEN PRIX (si existe)
+    const { error: deleteError } = await supabase
+      .from('prix_vente_recettes')
+      .delete()
+      .eq('nom_produit', selectedProduit);
+
+    if (deleteError) {
+      console.warn('⚠️ Erreur suppression ancien prix:', deleteError);
+    }
+
+    // 🔧 INSERTION DU NOUVEAU PRIX
+    const { data: insertData, error: insertError } = await supabase
+      .from('prix_vente_recettes')
+      .insert({
+        nom_produit: selectedProduit,
+        prix_vente: parseFloat(prixVenteRecette),
+        defini_par: user.id,
+        actif: true
+      })
+      .select();
+
+    if (insertError) {
+      console.error('❌ Erreur insertion prix:', insertError);
+      alert('⚠️ Recette créée mais erreur prix: ' + insertError.message);
+    } else {
+      console.log('✅ Prix inséré:', insertData);
+      
+      // 🔧 VÉRIFICATION IMMÉDIATE
+      const { data: verifData, error: verifError } = await supabase
+        .from('prix_vente_recettes')
+        .select('*')
+        .eq('nom_produit', selectedProduit)
+        .eq('actif', true);
+
+      if (verifError) {
+        console.error('❌ Erreur vérification:', verifError);
+      } else {
+        console.log('🔍 Vérification OK:', verifData);
+        if (verifData && verifData.length > 0) {
+          console.log('✅ PRIX CONFIRMÉ EN BASE !');
         } else {
-          console.log('✅ Prix de vente recette sauvegardé:', selectedProduit);
+          console.error('❌ Prix non trouvé après insertion !');
         }
-      } catch (prixErr) {
-        console.warn('Exception prix vente recette:', prixErr);
       }
     }
+  } catch (err) {
+    console.error('❌ Exception sauvegarde prix:', err);
+    alert('⚠️ Recette créée mais exception prix: ' + err.message);
+  }
+} else {
+  console.log('ℹ️ Pas de prix à sauvegarder');
 
     // Recharger les données et fermer le modal
     await loadData();
