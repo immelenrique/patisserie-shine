@@ -1395,9 +1395,84 @@ export const stockAtelierService = {
 
 // ===================== SERVICES STOCK BOUTIQUE =====================
 export const stockBoutiqueService = {
-  // Récupérer l'état du stock boutique (correction requête)
+  // Récupérer l'état du stock boutique (VERSION FINALE CORRIGÉE)
   async getStockBoutique() {
     try {
+      // Essayer d'abord la vue finale
+      const { data, error } = await supabase
+        .from('vue_stock_boutique_final')
+        .select('*')
+        .order('stock_created_at', { ascending: false })
+      
+      if (error) {
+        console.warn('Vue finale échouée, essai de la vue simple:', error)
+        
+        // Fallback vers la vue simple
+        const { data: simpleData, error: simpleError } = await supabase
+          .from('vue_stock_boutique_simple')
+          .select('*')
+          .order('created_at', { ascending: false })
+        
+        if (simpleError) {
+          console.warn('Vue simple échouée, requête directe:', simpleError)
+          
+          // Fallback final : requête directe
+          return await this.getStockBoutiqueDirecte()
+        }
+        
+        // Formater les données de la vue simple
+        const stockFormate = (simpleData || []).map(item => ({
+          id: item.id,
+          produit_id: item.produit_id,
+          nom_produit: `Produit ${item.produit_id || 'Inconnu'}`,
+          unite: 'unité',
+          quantite_disponible: item.quantite_disponible || 0,
+          quantite_vendue: item.quantite_vendue || 0,
+          stock_reel: item.stock_reel,
+          prix_vente: item.prix_vente || 0,
+          valeur_stock: item.stock_reel * (item.prix_vente || 0),
+          statut_stock: item.statut_stock_calcule || 'normal',
+          prix_defini: (item.prix_vente || 0) > 0,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          derniere_maj: item.updated_at
+        }))
+        
+        return { stock: stockFormate, error: null }
+      }
+      
+      // Formater les données de la vue finale
+      const stockFormate = (data || []).map(item => ({
+        id: item.stock_id || item.id,
+        produit_id: item.produit_id,
+        nom_produit: item.nom_produit,
+        unite: item.unite_label,
+        quantite_disponible: item.quantite_disponible || 0,
+        quantite_vendue: item.quantite_vendue || 0,
+        stock_reel: item.stock_reel,
+        prix_vente: item.prix_vente || 0,
+        valeur_stock: item.valeur_stock || 0,
+        statut_stock: item.statut_stock || 'normal',
+        prix_defini: item.prix_defini || false,
+        created_at: item.stock_created_at || item.created_at,
+        updated_at: item.stock_updated_at || item.updated_at,
+        derniere_maj: item.stock_updated_at || item.updated_at
+      }))
+      
+      return { stock: stockFormate, error: null }
+    } catch (error) {
+      console.error('Erreur dans getStockBoutique:', error)
+      
+      // Fallback final en cas d'erreur totale
+      return await this.getStockBoutiqueDirecte()
+    }
+  },
+
+  // Méthode de fallback avec requête directe
+  async getStockBoutiqueDirecte() {
+    try {
+      console.log('🔄 Utilisation de la méthode directe pour stock boutique')
+      
       const { data, error } = await supabase
         .from('stock_boutique')
         .select(`
@@ -1406,37 +1481,43 @@ export const stockBoutiqueService = {
           quantite_disponible,
           quantite_vendue,
           prix_vente,
+          transfere_par,
           created_at,
           updated_at,
-          produits!inner(
+          produits (
             nom,
-            unites(label)
+            unites (
+              label
+            )
           )
         `)
         .order('created_at', { ascending: false })
       
       if (error) {
-        console.error('Erreur getStockBoutique:', error)
+        console.error('Erreur requête directe stock boutique:', error)
         return { stock: [], error: error.message }
       }
       
       const stockFormate = (data || []).map(item => {
-        const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0)
+        const quantiteDisponible = item.quantite_disponible || 0
+        const quantiteVendue = item.quantite_vendue || 0
+        const stockReel = quantiteDisponible - quantiteVendue
+        const prixVente = item.prix_vente || 0
         
         return {
           id: item.id,
           produit_id: item.produit_id,
-          nom_produit: item.produits?.nom || 'Produit inconnu',
+          nom_produit: item.produits?.nom || `Produit ${item.produit_id || 'Inconnu'}`,
           unite: item.produits?.unites?.label || 'unité',
-          quantite_disponible: item.quantite_disponible || 0,
-          quantite_vendue: item.quantite_vendue || 0,
+          quantite_disponible: quantiteDisponible,
+          quantite_vendue: quantiteVendue,
           stock_reel: stockReel,
-          prix_vente: item.prix_vente || 0,
-          valeur_stock: stockReel * (item.prix_vente || 0),
+          prix_vente: prixVente,
+          valeur_stock: stockReel * prixVente,
           statut_stock: stockReel <= 0 ? 'rupture' :
                        stockReel <= 5 ? 'critique' :
                        stockReel <= 10 ? 'faible' : 'normal',
-          prix_defini: (item.prix_vente || 0) > 0,
+          prix_defini: prixVente > 0,
           created_at: item.created_at,
           updated_at: item.updated_at,
           derniere_maj: item.updated_at
@@ -1445,7 +1526,7 @@ export const stockBoutiqueService = {
       
       return { stock: stockFormate, error: null }
     } catch (error) {
-      console.error('Erreur dans getStockBoutique:', error)
+      console.error('Erreur fatale dans getStockBoutiqueDirecte:', error)
       return { stock: [], error: error.message }
     }
   },
@@ -1462,7 +1543,12 @@ export const stockBoutiqueService = {
           source,
           type_entree,
           created_at,
-          produits(nom, unites(label))
+          produits (
+            nom,
+            unites (
+              label
+            )
+          )
         `)
         .order('created_at', { ascending: false })
         .limit(limit)
@@ -1498,7 +1584,11 @@ export const stockBoutiqueService = {
           prix_unitaire,
           total,
           created_at,
-          ventes(vendeur:profiles(nom))
+          ventes (
+            vendeur:profiles (
+              nom
+            )
+          )
         `)
         .order('created_at', { ascending: false })
         .limit(limit)
@@ -1521,41 +1611,69 @@ export const stockBoutiqueService = {
   }
 }
 
+
 // ===================== SERVICES CAISSE =====================
 export const caisseService = {
   // Vérifier la disponibilité des produits avec prix
   async getProduitsDisponiblesCaisse() {
     try {
-      // Utiliser une requête plus simple qui fonctionne avec le schéma actuel
+      // Essayer d'abord la vue finale
       const { data: stockBoutique, error } = await supabase
-        .from('stock_boutique')
-        .select(`
-          produit_id,
-          quantite_disponible,
-          quantite_vendue,
-          prix_vente,
-          produits(nom, unites(label))
-        `)
-        .gt('quantite_disponible', 0)
-        .not('prix_vente', 'is', null)
+        .from('vue_stock_boutique_final')
+        .select('*')
+        .gt('stock_reel', 0)
         .gt('prix_vente', 0)
       
       if (error) {
-        console.error('Erreur getProduitsDisponiblesCaisse:', error)
-        return { produits: [], error: error.message }
+        console.warn('Vue finale échouée pour caisse, fallback direct:', error)
+        
+        // Fallback : requête directe
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('stock_boutique')
+          .select(`
+            produit_id,
+            quantite_disponible,
+            quantite_vendue,
+            prix_vente,
+            produits (
+              nom,
+              unites (
+                label
+              )
+            )
+          `)
+          .gt('quantite_disponible', 0)
+          .not('prix_vente', 'is', null)
+          .gt('prix_vente', 0)
+        
+        if (fallbackError) {
+          return { produits: [], error: fallbackError.message }
+        }
+        
+        const produitsFormates = (fallbackData || []).map(item => {
+          const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0)
+          return {
+            id: item.produit_id,
+            nom_produit: item.produits?.nom || 'Produit',
+            unite: item.produits?.unites?.label || 'unité',
+            stock_reel: stockReel,
+            prix_vente: item.prix_vente,
+            prix_defini: true
+          }
+        }).filter(p => p.stock_reel > 0)
+        
+        return { produits: produitsFormates, error: null }
       }
       
-      const produitsFormates = (stockBoutique || []).map(item => {
-        const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0)
-        return {
-          id: item.produit_id,
-          nom_produit: item.produits?.nom || 'Produit',
-          unite: item.produits?.unites?.label || 'unité',
-          stock_reel: stockReel,
-          prix_vente: item.prix_vente,
-          prix_defini: true
-        }
-      }).filter(p => p.stock_reel > 0)
+      // Formater les données de la vue finale
+      const produitsFormates = (stockBoutique || []).map(item => ({
+        id: item.produit_id,
+        nom_produit: item.nom_produit,
+        unite: item.unite_label,
+        stock_reel: item.stock_reel,
+        prix_vente: item.prix_vente,
+        prix_defini: item.prix_defini
+      })).filter(p => p.stock_reel > 0 && p.prix_defini)
       
       return { produits: produitsFormates, error: null }
     } catch (error) {
@@ -2463,6 +2581,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
