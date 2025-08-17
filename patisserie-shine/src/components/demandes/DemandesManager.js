@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { demandeService, productService, utils } from '../../lib/supabase';
+import { demandeService, productService, utils, supabase } from '../../lib/supabase'; // Ajout de supabase
 import { Plus, ShoppingCart, Check, X, Clock, Package, ArrowRight, Warehouse, Store, DollarSign } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
 
@@ -9,6 +9,7 @@ export default function DemandesManager({ currentUser }) {
   const [demandes, setDemandes] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [formData, setFormData] = useState({
     produit_id: '',
@@ -106,22 +107,6 @@ export default function DemandesManager({ currentUser }) {
     } catch (err) {
       console.error('Erreur:', err);
       alert('Erreur lors du refus de la demande');
-    }
-  };
-
-  // Vérifier si un produit a un prix de vente défini
-  const getPrixVenteProduit = async (produitId) => {
-    try {
-      const { data } = await supabase
-        .from('prix_vente_produits')
-        .select('prix')
-        .eq('produit_id', produitId)
-        .eq('actif', true)
-        .single();
-      
-      return data?.prix || null;
-    } catch {
-      return null;
     }
   };
 
@@ -428,7 +413,7 @@ export default function DemandesManager({ currentUser }) {
   );
 }
 
-// Composant pour afficher le prix boutique d'un produit
+// Composant pour afficher le prix boutique d'un produit (CORRIGÉ)
 function PrixBoutiqueCell({ produitId }) {
   const [prix, setPrix] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -445,7 +430,7 @@ function PrixBoutiqueCell({ produitId }) {
       console.log('🔍 PrixBoutiqueCell - Recherche prix pour produit:', produitId);
       setDebug('Recherche...');
       
-      // MÉTHODE CORRIGÉE: Sélection sans .single() d'abord
+      // CORRECTION: Import supabase depuis le service
       const { data, error } = await supabase
         .from('prix_vente_produits')
         .select('prix, actif')
@@ -458,7 +443,6 @@ function PrixBoutiqueCell({ produitId }) {
         setDebug(`Erreur: ${error.message}`);
         setPrix(null);
       } else if (data && data.length > 0) {
-        // Chercher un prix actif, sinon prendre le premier
         const prixActif = data.find(p => p.actif === true) || data[0];
         
         if (prixActif && prixActif.prix) {
@@ -505,8 +489,59 @@ function PrixBoutiqueCell({ produitId }) {
             Non défini
           </div>
           <div className="text-gray-500">À définir</div>
-          {debug && <div className="text-red-500 text-xs">Debug: {debug}</div>}
         </>
+      )}
+    </div>
+  );
+}
+
+// Composant pour prévisualiser le prix boutique (AJOUTÉ)
+function PrixBoutiquePreview({ produitId }) {
+  const [prix, setPrix] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (produitId) {
+      loadPrix();
+    } else {
+      setPrix(null);
+      setLoading(false);
+    }
+  }, [produitId]);
+
+  const loadPrix = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('prix_vente_produits')
+        .select('prix, actif')
+        .eq('produit_id', produitId);
+      
+      if (!error && data && data.length > 0) {
+        const prixActif = data.find(p => p.actif === true) || data[0];
+        setPrix(prixActif?.prix || null);
+      } else {
+        setPrix(null);
+      }
+    } catch (err) {
+      console.error('Erreur PrixBoutiquePreview:', err);
+      setPrix(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!produitId) return null;
+
+  if (loading) {
+    return <div className="text-xs text-green-600">⏳ Vérification prix...</div>;
+  }
+
+  return (
+    <div className="text-xs text-green-600 mt-1">
+      {prix ? (
+        `💰 Prix défini: ${utils.formatCFA(prix)} - Prêt pour la vente !`
+      ) : (
+        '⚠️ Aucun prix défini - À configurer dans "Prix Vente"'
       )}
     </div>
   );
