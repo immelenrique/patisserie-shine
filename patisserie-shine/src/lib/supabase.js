@@ -840,243 +840,235 @@ export const demandeService = {
   },
   // Valider une demande avec gestion automatique des prix boutique
 async validateWithBoutiqueCheck(demandeId) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { result: null, error: 'Utilisateur non connecté' }
+    }
+
+    // Récupérer les informations de la demande
+    const { data: demande, error: demandeError } = await supabase
+      .from('demandes')
+      .select(`
+        *,
+        produit:produits(
+          id, nom, prix_achat,
+          unite:unites(label)
+        )
+      `)
+      .eq('id', demandeId)
+      .eq('statut', 'en_attente')
+      .single()
+
+    if (demandeError || !demande) {
+      return { result: null, error: 'Demande introuvable ou déjà traitée' }
+    }
+
+    console.log('🔍 Validation demande:', demande);
+
+    // Si destination = Boutique, vérifier le prix de vente
+    let prixVenteDisponible = null
+    if (demande.destination === 'Boutique') {
+      console.log('🏪 Demande vers boutique - recherche prix pour produit:', demande.produit_id);
       
-      if (!user) {
-        return { result: null, error: 'Utilisateur non connecté' }
+      // MÉTHODE CORRIGÉE DE RÉCUPÉRATION DU PRIX
+      const { data: prixData, error: prixError } = await supabase
+        .from('prix_vente_produits')
+        .select('prix, actif')
+        .eq('produit_id', demande.produit_id);
+
+      console.log('💰 Données prix récupérées:', { prixData, prixError });
+
+      if (!prixError && prixData && prixData.length > 0) {
+        const prixActif = prixData.find(p => p.actif === true) || prixData[0];
+        if (prixActif && prixActif.prix > 0) {
+          prixVenteDisponible = prixActif.prix;
+          console.log('✅ Prix de vente trouvé:', utils.formatCFA(prixVenteDisponible));
+        }
       }
 
-      // Récupérer les informations de la demande
-      const { data: demande, error: demandeError } = await supabase
-        .from('demandes')
-        .select(`
-          *,
-          produit:produits(
-            id, nom, prix_achat,
-            unite:unites(label)
-          )
-        `)
-        .eq('id', demandeId)
-        .eq('statut', 'en_attente')
-        .single()
-
-      if (demandeError || !demande) {
-        return { result: null, error: 'Demande introuvable ou déjà traitée' }
+      if (!prixVenteDisponible) {
+        console.warn('⚠️ Aucun prix de vente défini pour ce produit');
       }
+    }
 
-      // Si destination = Boutique, vérifier le prix de vente
-      let prixVenteDisponible = null
-      if (demande.destination === 'Boutique') {
-        console.log('🔍 Recherche prix de vente pour produit:', demande.produit_id)
-        
-        // CORRECTION : Chercher dans la bonne table avec les bons champs
-        const { data: prixVente, error: prixError } = await supabase
-          .from('prix_vente_produits')
-          .select('prix')
+    // Validation de la demande (étapes inchangées)
+    const { error: updateError } = await supabase
+      .from('demandes')
+      .update({
+        statut: 'validee',
+        valideur_id: user.id,
+        date_validation: new Date().toISOString()
+      })
+      .eq('id', demandeId)
+      .eq('statut', 'en_attente')
+
+    if (updateError) {
+      console.error('❌ Erreur validation demande:', updateError)
+      return { result: null, error: updateError.message }
+    }
+
+    // Décrémenter le stock principal
+    const { data: produitActuel, error: produitError } = await supabase
+      .from('produits')
+      .select('quantite_restante')
+      .eq('id', demande.produit_id)
+      .single()
+
+    if (produitError || !produitActuel) {
+      return { result: null, error: 'Produit introuvable' }
+    }
+
+    if (produitActuel.quantite_restante < demande.quantite) {
+      return { result: null, error: 'Stock insuffisant' }
+    }
+
+    const { error: stockError } = await supabase
+      .from('produits')
+      .update({
+        quantite_restante: produitActuel.quantite_restante - demande.quantite,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', demande.produit_id)
+
+    if (stockError) {
+      console.error('❌ Erreur mise à jour stock:', stockError)
+      return { result: null, error: 'Erreur lors de la mise à jour du stock' }
+    }
+
+    // Traitement selon destination
+    let messageSpecifique = ''
+
+    if (demande.destination === 'Boutique') {
+      // AJOUT AU STOCK BOUTIQUE AVEC PRIX
+      try {
+        const { data: stockExistant } = await supabase
+          .from('stock_boutique')
+          .select('id, quantite_disponible, prix_vente')
           .eq('produit_id', demande.produit_id)
-          .eq('actif', true)
           .single()
 
-        if (prixError) {
-          console.warn('⚠️ Erreur récupération prix:', prixError)
-        } else if (prixVente && prixVente.prix) {
-          prixVenteDisponible = prixVente.prix
-          console.log('✅ Prix trouvé:', utils.formatCFA(prixVenteDisponible))
-        } else {
-          console.warn('⚠️ Aucun prix de vente défini pour ce produit')
-        }
-      }
-
-      // ÉTAPE 1 : Valider la demande et décrémenter le stock principal
-      const { error: updateError } = await supabase
-        .from('demandes')
-        .update({
-          statut: 'validee',
-          valideur_id: user.id,
-          date_validation: new Date().toISOString()
-        })
-        .eq('id', demandeId)
-        .eq('statut', 'en_attente')
-
-      if (updateError) {
-        console.error('Erreur validation demande:', updateError)
-        return { result: null, error: updateError.message }
-      }
-
-      // ÉTAPE 2 : Décrémenter le stock principal
-      const { data: produitActuel, error: produitError } = await supabase
-        .from('produits')
-        .select('quantite_restante')
-        .eq('id', demande.produit_id)
-        .single()
-
-      if (produitError || !produitActuel) {
-        return { result: null, error: 'Produit introuvable' }
-      }
-
-      if (produitActuel.quantite_restante < demande.quantite) {
-        return { result: null, error: 'Stock insuffisant dans le stock principal' }
-      }
-
-      const { error: stockError } = await supabase
-        .from('produits')
-        .update({
-          quantite_restante: produitActuel.quantite_restante - demande.quantite,
+        const updateData = {
           updated_at: new Date().toISOString()
-        })
-        .eq('id', demande.produit_id)
-
-      if (stockError) {
-        console.error('Erreur mise à jour stock:', stockError)
-        return { result: null, error: 'Erreur lors de la mise à jour du stock' }
-      }
-
-      // ÉTAPE 3 : Traitement selon la destination
-      let messageSpecifique = ''
-
-      if (demande.destination === 'Production') {
-        // Ajouter au stock atelier
-        try {
-          const { error: atelierError } = await supabase.rpc('ajouter_au_stock_atelier', {
-            p_produit_id: demande.produit_id,
-            p_quantite: demande.quantite,
-            p_transfere_par: user.id
-          })
-
-          if (atelierError) {
-            console.warn('Erreur ajout stock atelier:', atelierError)
-            messageSpecifique = '⚠️ Stock principal mis à jour mais erreur pour le stock atelier'
-          } else {
-            messageSpecifique = `✅ ${demande.quantite} ${demande.produit?.unite?.label || ''} ajouté(s) au stock atelier`
-          }
-        } catch (atelierErr) {
-          console.warn('Erreur RPC stock atelier:', atelierErr)
-          messageSpecifique = '⚠️ Stock principal mis à jour mais erreur pour le stock atelier'
         }
 
-      } else if (demande.destination === 'Boutique') {
-        // CORRECTION : Ajouter au stock boutique avec le prix défini
-        try {
-          // Vérifier si le produit existe déjà dans le stock boutique
-          const { data: stockExistant, error: checkError } = await supabase
+        if (stockExistant) {
+          // Mettre à jour stock existant
+          updateData.quantite_disponible = (stockExistant.quantite_disponible || 0) + demande.quantite
+          
+          // IMPORTANT: Mettre à jour le prix seulement s'il n'existe pas ou si on a un nouveau prix
+          if (prixVenteDisponible && !stockExistant.prix_vente) {
+            updateData.prix_vente = prixVenteDisponible
+          }
+
+          const { error: updateError } = await supabase
             .from('stock_boutique')
-            .select('id, quantite_disponible, quantite_vendue')
-            .eq('produit_id', demande.produit_id)
-            .single()
+            .update(updateData)
+            .eq('id', stockExistant.id)
 
-          if (checkError && checkError.code !== 'PGRST116') {
-            console.error('Erreur vérification stock boutique:', checkError)
-          }
-
-          if (stockExistant) {
-            // Mettre à jour le stock existant
-            const nouvelleQuantite = (stockExistant.quantite_disponible || 0) + demande.quantite
-
-            const updateData = {
-              quantite_disponible: nouvelleQuantite,
-              updated_at: new Date().toISOString()
-            }
-
-            // CORRECTION : Ajouter le prix seulement s'il est disponible et pas déjà défini
-            if (prixVenteDisponible) {
-              updateData.prix_vente = prixVenteDisponible
-            }
-
-            const { error: updateStockError } = await supabase
-              .from('stock_boutique')
-              .update(updateData)
-              .eq('id', stockExistant.id)
-
-            if (updateStockError) {
-              console.error('Erreur mise à jour stock boutique:', updateStockError)
-              messageSpecifique = '⚠️ Stock principal mis à jour mais erreur pour le stock boutique'
-            } else {
-              messageSpecifique = prixVenteDisponible ? 
-                `🏪 Produit ajouté au stock boutique avec prix: ${utils.formatCFA(prixVenteDisponible)}` :
-                '🏪 Produit ajouté au stock boutique. ⚠️ Définissez le prix dans "Prix Vente"'
-            }
+          if (updateError) {
+            console.error('❌ Erreur mise à jour stock boutique:', updateError)
+            messageSpecifique = '⚠️ Erreur mise à jour stock boutique'
           } else {
-            // Créer une nouvelle entrée dans le stock boutique
-            const insertData = {
-              produit_id: demande.produit_id,
-              quantite_disponible: demande.quantite,
-              quantite_vendue: 0,
-              transfere_par: user.id
-            }
-
-            // CORRECTION : Ajouter le prix seulement s'il est disponible
-            if (prixVenteDisponible) {
-              insertData.prix_vente = prixVenteDisponible
-            }
-
-            const { error: insertStockError } = await supabase
-              .from('stock_boutique')
-              .insert(insertData)
-
-            if (insertStockError) {
-              console.error('Erreur création stock boutique:', insertStockError)
-              messageSpecifique = '⚠️ Stock principal mis à jour mais erreur pour le stock boutique'
-            } else {
-              messageSpecifique = prixVenteDisponible ? 
-                `🏪 Produit ajouté au stock boutique avec prix: ${utils.formatCFA(prixVenteDisponible)}` :
-                '🏪 Produit ajouté au stock boutique. ⚠️ Définissez le prix dans "Prix Vente"'
-            }
+            const prixFinal = updateData.prix_vente || stockExistant.prix_vente
+            messageSpecifique = prixFinal ? 
+              `🏪 Stock boutique mis à jour avec prix: ${utils.formatCFA(prixFinal)}` :
+              '🏪 Stock boutique mis à jour. ⚠️ Définissez le prix dans "Prix Vente"'
+          }
+        } else {
+          // Créer nouvelle entrée
+          const insertData = {
+            produit_id: demande.produit_id,
+            quantite_disponible: demande.quantite,
+            quantite_vendue: 0,
+            transfere_par: user.id
           }
 
-          // Enregistrer l'entrée boutique pour l'historique
-          await supabase
-            .from('entrees_boutique')
-            .insert({
-              produit_id: demande.produit_id,
-              quantite: demande.quantite,
-              source: 'Demande',
-              type_entree: 'Transfert',
-              ajoute_par: user.id
-            })
+          if (prixVenteDisponible) {
+            insertData.prix_vente = prixVenteDisponible
+          }
 
-        } catch (boutiqueErr) {
-          console.error('Erreur traitement boutique:', boutiqueErr)
-          messageSpecifique = '⚠️ Stock principal mis à jour mais erreur pour le stock boutique'
+          const { error: insertError } = await supabase
+            .from('stock_boutique')
+            .insert(insertData)
+
+          if (insertError) {
+            console.error('❌ Erreur création stock boutique:', insertError)
+            messageSpecifique = '⚠️ Erreur création stock boutique'
+          } else {
+            messageSpecifique = prixVenteDisponible ? 
+              `🏪 Produit ajouté au stock boutique avec prix: ${utils.formatCFA(prixVenteDisponible)}` :
+              '🏪 Produit ajouté au stock boutique. ⚠️ Définissez le prix dans "Prix Vente"'
+          }
         }
-      } else {
-        // Autres destinations (Commande, Échantillon, etc.)
-        messageSpecifique = `📦 Stock réservé pour: ${demande.destination}`
-      }
 
-      // ÉTAPE 4 : Enregistrer le mouvement de stock
-      try {
+        // Enregistrer l'entrée boutique
         await supabase
-          .from('mouvements_stock')
+          .from('entrees_boutique')
           .insert({
             produit_id: demande.produit_id,
-            type_mouvement: 'sortie',
             quantite: demande.quantite,
-            quantite_avant: produitActuel.quantite_restante,
-            quantite_apres: produitActuel.quantite_restante - demande.quantite,
-            utilisateur_id: user.id,
-            reference_id: demandeId,
-            reference_type: 'demande',
-            raison: `Validation demande vers ${demande.destination}`,
-            commentaire: `Demande validée - ${demande.produit?.nom} pour ${demande.destination}`
+            source: 'Demande',
+            type_entree: 'Transfert',
+            ajoute_par: user.id
           })
-      } catch (mouvementError) {
-        console.warn('Erreur enregistrement mouvement:', mouvementError)
-        // Non bloquant
-      }
 
-      const messageSuccess = `Demande validée avec succès !\n${messageSpecifique}`
-      
-      return { 
-        result: { success: true }, 
-        error: null,
-        message: messageSuccess
+      } catch (boutiqueErr) {
+        console.error('❌ Erreur traitement boutique:', boutiqueErr)
+        messageSpecifique = '⚠️ Erreur lors de l\'ajout au stock boutique'
       }
-    } catch (error) {
-      console.error('Erreur dans validateWithBoutiqueCheck:', error)
-      return { result: null, error: error.message }
+    } else if (demande.destination === 'Production') {
+      // Ajout au stock atelier (inchangé)
+      try {
+        const { error: atelierError } = await supabase.rpc('ajouter_au_stock_atelier', {
+          p_produit_id: demande.produit_id,
+          p_quantite: demande.quantite,
+          p_transfere_par: user.id
+        })
+
+        if (atelierError) {
+          messageSpecifique = '⚠️ Erreur ajout stock atelier'
+        } else {
+          messageSpecifique = `✅ Ajouté au stock atelier`
+        }
+      } catch (atelierErr) {
+        messageSpecifique = '⚠️ Erreur ajout stock atelier'
+      }
+    } else {
+      messageSpecifique = `📦 Stock réservé pour: ${demande.destination}`
     }
-  },
+
+    // Enregistrer le mouvement de stock
+    try {
+      await supabase
+        .from('mouvements_stock')
+        .insert({
+          produit_id: demande.produit_id,
+          type_mouvement: 'sortie',
+          quantite: demande.quantite,
+          quantite_avant: produitActuel.quantite_restante,
+          quantite_apres: produitActuel.quantite_restante - demande.quantite,
+          utilisateur_id: user.id,
+          reference_id: demandeId,
+          reference_type: 'demande',
+          raison: `Validation demande vers ${demande.destination}`
+        })
+    } catch (mouvementError) {
+      console.warn('⚠️ Erreur mouvement stock:', mouvementError)
+    }
+
+    return { 
+      result: { success: true }, 
+      error: null,
+      message: `✅ Demande validée avec succès !\n${messageSpecifique}`
+    }
+  } catch (error) {
+    console.error('❌ Erreur dans validateWithBoutiqueCheck:', error)
+    return { result: null, error: error.message }
+  }
+},
+
 
 // Modifier la méthode create pour supporter les nouvelles fonctionnalités
 async createProduction(productionData) {
@@ -2786,6 +2778,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
