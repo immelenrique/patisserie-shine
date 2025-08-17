@@ -123,9 +123,9 @@ export default function RecettesManager({ currentUser }) {
     };
   };
 
-  // 🔧 CORRECTION SYNTAXE - Remplacer ENTIÈREMENT handleSaveRecette dans RecettesManager.js
+  //  handleSaveRecette dans RecettesManager.js
 
-const handleSaveRecette = async () => {
+  const handleSaveRecette = async () => {
   if (!selectedProduit || ingredients.length === 0) {
     alert('Veuillez sélectionner un produit et ajouter au moins un ingrédient');
     return;
@@ -137,25 +137,7 @@ const handleSaveRecette = async () => {
 
   if (ingredientsValides.length === 0) {
     alert('Veuillez remplir au moins un ingrédient avec une quantité valide');
-  const handleCalculBesoins = async (e) => {
-  e.preventDefault();
-  try {
-    const { besoins, error } = await recetteService.calculerStockNecessaire(
-      calculData.nom_produit,
-      parseFloat(calculData.quantite)
-    );
-
-    if (error) {
-      alert('Erreur lors du calcul: ' + error);
-    } else {
-      setBesoins(besoins);
-    }
-  } catch (err) {
-    console.error('Erreur:', err);
-    alert('Erreur lors du calcul');
-  }
-};
-    return;
+    return; // 🔧 CORRECTION : il manquait ce return !
   }
 
   try {
@@ -275,6 +257,26 @@ const handleSaveRecette = async () => {
   } catch (err) {
     console.error('Erreur générale:', err);
     alert('Erreur lors de la création de la recette: ' + err.message);
+  }
+}; // 🔧 FERMETURE de handleSaveRecette
+
+// 🔧 FONCTION SÉPARÉE handleCalculBesoins (HORS de handleSaveRecette)
+const handleCalculBesoins = async (e) => {
+  e.preventDefault();
+  try {
+    const { besoins, error } = await recetteService.calculerStockNecessaire(
+      calculData.nom_produit,
+      parseFloat(calculData.quantite)
+    );
+
+    if (error) {
+      alert('Erreur lors du calcul: ' + error);
+    } else {
+      setBesoins(besoins);
+    }
+  } catch (err) {
+    console.error('Erreur:', err);
+    alert('Erreur lors du calcul');
   }
 };
 
