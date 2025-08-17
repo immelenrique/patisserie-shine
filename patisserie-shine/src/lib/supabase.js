@@ -1859,6 +1859,44 @@ export const comptabiliteService = {
       }
     }
   },
+  async enregistrerDepenseStock(productData, userId) {
+  try {
+    // Calculer le montant total de la dépense
+    const montantTotal = (productData.prix_achat || 0) * (productData.quantite || 0)
+    
+    if (montantTotal <= 0) {
+      return { depense: null, error: 'Montant de dépense invalide' }
+    }
+
+    const { data: depense, error } = await supabase
+      .from('depenses_comptables')
+      .insert({
+        type_depense: 'achat_matiere_premiere',
+        description: `Achat ${productData.nom} - ${productData.quantite} ${productData.unite?.label || 'unités'}`,
+        montant: montantTotal,
+        date_depense: productData.date_achat || new Date().toISOString().split('T')[0],
+        utilisateur_id: userId,
+        details: {
+          produit_nom: productData.nom,
+          quantite: productData.quantite,
+          prix_unitaire: productData.prix_achat / productData.quantite,
+          unite: productData.unite?.label
+        }
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Erreur enregistrement dépense stock:', error)
+      return { depense: null, error: error.message }
+    }
+
+    return { depense, error: null }
+  } catch (error) {
+    console.error('Erreur dans enregistrerDepenseStock:', error)
+    return { depense: null, error: error.message }
+  }
+},
 
   // Rapport comptable avec calculs corrects
   async getRapportComptable(dateDebut, dateFin) {
@@ -2274,6 +2312,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
