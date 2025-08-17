@@ -1403,6 +1403,9 @@ async createProduction(productionData) {
 }
 
 // ===================== SERVICES PRODUCTION =====================
+// src/lib/supabase.js - CORRECTION de la méthode createProduction
+
+// ===================== SERVICES PRODUCTION (CORRECTION) =====================
 export const productionService = {
   // Récupérer toutes les productions
   async getAll() {
@@ -1426,138 +1429,212 @@ export const productionService = {
       return { productions: [], error: error.message }
     }
   },
+
+  // 🔧 CORRECTION PRINCIPALE: Créer une production avec prix recette
   async createProduction(productionData) {
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return { production: null, error: 'Utilisateur non connecté' }
-    }
-
-    // 🔧 RÉCUPÉRER LE PRIX CORRECT
-    const { data: prixCorrect } = await supabase.rpc('get_prix_vente_produit', {
-      nom_produit_param: productionData.produit
-    });
-
-    if (productionData.destination === 'Boutique' && (!prixCorrect || prixCorrect <= 0)) {
-      return { 
-        production: null, 
-        error: `Aucun prix de vente défini pour "${productionData.produit}". Définissez d'abord le prix dans les recettes.` 
-      };
-    }
-
-    // Utiliser la fonction RPC avec le prix correct
-    const { data: rpcResult, error: rpcError } = await supabase.rpc('creer_production_nouvelle_logique', {
-      p_produit: productionData.produit,
-      p_quantite: productionData.quantite,
-      p_destination: productionData.destination || 'Boutique',
-      p_date_production: productionData.date_production || new Date().toISOString().split('T')[0],
-      p_producteur_id: user.id,
-      p_prix_vente: prixCorrect  // 🔧 PRIX CORRECT
-    });
-    
-    // ... reste du code
-  } catch (error) {
-    return { production: null, error: error.message };
-  }
-},
-
-
-  // Créer une nouvelle production
-  async create(productData) {
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return { product: null, error: 'Utilisateur non connecté' }
-    }
-
-    // 1. Créer le produit
-    const { data: produit, error: produitError } = await supabase
-      .from('produits')
-      .insert({
-        nom: productData.nom,
-        date_achat: productData.date_achat || new Date().toISOString().split('T')[0],
-        prix_achat: productData.prix_achat,
-        quantite: productData.quantite,
-        quantite_restante: productData.quantite,
-        unite_id: productData.unite_id,
-        created_by: user.id
-      })
-      .select(`
-        *,
-        unite:unites(id, value, label)
-      `)
-      .single()
-    
-    if (produitError) {
-      console.error('Erreur create produit:', produitError)
-      return { product: null, error: produitError.message }
-    }
-
-    // 2. Tentative d'enregistrement de la dépense (non bloquant)
     try {
-      // Vérifier si la table depenses_comptables existe
-      const { error: tableCheckError } = await supabase
-        .from('depenses_comptables')
-        .select('id')
-        .limit(1);
+      const { data: { user } } = await supabase.auth.getUser()
       
-      if (!tableCheckError) {
-        // La table existe, essayer d'enregistrer la dépense
-        const depenseResult = await comptabiliteService.enregistrerDepenseStock(
-          { ...productData, unite: produit.unite }, 
-          user.id
-        );
+      if (!user) {
+        return { production: null, error: 'Utilisateur non connecté' }
+      }
+
+      console.log('🏭 Début création production:', productionData);
+
+      // ÉTAPE 1: Récupérer le prix depuis prix_vente_recettes (CORRECTION)
+      let prixVenteRecette = null;
+      if (productionData.destination === 'Boutique') {
+        console.log('🔍 Recherche prix pour recette:', productionData.produit);
         
-        if (depenseResult.depense) {
-          await supabase
-            .from('depenses_comptables')
-            .update({ reference_produit_id: produit.id })
-            .eq('id', depenseResult.depense.id);
-          
-          console.log(`💰 Dépense enregistrée: ${utils.formatCFA((productData.prix_achat || 0) * (productData.quantite || 0))}`);
+        const { data: prixData, error: prixError } = await supabase
+          .from('prix_vente_recettes') // 🔧 CORRECTION: Bonne table
+          .select('prix_vente, actif')
+          .eq('nom_produit', productionData.produit)
+          .eq('actif', true)
+          .single();
+        
+        if (prixError) {
+          console.warn('⚠️ Erreur récupération prix recette:', prixError);
+        } else if (prixData && prixData.prix_vente) {
+          prixVenteRecette = parseFloat(prixData.prix_vente);
+          console.log(`✅ Prix récupéré depuis prix_vente_recettes: ${utils.formatCFA(prixVenteRecette)}`);
+        } else {
+          console.warn(`⚠️ Prix trouvé mais invalide:`, prixData);
         }
-      } else {
-        console.info('📝 Table depenses_comptables non disponible, création produit sans enregistrement comptable');
-      }
-    } catch (depenseError) {
-      console.warn('⚠️ Erreur enregistrement dépense (produit créé):', depenseError);
-      // Non bloquant - le produit est créé même si la dépense échoue
-    }
 
-    // 3. Tentative d'enregistrement du mouvement (non bloquant)
-    try {
-      const { error: mouvementCheckError } = await supabase
-        .from('mouvements_stock')
-        .select('id')
-        .limit(1);
-      
-      if (!mouvementCheckError) {
-        await supabase
-          .from('mouvements_stock')
-          .insert({
-            produit_id: produit.id,
-            type_mouvement: 'entree',
-            quantite: productData.quantite,
-            quantite_avant: 0,
-            quantite_apres: productData.quantite,
-            utilisateur_id: user.id,
-            raison: 'Création nouveau produit',
-            commentaire: `Nouveau produit: ${productData.nom} - ${productData.quantite} ${produit.unite?.label}`
-          });
+        if (!prixVenteRecette) {
+          console.warn(`⚠️ Aucun prix défini pour la recette: ${productionData.produit}`);
+          return { 
+            production: null, 
+            error: `Aucun prix de vente défini pour la recette "${productionData.produit}". Veuillez d'abord définir le prix dans la création de recette.` 
+          };
+        }
       }
-    } catch (mouvementError) {
-      console.warn('⚠️ Erreur enregistrement mouvement (produit créé):', mouvementError);
-      // Non bloquant
+
+      // ÉTAPE 2: Créer l'entrée production
+      const { data: production, error: productionError } = await supabase
+        .from('productions')
+        .insert({
+          produit: productionData.produit,
+          quantite: productionData.quantite,
+          destination: productionData.destination || 'Boutique',
+          date_production: productionData.date_production || new Date().toISOString().split('T')[0],
+          producteur_id: user.id,
+          statut: 'termine'
+        })
+        .select()
+        .single();
+
+      if (productionError) {
+        console.error('❌ Erreur création production:', productionError);
+        return { production: null, error: productionError.message };
+      }
+
+      console.log('✅ Production créée:', production);
+
+      // ÉTAPE 3: Si destination = Boutique, ajouter au stock boutique avec le PRIX CORRECT
+      if (productionData.destination === 'Boutique' && prixVenteRecette) {
+        console.log('🏪 Ajout au stock boutique avec prix:', utils.formatCFA(prixVenteRecette));
+        
+        try {
+          // Vérifier si le produit existe déjà en boutique
+          const { data: stockExistant } = await supabase
+            .from('stock_boutique')
+            .select('id, quantite_disponible, prix_vente')
+            .eq('nom_produit', productionData.produit)
+            .single();
+
+          if (stockExistant) {
+            // Mettre à jour stock existant AVEC LE PRIX CORRECT
+            const { error: updateError } = await supabase
+              .from('stock_boutique')
+              .update({
+                quantite_disponible: (stockExistant.quantite_disponible || 0) + productionData.quantite,
+                prix_vente: prixVenteRecette, // 🔧 FORCER le prix de la recette
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', stockExistant.id);
+
+            if (updateError) {
+              console.error('❌ Erreur mise à jour stock boutique:', updateError);
+            } else {
+              console.log(`✅ Stock boutique mis à jour avec prix: ${utils.formatCFA(prixVenteRecette)}`);
+            }
+          } else {
+            // Créer nouvelle entrée avec le prix correct
+            const { error: insertError } = await supabase
+              .from('stock_boutique')
+              .insert({
+                nom_produit: productionData.produit,
+                quantite_disponible: productionData.quantite,
+                quantite_vendue: 0,
+                prix_vente: prixVenteRecette, // 🔧 Prix de la recette
+                transfere_par: user.id
+              });
+
+            if (insertError) {
+              console.error('❌ Erreur création stock boutique:', insertError);
+            } else {
+              console.log(`✅ Nouveau stock boutique créé avec prix: ${utils.formatCFA(prixVenteRecette)}`);
+            }
+          }
+
+          // Enregistrer l'entrée boutique
+          await supabase
+            .from('entrees_boutique')
+            .insert({
+              nom_produit: productionData.produit,
+              quantite: productionData.quantite,
+              source: 'Production',
+              type_entree: 'Production',
+              prix_vente: prixVenteRecette, // 🔧 Prix de la recette
+              ajoute_par: user.id
+            });
+
+        } catch (boutiqueError) {
+          console.error('❌ Erreur traitement boutique:', boutiqueError);
+          // Ne pas faire échouer toute la production pour ça
+        }
+      }
+
+      // ÉTAPE 4: Calculer et déduire les ingrédients du stock atelier
+      try {
+        console.log('📦 Déduction des ingrédients du stock atelier...');
+        
+        // Récupérer la recette
+        const { data: recettes, error: recetteError } = await supabase
+          .from('recettes')
+          .select(`
+            quantite_necessaire,
+            produit_ingredient:produits!recettes_produit_ingredient_id_fkey(
+              id, nom, prix_achat, quantite
+            )
+          `)
+          .eq('nom_produit', productionData.produit);
+
+        if (!recetteError && recettes && recettes.length > 0) {
+          let coutTotal = 0;
+
+          for (const recette of recettes) {
+            const quantiteNecessaire = recette.quantite_necessaire * productionData.quantite;
+            const produitId = recette.produit_ingredient?.id;
+
+            if (produitId) {
+              // Enregistrer la consommation
+              await supabase
+                .from('consommations_atelier')
+                .insert({
+                  production_id: production.id,
+                  produit_id: produitId,
+                  quantite_consommee: quantiteNecessaire,
+                  cout_unitaire: recette.produit_ingredient?.prix_achat || 0
+                });
+
+              // Calculer le coût
+              if (recette.produit_ingredient?.prix_achat && recette.produit_ingredient?.quantite) {
+                const coutUnitaire = recette.produit_ingredient.prix_achat / recette.produit_ingredient.quantite;
+                coutTotal += coutUnitaire * quantiteNecessaire;
+              }
+
+              // Mettre à jour le stock atelier
+              await supabase.rpc('consommer_ingredient_atelier', {
+                p_produit_id: produitId,
+                p_quantite: quantiteNecessaire
+              });
+            }
+          }
+
+          // Mettre à jour le coût de la production
+          if (coutTotal > 0) {
+            await supabase
+              .from('productions')
+              .update({ cout_ingredients: coutTotal })
+              .eq('id', production.id);
+          }
+        }
+      } catch (ingredientError) {
+        console.warn('⚠️ Erreur déduction ingrédients:', ingredientError);
+        // Non bloquant
+      }
+
+      return { 
+        production: {
+          id: production.id,
+          message: `Production créée avec succès. ${productionData.destination === 'Boutique' && prixVenteRecette ? `Prix boutique: ${utils.formatCFA(prixVenteRecette)}` : ''}`
+        }, 
+        error: null 
+      };
+
+    } catch (error) {
+      console.error('❌ Erreur générale dans createProduction:', error);
+      return { production: null, error: error.message };
     }
-    
-    return { product: produit, error: null }
-  } catch (error) {
-    console.error('Erreur dans create produit:', error)
-    return { product: null, error: error.message }
+  },
+
+  // Ancienne méthode create (maintenant alias vers createProduction)
+  async create(productData) {
+    return this.createProduction(productData);
   }
-}
 }
 // ===================== SERVICES RECETTES =====================
 export const recetteService = {
@@ -3075,6 +3152,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
