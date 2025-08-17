@@ -1835,72 +1835,84 @@ export const stockAtelierService = {
 export const stockBoutiqueService = {
   // Récupérer l'état du stock boutique (VERSION FINALE CORRIGÉE)
 async getStockBoutique() {
-  try {
-    const { data, error } = await supabase
-      .from('stock_boutique')
-      .select(`
-        id,
-        produit_id,
-        quantite_disponible,
-        quantite_vendue,
-        prix_vente,
-        statut_stock,
-        created_at,
-        updated_at,
-        produits!inner (
-          nom,
-          unites (
-            label
-          )
-        )
-      `)
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      return { stock: [], error: error.message };
-    }
-    
-    const stockFormate = (data || []).map(item => {
-      const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0);
-      const prixVente = item.prix_vente || 0;
+    try {
+      // Essayer d'abord la vue finale
+      const { data, error } = await supabase
+        .from('vue_stock_boutique_final')
+        .select('*')
+        .order('stock_created_at', { ascending: false })
       
-      return {
-        id: item.id,
+      if (error) {
+        console.warn('Vue finale échouée, essai de la vue simple:', error)
+        
+        // Fallback vers la vue simple
+        const { data: simpleData, error: simpleError } = await supabase
+          .from('vue_stock_boutique_simple')
+          .select('*')
+          .order('created_at', { ascending: false })
+        
+        if (simpleError) {
+          console.warn('Vue simple échouée, requête directe:', simpleError)
+          
+          // Fallback final : requête directe
+          return await this.getStockBoutiqueDirecte()
+        }
+        
+        // Formater les données de la vue simple
+        const stockFormate = (simpleData || []).map(item => ({
+          id: item.id,
+          produit_id: item.produit_id,
+          nom_produit: `Produit ${item.produit_id || 'Inconnu'}`,
+          unite: 'unité',
+          quantite_disponible: item.quantite_disponible || 0,
+          quantite_vendue: item.quantite_vendue || 0,
+          stock_reel: item.stock_reel,
+          prix_vente: item.prix_vente || 0,
+          valeur_stock: item.stock_reel * (item.prix_vente || 0),
+          statut_stock: item.statut_stock_calcule || 'normal',
+          prix_defini: (item.prix_vente || 0) > 0,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          derniere_maj: item.updated_at
+        }))
+        
+        return { stock: stockFormate, error: null }
+      }
+      
+      // Formater les données de la vue finale
+      const stockFormate = (data || []).map(item => ({
+        id: item.stock_id || item.id,
         produit_id: item.produit_id,
-        nom_produit: item.produits?.nom || `Produit ${item.produit_id}`, // ✅ Via JOIN
-        unite: item.produits?.unites?.label || 'unité',
+        nom_produit: item.nom_produit,
+        unite: item.unite_label,
         quantite_disponible: item.quantite_disponible || 0,
         quantite_vendue: item.quantite_vendue || 0,
-        stock_reel: stockReel,
-        prix_vente: prixVente,
-        valeur_stock: stockReel * prixVente,
-        statut_stock: this.calculateStockStatus(stockReel),
-        prix_defini: prixVente > 0,
-        created_at: item.created_at,
-        updated_at: item.updated_at,
-        derniere_maj: item.updated_at
-      };
-    });
-    
-    return { stock: stockFormate, error: null };
-  } catch (error) {
-    console.error('Erreur dans getStockBoutique:', error);
-    return { stock: [], error: error.message };
-  }
-},
+        stock_reel: item.stock_reel,
+        prix_vente: item.prix_vente || 0,
+        valeur_stock: item.valeur_stock || 0,
+        statut_stock: item.statut_stock || 'normal',
+        prix_defini: item.prix_defini || false,
+        created_at: item.stock_created_at || item.created_at,
+        updated_at: item.stock_updated_at || item.updated_at,
+        derniere_maj: item.stock_updated_at || item.updated_at
+      }))
+      
+      return { stock: stockFormate, error: null }
+    } catch (error) {
+      console.error('Erreur dans getStockBoutique:', error)
+      
+      // Fallback final en cas d'erreur totale
+      return await this.getStockBoutiqueDirecte()
+    }
+  },
 
-// Fonction utilitaire pour calculer le statut
-calculateStockStatus(stockReel) {
-  if (stockReel <= 0) return 'rupture';
-  if (stockReel <= 5) return 'critique';
-  if (stockReel <= 10) return 'faible';
-  return 'normal';
-}
-    return { stock: stockCorrige, error: null };
-  } catch (error) {
-    return { stock: [], error: error.message };
-  }
-},
+  // Fonction utilitaire pour calculer le statut du stock
+  calculateStockStatus(stockReel) {
+    if (stockReel <= 0) return 'rupture'
+    if (stockReel <= 5) return 'critique'
+    if (stockReel <= 10) return 'faible'
+    return 'normal'
+  },
   async synchroniserPrixRecettes() {
   try {
     console.log('🔄 Synchronisation forcée des prix recettes...');
@@ -3063,6 +3075,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
