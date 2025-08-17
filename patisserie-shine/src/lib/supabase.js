@@ -1429,7 +1429,7 @@ export const caisseService = {
       console.error('Erreur dans getVentesJour:', error)
       return { ventes: [], error: error.message }
     }
-  }
+  },
    // Obtenir les produits les plus vendus
   async getProduitsTopVentes(limit = 10, periode = 'mois') {
     try {
@@ -1886,6 +1886,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
