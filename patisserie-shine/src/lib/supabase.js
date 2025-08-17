@@ -1112,28 +1112,43 @@ async createProduction(productionData) {
       return { production: null, error: 'Utilisateur non connecté' }
     }
 
-    // Utiliser la fonction PostgreSQL modifiée qui :
-    // 1. Déduit les ingrédients du stock atelier
-    // 2. N'ajoute PAS au stock principal
-    // 3. Ajoute directement au stock boutique selon la destination
+    // Récupérer le prix de vente depuis prix_vente_recettes si destination = Boutique
+    let prixVenteRecette = null;
+    if (productionData.destination === 'Boutique') {
+      const { data: prixData } = await supabase
+        .from('prix_vente_recettes')
+        .select('prix_vente')
+        .eq('nom_produit', productionData.produit)
+        .eq('actif', true)
+        .single();
+      
+      if (prixData) {
+        prixVenteRecette = prixData.prix_vente;
+        console.log(`💰 Prix récupéré depuis recette: ${utils.formatCFA(prixVenteRecette)}`);
+      } else {
+        console.warn(`⚠️ Aucun prix défini pour la recette: ${productionData.produit}`);
+      }
+    }
+
+    // Utiliser la fonction PostgreSQL avec le prix de recette
     const { data, error } = await supabase.rpc('creer_production_nouvelle_logique', {
       p_produit: productionData.produit,
       p_quantite: productionData.quantite,
       p_destination: productionData.destination || 'Boutique',
       p_date_production: productionData.date_production || new Date().toISOString().split('T')[0],
       p_producteur_id: user.id,
-      p_prix_vente: productionData.prix_vente || null
-    })
+      p_prix_vente: prixVenteRecette // Utiliser le prix de la recette
+    });
     
     if (error) {
-      console.error('Erreur RPC create production:', error)
-      return { production: null, error: error.message }
+      console.error('Erreur RPC create production:', error);
+      return { production: null, error: error.message };
     }
 
     if (!data || !data.success) {
-      const errorMessage = data?.error || 'Erreur inconnue lors de la création'
-      console.error('Erreur création production:', errorMessage)
-      return { production: null, error: errorMessage }
+      const errorMessage = data?.error || 'Erreur inconnue lors de la création';
+      console.error('Erreur création production:', errorMessage);
+      return { production: null, error: errorMessage };
     }
 
     return { 
@@ -1142,10 +1157,10 @@ async createProduction(productionData) {
         message: data.message
       }, 
       error: null 
-    }
+    };
   } catch (error) {
-    console.error('Erreur dans createProduction:', error)
-    return { production: null, error: error.message }
+    console.error('Erreur dans createProduction:', error);
+    return { production: null, error: error.message };
   }
 },
 
@@ -1309,48 +1324,100 @@ export const productionService = {
 
 
   // Créer une nouvelle production
-  async create(productionData) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) {
-        return { production: null, error: 'Utilisateur non connecté' }
-      }
-
-      // Utiliser la fonction PostgreSQL qui gère la déduction automatique du stock atelier
-      const { data, error } = await supabase.rpc('creer_production_avec_deduction', {
-        p_produit: productionData.produit,
-        p_quantite: productionData.quantite,
-        p_destination: productionData.destination || 'Boutique',
-        p_date_production: productionData.date_production || new Date().toISOString().split('T')[0],
-        p_producteur_id: user.id
-      })
-      
-      if (error) {
-        console.error('Erreur RPC create production:', error)
-        return { production: null, error: error.message }
-      }
-
-      if (!data || !data.success) {
-        const errorMessage = data?.error || 'Erreur inconnue lors de la création'
-        console.error('Erreur création production:', errorMessage)
-        return { production: null, error: errorMessage }
-      }
-
-      return { 
-        production: {
-          id: data.production_id,
-          message: data.message
-        }, 
-        error: null 
-      }
-    } catch (error) {
-      console.error('Erreur dans create production:', error)
-      return { production: null, error: error.message }
+  async create(productData) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { product: null, error: 'Utilisateur non connecté' }
     }
+
+    // 1. Créer le produit
+    const { data: produit, error: produitError } = await supabase
+      .from('produits')
+      .insert({
+        nom: productData.nom,
+        date_achat: productData.date_achat || new Date().toISOString().split('T')[0],
+        prix_achat: productData.prix_achat,
+        quantite: productData.quantite,
+        quantite_restante: productData.quantite,
+        unite_id: productData.unite_id,
+        created_by: user.id
+      })
+      .select(`
+        *,
+        unite:unites(id, value, label)
+      `)
+      .single()
+    
+    if (produitError) {
+      console.error('Erreur create produit:', produitError)
+      return { product: null, error: produitError.message }
+    }
+
+    // 2. Tentative d'enregistrement de la dépense (non bloquant)
+    try {
+      // Vérifier si la table depenses_comptables existe
+      const { error: tableCheckError } = await supabase
+        .from('depenses_comptables')
+        .select('id')
+        .limit(1);
+      
+      if (!tableCheckError) {
+        // La table existe, essayer d'enregistrer la dépense
+        const depenseResult = await comptabiliteService.enregistrerDepenseStock(
+          { ...productData, unite: produit.unite }, 
+          user.id
+        );
+        
+        if (depenseResult.depense) {
+          await supabase
+            .from('depenses_comptables')
+            .update({ reference_produit_id: produit.id })
+            .eq('id', depenseResult.depense.id);
+          
+          console.log(`💰 Dépense enregistrée: ${utils.formatCFA((productData.prix_achat || 0) * (productData.quantite || 0))}`);
+        }
+      } else {
+        console.info('📝 Table depenses_comptables non disponible, création produit sans enregistrement comptable');
+      }
+    } catch (depenseError) {
+      console.warn('⚠️ Erreur enregistrement dépense (produit créé):', depenseError);
+      // Non bloquant - le produit est créé même si la dépense échoue
+    }
+
+    // 3. Tentative d'enregistrement du mouvement (non bloquant)
+    try {
+      const { error: mouvementCheckError } = await supabase
+        .from('mouvements_stock')
+        .select('id')
+        .limit(1);
+      
+      if (!mouvementCheckError) {
+        await supabase
+          .from('mouvements_stock')
+          .insert({
+            produit_id: produit.id,
+            type_mouvement: 'entree',
+            quantite: productData.quantite,
+            quantite_avant: 0,
+            quantite_apres: productData.quantite,
+            utilisateur_id: user.id,
+            raison: 'Création nouveau produit',
+            commentaire: `Nouveau produit: ${productData.nom} - ${productData.quantite} ${produit.unite?.label}`
+          });
+      }
+    } catch (mouvementError) {
+      console.warn('⚠️ Erreur enregistrement mouvement (produit créé):', mouvementError);
+      // Non bloquant
+    }
+    
+    return { product: produit, error: null }
+  } catch (error) {
+    console.error('Erreur dans create produit:', error)
+    return { product: null, error: error.message }
   }
 }
-
 // ===================== SERVICES RECETTES =====================
 export const recetteService = {
   // Récupérer toutes les recettes
@@ -2811,6 +2878,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
