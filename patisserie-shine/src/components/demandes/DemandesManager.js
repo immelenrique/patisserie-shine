@@ -441,15 +441,28 @@ function PrixBoutiqueCell({ produitId }) {
 
   const loadPrix = async () => {
     try {
-      const { data } = await supabase
-        .from('prix_vente_produits')
-        .select('prix')
+      console.log('🔍 Recherche prix pour produit ID:', produitId);
+      
+      // CORRECTION : Utiliser la bonne table et les bons noms de champs
+      const { data, error } = await supabase
+        .from('prix_vente_produits')  // Table correcte selon le schéma
+        .select('prix')                // Champ 'prix' selon le schéma
         .eq('produit_id', produitId)
         .eq('actif', true)
         .single();
       
-      setPrix(data?.prix || null);
-    } catch {
+      if (error) {
+        console.warn('Erreur récupération prix:', error);
+        setPrix(null);
+      } else if (data && data.prix) {
+        console.log('✅ Prix trouvé:', data.prix);
+        setPrix(data.prix);
+      } else {
+        console.warn('⚠️ Aucun prix trouvé');
+        setPrix(null);
+      }
+    } catch (err) {
+      console.error('Erreur dans loadPrix:', err);
       setPrix(null);
     } finally {
       setLoading(false);
@@ -483,7 +496,7 @@ function PrixBoutiqueCell({ produitId }) {
   );
 }
 
-// Composant pour prévisualiser le prix dans le formulaire
+// Dans PrixBoutiquePreview component (à corriger dans DemandesManager.js)
 function PrixBoutiquePreview({ produitId }) {
   const [prix, setPrix] = useState(null);
 
@@ -497,15 +510,27 @@ function PrixBoutiquePreview({ produitId }) {
 
   const loadPrix = async () => {
     try {
-      const { data } = await supabase
-        .from('prix_vente_produits')
-        .select('prix')
+      console.log('🔍 Preview prix pour produit ID:', produitId);
+      
+      // CORRECTION : Utiliser la bonne table et les bons noms de champs
+      const { data, error } = await supabase
+        .from('prix_vente_produits')  // Table correcte
+        .select('prix')                // Champ correct
         .eq('produit_id', parseInt(produitId))
         .eq('actif', true)
         .single();
       
-      setPrix(data?.prix || null);
-    } catch {
+      if (error) {
+        console.warn('Erreur preview prix:', error);
+        setPrix(null);
+      } else if (data && data.prix) {
+        console.log('✅ Preview prix trouvé:', data.prix);
+        setPrix(data.prix);
+      } else {
+        setPrix(null);
+      }
+    } catch (err) {
+      console.error('Erreur preview prix:', err);
       setPrix(null);
     }
   };
