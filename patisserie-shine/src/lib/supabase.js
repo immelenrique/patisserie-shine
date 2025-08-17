@@ -1430,6 +1430,79 @@ export const caisseService = {
       return { ventes: [], error: error.message }
     }
   }
+   // Obtenir les produits les plus vendus
+  async getProduitsTopVentes(limit = 10, periode = 'mois') {
+    try {
+      let dateDebut = '';
+      const aujourdhui = new Date();
+      
+      // Calculer la période selon le paramètre
+      if (periode === 'semaine') {
+        const semaineDerniere = new Date(aujourdhui.getTime() - 7 * 24 * 60 * 60 * 1000);
+        dateDebut = semaineDerniere.toISOString().split('T')[0];
+      } else if (periode === 'mois') {
+        const moisDernier = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth(), 1);
+        dateDebut = moisDernier.toISOString().split('T')[0];
+      } else if (periode === 'annee') {
+        const anneeDerniere = new Date(aujourdhui.getFullYear(), 0, 1);
+        dateDebut = anneeDerniere.toISOString().split('T')[0];
+      } else {
+        // Par défaut, derniers 30 jours
+        const trenteDerniers = new Date(aujourdhui.getTime() - 30 * 24 * 60 * 60 * 1000);
+        dateDebut = trenteDerniers.toISOString().split('T')[0];
+      }
+
+      const dateFin = aujourdhui.toISOString().split('T')[0];
+
+      // Récupérer les lignes de vente pour la période
+      const { data: lignesVente, error } = await supabase
+        .from('lignes_vente')
+        .select(`
+          nom_produit,
+          quantite,
+          prix_unitaire,
+          total,
+          created_at
+        `)
+        .gte('created_at', dateDebut + 'T00:00:00.000Z')
+        .lte('created_at', dateFin + 'T23:59:59.999Z')
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        console.error('Erreur getProduitsTopVentes:', error)
+        return { produits: [], error: error.message }
+      }
+
+      // Grouper par produit et calculer les totaux
+      const produitsGroupes = {}
+      
+      lignesVente.forEach(ligne => {
+        const nom = ligne.nom_produit
+        if (!produitsGroupes[nom]) {
+          produitsGroupes[nom] = {
+            nom_produit: nom,
+            quantite_vendue: 0,
+            chiffre_affaires: 0,
+            nombre_ventes: 0
+          }
+        }
+        
+        produitsGroupes[nom].quantite_vendue += ligne.quantite || 0
+        produitsGroupes[nom].chiffre_affaires += ligne.total || 0
+        produitsGroupes[nom].nombre_ventes += 1
+      })
+
+      // Convertir en tableau et trier par chiffre d'affaires
+      const produitsArray = Object.values(produitsGroupes)
+        .sort((a, b) => b.chiffre_affaires - a.chiffre_affaires)
+        .slice(0, limit)
+
+      return { produits: produitsArray, error: null }
+    } catch (error) {
+      console.error('Erreur dans getProduitsTopVentes:', error)
+      return { produits: [], error: error.message }
+    }
+  }
 }
 
 
@@ -1813,6 +1886,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
