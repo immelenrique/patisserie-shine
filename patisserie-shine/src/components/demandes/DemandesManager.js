@@ -432,6 +432,7 @@ export default function DemandesManager({ currentUser }) {
 function PrixBoutiqueCell({ produitId }) {
   const [prix, setPrix] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [debug, setDebug] = useState('');
 
   useEffect(() => {
     if (produitId) {
@@ -441,28 +442,42 @@ function PrixBoutiqueCell({ produitId }) {
 
   const loadPrix = async () => {
     try {
-      console.log('🔍 Recherche prix pour produit ID:', produitId);
+      console.log('🔍 PrixBoutiqueCell - Recherche prix pour produit:', produitId);
+      setDebug('Recherche...');
       
-      // CORRECTION : Utiliser la bonne table et les bons noms de champs
+      // MÉTHODE CORRIGÉE: Sélection sans .single() d'abord
       const { data, error } = await supabase
-        .from('prix_vente_produits')  // Table correcte selon le schéma
-        .select('prix')                // Champ 'prix' selon le schéma
-        .eq('produit_id', produitId)
-        .eq('actif', true)
-        .single();
+        .from('prix_vente_produits')
+        .select('prix, actif')
+        .eq('produit_id', produitId);
+      
+      console.log('📊 PrixBoutiqueCell - Données reçues:', { data, error });
       
       if (error) {
-        console.warn('Erreur récupération prix:', error);
+        console.warn('⚠️ Erreur récupération prix:', error);
+        setDebug(`Erreur: ${error.message}`);
         setPrix(null);
-      } else if (data && data.prix) {
-        console.log('✅ Prix trouvé:', data.prix);
-        setPrix(data.prix);
+      } else if (data && data.length > 0) {
+        // Chercher un prix actif, sinon prendre le premier
+        const prixActif = data.find(p => p.actif === true) || data[0];
+        
+        if (prixActif && prixActif.prix) {
+          console.log('✅ Prix trouvé:', prixActif.prix);
+          setPrix(prixActif.prix);
+          setDebug('Prix trouvé');
+        } else {
+          console.warn('⚠️ Données trouvées mais prix null');
+          setDebug('Prix null');
+          setPrix(null);
+        }
       } else {
-        console.warn('⚠️ Aucun prix trouvé');
+        console.warn('⚠️ Aucune donnée trouvée');
+        setDebug('Aucune donnée');
         setPrix(null);
       }
     } catch (err) {
-      console.error('Erreur dans loadPrix:', err);
+      console.error('❌ Exception loadPrix:', err);
+      setDebug(`Exception: ${err.message}`);
       setPrix(null);
     } finally {
       setLoading(false);
@@ -473,81 +488,26 @@ function PrixBoutiqueCell({ produitId }) {
     return <div className="text-xs text-gray-400">Chargement...</div>;
   }
 
-  if (prix) {
-    return (
-      <div className="text-xs">
-        <div className="flex items-center text-green-600">
-          <DollarSign className="w-3 h-3 mr-1" />
-          {utils.formatCFA(prix)}
-        </div>
-        <div className="text-gray-500">Prix défini ✓</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="text-xs text-yellow-600">
-      <div className="flex items-center">
-        <DollarSign className="w-3 h-3 mr-1" />
-        Non défini
-      </div>
-      <div className="text-gray-500">À définir</div>
-    </div>
-  );
-}
-
-// Dans PrixBoutiquePreview component (à corriger dans DemandesManager.js)
-function PrixBoutiquePreview({ produitId }) {
-  const [prix, setPrix] = useState(null);
-
-  useEffect(() => {
-    if (produitId) {
-      loadPrix();
-    } else {
-      setPrix(null);
-    }
-  }, [produitId]);
-
-  const loadPrix = async () => {
-    try {
-      console.log('🔍 Preview prix pour produit ID:', produitId);
-      
-      // CORRECTION : Utiliser la bonne table et les bons noms de champs
-      const { data, error } = await supabase
-        .from('prix_vente_produits')  // Table correcte
-        .select('prix')                // Champ correct
-        .eq('produit_id', parseInt(produitId))
-        .eq('actif', true)
-        .single();
-      
-      if (error) {
-        console.warn('Erreur preview prix:', error);
-        setPrix(null);
-      } else if (data && data.prix) {
-        console.log('✅ Preview prix trouvé:', data.prix);
-        setPrix(data.prix);
-      } else {
-        setPrix(null);
-      }
-    } catch (err) {
-      console.error('Erreur preview prix:', err);
-      setPrix(null);
-    }
-  };
-
-  if (!produitId) return null;
-
-  return (
-    <p className="mt-1">
+    <div className="text-xs">
       {prix ? (
-        <span className="text-green-700">
-          ✓ Prix boutique disponible: {utils.formatCFA(prix)}
-        </span>
+        <>
+          <div className="flex items-center text-green-600">
+            <DollarSign className="w-3 h-3 mr-1" />
+            {utils.formatCFA(prix)}
+          </div>
+          <div className="text-gray-500">Prix défini ✓</div>
+        </>
       ) : (
-        <span className="text-yellow-700">
-          ⚠️ Aucun prix de vente défini - À configurer dans "Prix Vente"
-        </span>
+        <>
+          <div className="flex items-center text-yellow-600">
+            <DollarSign className="w-3 h-3 mr-1" />
+            Non défini
+          </div>
+          <div className="text-gray-500">À définir</div>
+          {debug && <div className="text-red-500 text-xs">Debug: {debug}</div>}
+        </>
       )}
-    </p>
+    </div>
   );
 }
