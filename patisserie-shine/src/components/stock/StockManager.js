@@ -88,16 +88,16 @@ export default function StockManager({ currentUser }) {
       // Calculer le prix unitaire à partir du prix total
       const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite);
       
-      const { product, error } = await productService.createWithBoutiqueOption({
+      const { product, error } = await productService.createWithPriceOption({
         nom: formData.nom,
         date_achat: formData.date_achat,
         prix_achat: prixUnitaire, // Stocker le prix unitaire
         prix_achat_total: parseFloat(formData.prix_achat_total), // Pour les calculs comptables
         quantite: parseFloat(formData.quantite),
         unite_id: parseInt(formData.unite_id),
-        // Options boutique
-        ajouter_boutique: formData.ajouter_boutique,
-        prix_vente: formData.ajouter_boutique ? parseFloat(formData.prix_vente) : null
+        // Option prix de vente
+        definir_prix_vente: formData.definir_prix_vente,
+        prix_vente: formData.definir_prix_vente ? parseFloat(formData.prix_vente) : null
       });
 
       if (error) {
@@ -107,8 +107,8 @@ export default function StockManager({ currentUser }) {
         resetForm();
         setShowAddModal(false);
         
-        if (formData.ajouter_boutique) {
-          alert(`Produit créé avec succès !\n\nAjouté au stock principal ET à la boutique avec prix de vente: ${utils.formatCFA(parseFloat(formData.prix_vente))}`);
+        if (formData.definir_prix_vente) {
+          alert(`Produit créé avec succès !\n\nAjouté au stock principal avec prix de vente défini: ${utils.formatCFA(parseFloat(formData.prix_vente))}\n\nPour l'ajouter à la boutique, un employé doit faire une demande vers "Boutique".`);
         } else {
           alert('Produit créé avec succès dans le stock principal !');
         }
@@ -164,7 +164,7 @@ export default function StockManager({ currentUser }) {
       quantite: product.quantite.toString(),
       quantite_restante: product.quantite_restante.toString(),
       unite_id: product.unite_id.toString(),
-      ajouter_boutique: false,
+      definir_prix_vente: false,
       prix_vente: ''
     });
     setError('');
@@ -510,28 +510,28 @@ export default function StockManager({ currentUser }) {
             )}
           </div>
 
-          {/* Nouvelle section: Option Boutique */}
+          {/* Nouvelle section: Option Prix de Vente */}
           {!editingProduct && (
             <div className="border-t pt-4">
               <div className="flex items-center space-x-3 mb-4">
                 <input
                   type="checkbox"
-                  id="ajouter_boutique"
-                  checked={formData.ajouter_boutique}
-                  onChange={(e) => setFormData({...formData, ajouter_boutique: e.target.checked, prix_vente: e.target.checked ? formData.prix_vente : ''})}
+                  id="definir_prix_vente"
+                  checked={formData.definir_prix_vente}
+                  onChange={(e) => setFormData({...formData, definir_prix_vente: e.target.checked, prix_vente: e.target.checked ? formData.prix_vente : ''})}
                   className="w-4 h-4 text-orange-600 bg-gray-100 border-gray-300 rounded focus:ring-orange-500"
                 />
-                <label htmlFor="ajouter_boutique" className="flex items-center text-sm font-medium text-gray-700">
+                <label htmlFor="definir_prix_vente" className="flex items-center text-sm font-medium text-gray-700">
                   <Store className="w-4 h-4 mr-2 text-orange-600" />
-                  Ajouter également à la boutique (pour vente directe)
+                  Définir le prix de vente (pour futures demandes vers boutique)
                 </label>
               </div>
 
-              {formData.ajouter_boutique && (
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              {formData.definir_prix_vente && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-orange-700 mb-2">
+                      <label className="block text-sm font-medium text-blue-700 mb-2">
                         Prix de vente unitaire (CFA) *
                       </label>
                       <input
@@ -539,17 +539,17 @@ export default function StockManager({ currentUser }) {
                         step="0.01"
                         value={formData.prix_vente}
                         onChange={(e) => setFormData({...formData, prix_vente: e.target.value})}
-                        className="w-full px-3 py-2 border border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="2500"
-                        required={formData.ajouter_boutique}
+                        required={formData.definir_prix_vente}
                         disabled={submitting}
                       />
                     </div>
 
                     {formData.prix_vente && formData.prix_achat_total && formData.quantite && (
                       <div className="self-end">
-                        <div className="bg-white border border-orange-300 rounded-lg p-3">
-                          <h4 className="text-sm font-medium text-orange-700 mb-2">Marge calculée</h4>
+                        <div className="bg-white border border-blue-300 rounded-lg p-3">
+                          <h4 className="text-sm font-medium text-blue-700 mb-2">Marge calculée</h4>
                           <div className="text-xs space-y-1">
                             <div>Prix d'achat unitaire: {utils.formatCFA(getPrixUnitaire())}</div>
                             <div>Prix de vente: {utils.formatCFA(formData.prix_vente)}</div>
@@ -568,10 +568,12 @@ export default function StockManager({ currentUser }) {
                     )}
                   </div>
 
-                  <div className="mt-3 text-xs text-orange-700">
-                    ✓ Le produit sera ajouté au stock principal ET au stock boutique
+                  <div className="mt-3 text-xs text-blue-700">
+                    ℹ️ Le produit sera ajouté au stock principal avec prix de vente défini
                     <br />
-                    ✓ Disponible immédiatement pour la vente en caisse
+                    📋 Pour l'ajouter à la boutique : Créer une demande vers "Boutique"
+                    <br />
+                    ✅ Le prix sera appliqué automatiquement lors de l'ajout en boutique
                   </div>
                 </div>
               )}
@@ -581,7 +583,7 @@ export default function StockManager({ currentUser }) {
           <div className="flex space-x-4 pt-4">
             <button 
               type="submit" 
-              disabled={submitting || unites.length === 0 || !formData.unite_id || (formData.ajouter_boutique && !formData.prix_vente)}
+              disabled={submitting || unites.length === 0 || !formData.unite_id || (formData.definir_prix_vente && !formData.prix_vente)}
               className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-2 px-4 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? (
