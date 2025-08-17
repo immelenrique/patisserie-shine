@@ -589,7 +589,121 @@ export const productService = {
       console.error('Erreur dans definirPrixVente:', error)
       return { success: false, error: error.message }
     }
+    
   },
+async createWithPriceOption(productData) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { product: null, error: 'Utilisateur non connecté' }
+    }
+
+    // 1. Créer le produit dans le stock principal uniquement
+    const { data: produit, error: produitError } = await supabase
+      .from('produits')
+      .insert({
+        nom: productData.nom,
+        date_achat: productData.date_achat || new Date().toISOString().split('T')[0],
+        prix_achat: productData.prix_achat, // Prix unitaire calculé
+        quantite: productData.quantite,
+        quantite_restante: productData.quantite,
+        unite_id: productData.unite_id,
+        created_by: user.id
+      })
+      .select(`
+        *,
+        unite:unites(id, value, label)
+      `)
+      .single()
+    
+    if (produitError) {
+      console.error('Erreur create produit:', produitError)
+      return { product: null, error: produitError.message }
+    }
+
+    // 2. Enregistrer la dépense comptable avec le prix total
+    try {
+      const depenseResult = await comptabiliteService.enregistrerDepenseStock(
+        { 
+          ...productData, 
+          prix_achat: productData.prix_achat_total, // Utiliser le prix total pour la comptabilité
+          unite: produit.unite 
+        }, 
+        user.id
+      )
+      
+      if (depenseResult.depense) {
+        await supabase
+          .from('depenses_comptables')
+          .update({ reference_produit_id: produit.id })
+          .eq('id', depenseResult.depense.id)
+      }
+    } catch (depenseError) {
+      console.warn('Erreur enregistrement dépense:', depenseError)
+    }
+
+    // 3. Si prix de vente défini, l'enregistrer pour futures demandes
+    if (productData.definir_prix_vente && productData.prix_vente) {
+      try {
+        await supabase
+          .from('prix_vente_produits')
+          .upsert({
+            produit_id: produit.id,
+            prix: productData.prix_vente,
+            marge_pourcentage: Math.round(((productData.prix_vente - productData.prix_achat) / productData.prix_achat) * 10000) / 100,
+            actif: true,
+            defini_par: user.id
+          })
+        
+        console.log(`Prix de vente défini pour ${produit.nom}: ${utils.formatCFA(productData.prix_vente)}`)
+      } catch (prixError) {
+        console.warn('Erreur définition prix vente:', prixError)
+      }
+    }
+
+    return { product: produit, error: null }
+  } catch (error) {
+    console.error('Erreur dans createWithPriceOption:', error)
+    return { product: null, error: error.message }
+  }
+},
+
+// Définir prix de vente pour un produit recette
+async definirPrixVenteRecette(nomProduit, prixVente) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { success: false, error: 'Utilisateur non connecté' }
+    }
+
+    // Créer une entrée dans une table prix_vente_recettes 
+    // (ou utiliser une table générique pour les prix)
+    const { data, error } = await supabase
+      .from('prix_vente_recettes')
+      .upsert({
+        nom_produit: nomProduit,
+        prix_vente: prixVente,
+        defini_par: user.id,
+        actif: true
+      })
+      .select()
+
+    if (error) {
+      console.error('Erreur définition prix recette:', error)
+      return { success: false, error: error.message }
+    }
+
+    return { 
+      success: true, 
+      message: `Prix de vente défini pour ${nomProduit}: ${utils.formatCFA(prixVente)}`
+    }
+  } catch (error) {
+    console.error('Erreur dans definirPrixVenteRecette:', error)
+    return { success: false, error: error.message }
+  }
+},
 
 
       
@@ -2115,6 +2229,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
