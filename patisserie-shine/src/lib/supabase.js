@@ -296,7 +296,48 @@ export const uniteService = {
     }
   }
 }
-
+export const prixService = {
+  // Synchroniser tous les prix
+  async synchroniserTousLesPrix() {
+    try {
+      console.log('🔄 Synchronisation des prix...');
+      
+      // 1. Récupérer tous les produits en stock boutique
+      const { data: stockBoutique } = await supabase
+        .from('stock_boutique')
+        .select('id, nom_produit, prix_vente');
+      
+      let corrections = 0;
+      
+      for (const item of stockBoutique || []) {
+        // Récupérer le prix correct
+        const { data: prixCorrect } = await supabase.rpc('get_prix_vente_produit', {
+          nom_produit_param: item.nom_produit
+        });
+        
+        if (prixCorrect && prixCorrect !== item.prix_vente) {
+          // Corriger le prix
+          await supabase
+            .from('stock_boutique')
+            .update({ 
+              prix_vente: prixCorrect,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', item.id);
+          
+          console.log(`✅ Prix corrigé pour ${item.nom_produit}: ${item.prix_vente} → ${prixCorrect}`);
+          corrections++;
+        }
+      }
+      
+      console.log(`🎉 ${corrections} prix synchronisés`);
+      return { success: true, corrections };
+    } catch (error) {
+      console.error('❌ Erreur synchronisation:', error);
+      return { success: false, error: error.message };
+    }
+  }
+};
 // ===================== SERVICES PRODUITS =====================
 export const productService = {
   // Récupérer tous les produits
@@ -3014,6 +3055,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
