@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Search, Plus, Edit, Trash2, Package } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Package, Store } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
 import { productService, uniteService, utils } from '../../lib/supabase';
 
@@ -18,10 +18,13 @@ export default function StockManager({ currentUser }) {
   const [formData, setFormData] = useState({
     nom: '',
     date_achat: new Date().toISOString().split('T')[0],
-    prix_achat: '',
+    prix_achat_total: '', // Prix total, pas unitaire
     quantite: '',
     quantite_restante: '',
-    unite_id: ''
+    unite_id: '',
+    // Nouvelles options boutique
+    ajouter_boutique: false,
+    prix_vente: ''
   });
 
   useEffect(() => {
@@ -60,7 +63,6 @@ export default function StockManager({ currentUser }) {
   const loadUnites = async () => {
     setUnitesLoading(true);
     try {
-      // Essayer de créer les unités de base si elles n'existent pas
       await uniteService.createBasicUnitsIfEmpty();
       
       const { unites, error } = await uniteService.getAll();
@@ -69,10 +71,6 @@ export default function StockManager({ currentUser }) {
         setError(error);
       } else {
         setUnites(unites);
-        // Si aucune unité et que c'est un admin, proposer d'en créer
-        if (unites.length === 0 && currentUser.role === 'admin') {
-          console.log('Aucune unité trouvée, création automatique...');
-        }
       }
     } catch (err) {
       console.error('Erreur:', err);
@@ -87,12 +85,19 @@ export default function StockManager({ currentUser }) {
     setError('');
 
     try {
-      const { product, error } = await productService.create({
+      // Calculer le prix unitaire à partir du prix total
+      const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite);
+      
+      const { product, error } = await productService.createWithBoutiqueOption({
         nom: formData.nom,
         date_achat: formData.date_achat,
-        prix_achat: parseFloat(formData.prix_achat),
+        prix_achat: prixUnitaire, // Stocker le prix unitaire
+        prix_achat_total: parseFloat(formData.prix_achat_total), // Pour les calculs comptables
         quantite: parseFloat(formData.quantite),
-        unite_id: parseInt(formData.unite_id)
+        unite_id: parseInt(formData.unite_id),
+        // Options boutique
+        ajouter_boutique: formData.ajouter_boutique,
+        prix_vente: formData.ajouter_boutique ? parseFloat(formData.prix_vente) : null
       });
 
       if (error) {
@@ -101,7 +106,12 @@ export default function StockManager({ currentUser }) {
         await loadProducts();
         resetForm();
         setShowAddModal(false);
-        alert('Produit créé avec succès');
+        
+        if (formData.ajouter_boutique) {
+          alert(`Produit créé avec succès !\n\nAjouté au stock principal ET à la boutique avec prix de vente: ${utils.formatCFA(parseFloat(formData.prix_vente))}`);
+        } else {
+          alert('Produit créé avec succès dans le stock principal !');
+        }
       }
     } catch (err) {
       console.error('Erreur:', err);
@@ -117,10 +127,12 @@ export default function StockManager({ currentUser }) {
     setError('');
 
     try {
+      const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite);
+      
       const { product, error } = await productService.update(editingProduct.id, {
         nom: formData.nom,
         date_achat: formData.date_achat,
-        prix_achat: parseFloat(formData.prix_achat),
+        prix_achat: prixUnitaire,
         quantite: parseFloat(formData.quantite),
         quantite_restante: parseFloat(formData.quantite_restante),
         unite_id: parseInt(formData.unite_id)
@@ -144,13 +156,16 @@ export default function StockManager({ currentUser }) {
 
   const startEdit = (product) => {
     setEditingProduct(product);
+    const prixTotal = (product.prix_achat || 0) * (product.quantite || 1);
     setFormData({
       nom: product.nom,
       date_achat: product.date_achat,
-      prix_achat: product.prix_achat.toString(),
+      prix_achat_total: prixTotal.toString(),
       quantite: product.quantite.toString(),
       quantite_restante: product.quantite_restante.toString(),
-      unite_id: product.unite_id.toString()
+      unite_id: product.unite_id.toString(),
+      ajouter_boutique: false,
+      prix_vente: ''
     });
     setError('');
   };
@@ -159,10 +174,12 @@ export default function StockManager({ currentUser }) {
     setFormData({
       nom: '',
       date_achat: new Date().toISOString().split('T')[0],
-      prix_achat: '',
+      prix_achat_total: '',
       quantite: '',
       quantite_restante: '',
-      unite_id: ''
+      unite_id: '',
+      ajouter_boutique: false,
+      prix_vente: ''
     });
     setError('');
   };
@@ -171,6 +188,31 @@ export default function StockManager({ currentUser }) {
     setShowAddModal(false);
     setEditingProduct(null);
     resetForm();
+  };
+
+  // Calculer le prix unitaire pour affichage
+  const getPrixUnitaire = () => {
+    if (formData.prix_achat_total && formData.quantite) {
+      const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite);
+      return prixUnitaire.toFixed(2);
+    }
+    return '0';
+  };
+
+  // Calculer la marge si prix de vente défini
+  const calculerMarge = () => {
+    if (formData.prix_vente && formData.prix_achat_total && formData.quantite) {
+      const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite);
+      const prixVente = parseFloat(formData.prix_vente);
+      const marge = prixVente - prixUnitaire;
+      const pourcentageMarge = prixUnitaire > 0 ? (marge / prixUnitaire) * 100 : 0;
+      
+      return {
+        marge: marge,
+        pourcentage: pourcentageMarge
+      };
+    }
+    return { marge: 0, pourcentage: 0 };
   };
 
   const filteredProducts = products.filter(product => 
@@ -219,14 +261,12 @@ export default function StockManager({ currentUser }) {
         </div>
       </div>
 
-      {/* Message d'erreur global */}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <div className="text-red-800">{error}</div>
         </div>
       )}
 
-      {/* Message si aucune unité */}
       {unites.length === 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="text-yellow-800">
@@ -245,7 +285,8 @@ export default function StockManager({ currentUser }) {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix d'achat</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix unitaire</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valeur totale</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date d'achat</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -254,7 +295,7 @@ export default function StockManager({ currentUser }) {
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="text-center py-8 text-gray-500">
+                  <td colSpan="7" className="text-center py-8 text-gray-500">
                     {products.length === 0 ? (
                       <>
                         <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
@@ -274,6 +315,7 @@ export default function StockManager({ currentUser }) {
                 filteredProducts.map((product) => {
                   const alertLevel = utils.getStockAlertLevel(product.quantite_restante, product.quantite);
                   const percentage = utils.calculateStockPercentage(product.quantite_restante, product.quantite);
+                  const valeurTotale = (product.prix_achat || 0) * (product.quantite_restante || 0);
                   
                   return (
                     <tr key={product.id} className={alertLevel === 'critique' || alertLevel === 'rupture' ? 'bg-red-50' : 'hover:bg-gray-50'}>
@@ -301,7 +343,10 @@ export default function StockManager({ currentUser }) {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {utils.formatCFA(product.prix_achat)}
+                        {utils.formatCFA(product.prix_achat)} / {product.unite?.value}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                        {utils.formatCFA(valeurTotale)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {utils.formatDate(product.date_achat)}
@@ -339,39 +384,28 @@ export default function StockManager({ currentUser }) {
       <Modal 
         isOpen={showAddModal || editingProduct !== null} 
         onClose={handleCloseModal} 
-        title={editingProduct ? "Modifier le Produit" : "Ajouter un Produit"} 
+        title={editingProduct ? "Modifier le Produit" : "Ajouter un Produit au Stock Principal"} 
         size="lg"
       >
         <form onSubmit={editingProduct ? handleEditProduct : handleAddProduct} className="space-y-4">
-          {/* Message d'erreur dans le modal */}
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
               <div className="text-red-800 text-sm">{error}</div>
             </div>
           )}
 
-          {/* Vérification des unités */}
           {unites.length === 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="text-yellow-800">
                 <strong>⚠️ Aucune unité disponible</strong>
                 <br />
                 Vous devez d'abord créer des unités de mesure dans l'onglet "Unités".
-                <br />
-                <button 
-                  type="button"
-                  onClick={loadUnites}
-                  className="mt-2 text-sm bg-yellow-200 hover:bg-yellow-300 px-3 py-1 rounded transition-colors"
-                  disabled={unitesLoading}
-                >
-                  {unitesLoading ? 'Rechargement...' : 'Recharger les unités'}
-                </button>
               </div>
             </div>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
+            <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-2">Nom du produit *</label>
               <input
                 type="text"
@@ -383,6 +417,7 @@ export default function StockManager({ currentUser }) {
                 disabled={submitting}
               />
             </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Date d'achat *</label>
               <input
@@ -394,19 +429,27 @@ export default function StockManager({ currentUser }) {
                 disabled={submitting}
               />
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Prix d'achat (CFA) *</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.prix_achat}
-                onChange={(e) => setFormData({...formData, prix_achat: e.target.value})}
+              <label className="block text-sm font-medium text-gray-700 mb-2">Unité *</label>
+              <select
+                value={formData.unite_id}
+                onChange={(e) => setFormData({...formData, unite_id: e.target.value})}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                placeholder="18500"
                 required
-                disabled={submitting}
-              />
+                disabled={submitting || unitesLoading || unites.length === 0}
+              >
+                <option value="">
+                  {unites.length === 0 ? 'Aucune unité disponible' : 'Choisir une unité'}
+                </option>
+                {unites.map(unite => (
+                  <option key={unite.id} value={unite.id}>
+                    {unite.label} ({unite.value})
+                  </option>
+                ))}
+              </select>
             </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Quantité totale *</label>
               <input
@@ -427,6 +470,29 @@ export default function StockManager({ currentUser }) {
                 disabled={submitting}
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Prix d'achat TOTAL (CFA) *
+                <span className="text-xs text-gray-500 block">Prix total de toute la quantité</span>
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.prix_achat_total}
+                onChange={(e) => setFormData({...formData, prix_achat_total: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                placeholder="18500"
+                required
+                disabled={submitting}
+              />
+              {formData.prix_achat_total && formData.quantite && (
+                <p className="text-xs text-blue-600 mt-1">
+                  Prix unitaire: {utils.formatCFA(getPrixUnitaire())} / {unites.find(u => u.id === parseInt(formData.unite_id))?.value || 'unité'}
+                </p>
+              )}
+            </div>
+
             {editingProduct && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Quantité restante *</label>
@@ -442,39 +508,80 @@ export default function StockManager({ currentUser }) {
                 />
               </div>
             )}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Unité * 
-                {unitesLoading && <span className="text-xs text-gray-500 ml-2">(Chargement...)</span>}
-              </label>
-              <select
-                value={formData.unite_id}
-                onChange={(e) => setFormData({...formData, unite_id: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                required
-                disabled={submitting || unitesLoading || unites.length === 0}
-              >
-                <option value="">
-                  {unites.length === 0 ? 'Aucune unité disponible' : 'Choisir une unité'}
-                </option>
-                {unites.map(unite => (
-                  <option key={unite.id} value={unite.id}>
-                    {unite.label} ({unite.value})
-                  </option>
-                ))}
-              </select>
-              {unites.length === 0 && (
-                <p className="text-xs text-red-500 mt-1">
-                  Créez d'abord des unités dans l'onglet "Unités"
-                </p>
+          </div>
+
+          {/* Nouvelle section: Option Boutique */}
+          {!editingProduct && (
+            <div className="border-t pt-4">
+              <div className="flex items-center space-x-3 mb-4">
+                <input
+                  type="checkbox"
+                  id="ajouter_boutique"
+                  checked={formData.ajouter_boutique}
+                  onChange={(e) => setFormData({...formData, ajouter_boutique: e.target.checked, prix_vente: e.target.checked ? formData.prix_vente : ''})}
+                  className="w-4 h-4 text-orange-600 bg-gray-100 border-gray-300 rounded focus:ring-orange-500"
+                />
+                <label htmlFor="ajouter_boutique" className="flex items-center text-sm font-medium text-gray-700">
+                  <Store className="w-4 h-4 mr-2 text-orange-600" />
+                  Ajouter également à la boutique (pour vente directe)
+                </label>
+              </div>
+
+              {formData.ajouter_boutique && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-orange-700 mb-2">
+                        Prix de vente unitaire (CFA) *
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={formData.prix_vente}
+                        onChange={(e) => setFormData({...formData, prix_vente: e.target.value})}
+                        className="w-full px-3 py-2 border border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        placeholder="2500"
+                        required={formData.ajouter_boutique}
+                        disabled={submitting}
+                      />
+                    </div>
+
+                    {formData.prix_vente && formData.prix_achat_total && formData.quantite && (
+                      <div className="self-end">
+                        <div className="bg-white border border-orange-300 rounded-lg p-3">
+                          <h4 className="text-sm font-medium text-orange-700 mb-2">Marge calculée</h4>
+                          <div className="text-xs space-y-1">
+                            <div>Prix d'achat unitaire: {utils.formatCFA(getPrixUnitaire())}</div>
+                            <div>Prix de vente: {utils.formatCFA(formData.prix_vente)}</div>
+                            <div className="border-t pt-1">
+                              <div className={`font-semibold ${calculerMarge().marge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                Marge: {calculerMarge().marge >= 0 ? '+' : ''}{utils.formatCFA(calculerMarge().marge)}
+                              </div>
+                              <div className={`text-xs ${calculerMarge().pourcentage >= 20 ? 'text-green-600' : 'text-yellow-600'}`}>
+                                {Math.round(calculerMarge().pourcentage)}% de marge
+                                {calculerMarge().pourcentage < 20 && ' (⚠️ Faible)'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-3 text-xs text-orange-700">
+                    ✓ Le produit sera ajouté au stock principal ET au stock boutique
+                    <br />
+                    ✓ Disponible immédiatement pour la vente en caisse
+                  </div>
+                </div>
               )}
             </div>
-          </div>
+          )}
           
           <div className="flex space-x-4 pt-4">
             <button 
               type="submit" 
-              disabled={submitting || unites.length === 0 || !formData.unite_id}
+              disabled={submitting || unites.length === 0 || !formData.unite_id || (formData.ajouter_boutique && !formData.prix_vente)}
               className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-2 px-4 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? (
