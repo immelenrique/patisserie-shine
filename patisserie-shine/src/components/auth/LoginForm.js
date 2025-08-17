@@ -114,15 +114,7 @@ export default function LoginForm({ onLogin }) {
             </button>
           </form>
 
-          <div className="mt-6 p-4 bg-gray-50 rounded-xl">
-            <p className="text-sm font-medium text-gray-700 mb-3">Créez d'abord vos comptes dans Supabase :</p>
-            <div className="space-y-2 text-xs text-gray-600">
-              <div>1. Dashboard Supabase → Authentication → Users</div>
-              <div>2. Add user → Email: admin@shine.local</div>
-              <div>3. Répétez pour: marie@shine.local, jean@shine.local</div>
-              <div>4. Connectez-vous avec: admin, marie, jean</div>
-            </div>
-          </div>
+          
         </div>
       </div>
     </div>
