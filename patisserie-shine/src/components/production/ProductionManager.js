@@ -1,7 +1,9 @@
+// src/components/production/ProductionManager.js (CORRECTION COMPLÈTE)
+
 "use client";
 
 import { useState, useEffect } from 'react';
-import { productionService, recetteService, utils } from '../../lib/supabase';
+import { productionService, recetteService, utils, supabase } from '../../lib/supabase';
 import { Plus, ChefHat, Calendar, MapPin, User, AlertTriangle, CheckCircle, Clock, Package, Info, Store } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
 
@@ -16,11 +18,10 @@ export default function ProductionManager({ currentUser }) {
     produit: '',
     quantite: '',
     destination: 'Boutique',
-    date_production: new Date().toISOString().split('T')[0],
-    // Nouveau champ pour le prix de vente si destination = Boutique
-    prix_vente: ''
+    date_production: new Date().toISOString().split('T')[0]
   });
   const [recetteInfo, setRecetteInfo] = useState(null);
+  const [prixRecetteInfo, setPrixRecetteInfo] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -29,8 +30,10 @@ export default function ProductionManager({ currentUser }) {
   useEffect(() => {
     if (formData.produit) {
       loadRecetteInfo();
+      loadPrixRecette(); // 🔧 AJOUT: Charger le prix de la recette
     } else {
       setRecetteInfo(null);
+      setPrixRecetteInfo(null);
     }
   }, [formData.produit]);
 
@@ -84,53 +87,91 @@ export default function ProductionManager({ currentUser }) {
     }
   };
 
+  // 🔧 NOUVELLE FONCTION: Charger le prix de la recette
+  const loadPrixRecette = async () => {
+    try {
+      console.log('🔍 Recherche prix pour produit:', formData.produit);
+      
+      const { data: prixData, error: prixError } = await supabase
+        .from('prix_vente_recettes')
+        .select('prix_vente, actif')
+        .eq('nom_produit', formData.produit)
+        .eq('actif', true)
+        .single();
+      
+      if (prixError) {
+        console.warn('⚠️ Aucun prix trouvé dans prix_vente_recettes:', prixError);
+        setPrixRecetteInfo(null);
+      } else if (prixData && prixData.prix_vente) {
+        console.log('✅ Prix trouvé dans prix_vente_recettes:', prixData.prix_vente);
+        setPrixRecetteInfo({
+          prix_vente: parseFloat(prixData.prix_vente),
+          source: 'recette'
+        });
+      } else {
+        console.warn('⚠️ Prix trouvé mais invalide:', prixData);
+        setPrixRecetteInfo(null);
+      }
+    } catch (err) {
+      console.error('❌ Erreur loadPrixRecette:', err);
+      setPrixRecetteInfo(null);
+    }
+  };
+
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  setSubmitting(true);
-  setError('');
-  
-  try {
-    // NE PLUS envoyer prix_vente, laisser la logique backend récupérer le prix de la recette
-    const result = await productionService.createProduction({
-      produit: formData.produit,
-      quantite: parseFloat(formData.quantite),
-      destination: formData.destination,
-      date_production: formData.date_production
-      // ❌ Supprimé: prix_vente: formData.prix_vente 
-    });
+    e.preventDefault();
+    setSubmitting(true);
+    setError('');
+    
+    try {
+      // 🔧 VÉRIFICATION: Prix obligatoire pour destination Boutique
+      if (formData.destination === 'Boutique' && (!prixRecetteInfo || !prixRecetteInfo.prix_vente)) {
+        setError(`Aucun prix de vente défini pour "${formData.produit}". Veuillez d'abord définir le prix dans la création de recette.`);
+        setSubmitting(false);
+        return;
+      }
 
-    if (result.error) {
-      setError(result.error);
-      return;
+      const result = await productionService.createProduction({
+        produit: formData.produit,
+        quantite: parseFloat(formData.quantite),
+        destination: formData.destination,
+        date_production: formData.date_production
+      });
+
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+
+      let message = `✅ Production créée avec succès !\n\n${result.production?.message || ''}`;
+      
+      if (formData.destination === 'Boutique' && prixRecetteInfo) {
+        message += `\n\n🏪 Produit ajouté au stock boutique avec prix: ${utils.formatCFA(prixRecetteInfo.prix_vente)}`;
+      } else {
+        message += `\n\n📦 Produit stocké pour: ${formData.destination}`;
+      }
+      
+      alert(message);
+
+      // Réinitialiser le formulaire
+      setShowAddModal(false);
+      setFormData({
+        produit: '',
+        quantite: '',
+        destination: 'Boutique',
+        date_production: new Date().toISOString().split('T')[0]
+      });
+      setRecetteInfo(null);
+      setPrixRecetteInfo(null);
+      
+      loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
     }
+  };
 
-    let message = `✅ Production créée avec succès !\n\n${result.production?.message || ''}`;
-    
-    if (formData.destination === 'Boutique') {
-      message += `\n\n🏪 Produit ajouté au stock boutique avec le prix défini dans la recette`;
-    } else {
-      message += `\n\n📦 Produit stocké pour: ${formData.destination}`;
-    }
-    
-    alert(message);
-
-    // Réinitialiser le formulaire SANS le champ prix_vente
-    setShowAddModal(false);
-    setFormData({
-      produit: '',
-      quantite: '',
-      destination: 'Boutique',
-      date_production: new Date().toISOString().split('T')[0]
-    });
-    setRecetteInfo(null);
-    
-    loadData();
-  } catch (err) {
-    setError(err.message);
-  } finally {
-    setSubmitting(false);
-  }
-};
   const calculatedStats = {
     totalProductions: productions.length,
     productionsJour: productions.filter(p => p.date_production === new Date().toISOString().split('T')[0]).length,
@@ -195,13 +236,13 @@ export default function ProductionManager({ currentUser }) {
         <div className="flex items-start">
           <Info className="w-5 h-5 text-blue-600 mr-2 mt-0.5" />
           <div className="text-blue-800">
-            <h4 className="font-medium mb-1">🔄 Nouveau processus de production</h4>
+            <h4 className="font-medium mb-1">🔄 Processus de production automatisé</h4>
             <p className="text-sm">
               <strong>Important :</strong><br/>
-              ✅ <strong>Les productions n'ajoutent PLUS au stock principal</strong><br/>
+              ✅ <strong>Prix automatique :</strong> Le prix défini dans la recette est utilisé automatiquement<br/>
               🏪 <strong>Ajout direct au stock boutique</strong> selon la destination<br/>
-              💰 <strong>Définissez le prix de vente</strong> pour la destination "Boutique"<br/>
-              📦 <strong>Les ingrédients sont déduits</strong> automatiquement du stock atelier
+              📦 <strong>Les ingrédients sont déduits</strong> automatiquement du stock atelier<br/>
+              💰 <strong>Pas besoin de re-saisir le prix</strong> si déjà défini dans la recette
             </p>
           </div>
         </div>
@@ -387,11 +428,7 @@ export default function ProductionManager({ currentUser }) {
                   </label>
                   <select
                     value={formData.destination}
-                    onChange={(e) => setFormData({
-                      ...formData, 
-                      destination: e.target.value,
-                      prix_vente: e.target.value !== 'Boutique' ? '' : formData.prix_vente
-                    })}
+                    onChange={(e) => setFormData({...formData, destination: e.target.value})}
                     className="form-input w-full"
                     disabled={submitting}
                   >
@@ -418,62 +455,60 @@ export default function ProductionManager({ currentUser }) {
                 </div>
               </div>
 
-              {/* Champ prix de vente si destination = Boutique */}
-              {formData.destination === 'Boutique' && (
+              {/* 🔧 AFFICHAGE DU PRIX AUTOMATIQUE */}
+              {formData.destination === 'Boutique' && prixRecetteInfo && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                   <h4 className="font-medium text-green-800 mb-3 flex items-center">
                     <Store className="w-5 h-5 mr-2" />
-                    Configuration Boutique
+                    Configuration Boutique Automatique
                   </h4>
-                  <div>
-                    <label className="block text-sm font-medium text-green-700 mb-2">
-                      Prix de vente unitaire (CFA)
-                      <span className="text-xs text-green-600 block">Optionnel - peut être défini plus tard dans "Prix Vente"</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="25"
-                      min="0"
-                      value={formData.prix_vente}
-                      onChange={(e) => setFormData({...formData, prix_vente: e.target.value})}
-                      className="w-full px-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      placeholder="2500"
-                      disabled={submitting}
-                    />
-                    {recetteInfo && formData.prix_vente && (
-                      <div className="mt-2 p-2 bg-white border border-green-300 rounded text-xs">
-                        <div className="flex justify-between">
-                          <span>Coût production unitaire:</span>
-                          <span className="font-semibold">{utils.formatCFA(recetteInfo.coutUnitaire)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Prix de vente:</span>
-                          <span className="font-semibold text-green-600">{utils.formatCFA(parseFloat(formData.prix_vente))}</span>
-                        </div>
-                        <div className="border-t pt-1 mt-1">
-                          <div className="flex justify-between">
-                            <span>Marge unitaire:</span>
-                            <span className={`font-semibold ${(parseFloat(formData.prix_vente) - recetteInfo.coutUnitaire) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {utils.formatCFA(parseFloat(formData.prix_vente) - recetteInfo.coutUnitaire)}
-                            </span>
+                  <div className="bg-white border border-green-300 rounded-lg p-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-green-700">Prix de vente unitaire:</span>
+                      <span className="font-bold text-xl text-green-600">
+                        {utils.formatCFA(prixRecetteInfo.prix_vente)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-green-600 mt-2">
+                      ✅ Prix récupéré automatiquement depuis la recette
+                    </div>
+                    {recetteInfo && formData.quantite && (
+                      <div className="mt-3 pt-3 border-t border-green-200">
+                        <div className="grid grid-cols-2 gap-4 text-xs">
+                          <div>
+                            <span className="text-green-700">Coût production unitaire:</span>
+                            <div className="font-semibold">{utils.formatCFA(recetteInfo.coutUnitaire)}</div>
                           </div>
-                          <div className="flex justify-between">
-                            <span>% Marge:</span>
-                            <span className="font-semibold text-blue-600">
-                              {recetteInfo.coutUnitaire > 0 ? Math.round(((parseFloat(formData.prix_vente) - recetteInfo.coutUnitaire) / recetteInfo.coutUnitaire) * 100) : 0}%
-                            </span>
+                          <div>
+                            <span className="text-green-700">Marge unitaire:</span>
+                            <div className="font-semibold text-blue-600">
+                              {utils.formatCFA(prixRecetteInfo.prix_vente - recetteInfo.coutUnitaire)}
+                            </div>
                           </div>
                         </div>
                       </div>
                     )}
                   </div>
                   <div className="mt-3 text-xs text-green-700">
-                    ✓ Le produit sera ajouté directement au stock boutique
-                    {formData.prix_vente ? 
-                      <><br />✓ Disponible immédiatement pour la vente en caisse</> :
-                      <><br />⚠️ Prix à définir pour être vendable en caisse</>
-                    }
+                    ✓ Le produit sera ajouté directement au stock boutique avec ce prix
+                    <br />
+                    ✓ Disponible immédiatement pour la vente en caisse
                   </div>
+                </div>
+              )}
+
+              {/* ALERTE SI PAS DE PRIX POUR BOUTIQUE */}
+              {formData.destination === 'Boutique' && !prixRecetteInfo && formData.produit && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <h4 className="font-medium text-red-800 mb-2 flex items-center">
+                    <AlertTriangle className="w-5 h-5 mr-2" />
+                    Prix de vente requis
+                  </h4>
+                  <p className="text-red-700 text-sm">
+                    Aucun prix de vente défini pour "{formData.produit}".
+                    <br />
+                    Vous devez d'abord définir le prix dans l'onglet "Recettes" lors de la création de la recette.
+                  </p>
                 </div>
               )}
 
@@ -522,6 +557,7 @@ export default function ProductionManager({ currentUser }) {
                   onClick={() => {
                     setShowAddModal(false);
                     setRecetteInfo(null);
+                    setPrixRecetteInfo(null);
                     setError('');
                   }}
                   className="btn-secondary"
@@ -532,7 +568,7 @@ export default function ProductionManager({ currentUser }) {
                 <button 
                   type="submit" 
                   className="btn-primary"
-                  disabled={submitting}
+                  disabled={submitting || (formData.destination === 'Boutique' && !prixRecetteInfo)}
                 >
                   {submitting ? (
                     <>
