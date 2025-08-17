@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { productionService, recetteService, utils } from '../../lib/supabase';
-import { Plus, ChefHat, Calendar, MapPin, User, AlertTriangle, CheckCircle, Clock, Package, Info } from 'lucide-react';
+import { Plus, ChefHat, Calendar, MapPin, User, AlertTriangle, CheckCircle, Clock, Package, Info, Store } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
 
 export default function ProductionManager({ currentUser }) {
@@ -16,7 +16,9 @@ export default function ProductionManager({ currentUser }) {
     produit: '',
     quantite: '',
     destination: 'Boutique',
-    date_production: new Date().toISOString().split('T')[0]
+    date_production: new Date().toISOString().split('T')[0],
+    // Nouveau champ pour le prix de vente si destination = Boutique
+    prix_vente: ''
   });
   const [recetteInfo, setRecetteInfo] = useState(null);
 
@@ -24,7 +26,6 @@ export default function ProductionManager({ currentUser }) {
     loadData();
   }, []);
 
-  // Charger les informations de la recette quand le produit change
   useEffect(() => {
     if (formData.produit) {
       loadRecetteInfo();
@@ -56,7 +57,6 @@ export default function ProductionManager({ currentUser }) {
 
   const loadRecetteInfo = async () => {
     try {
-      // Utiliser la méthode correcte getRecettesProduit
       const { recettes, error } = await recetteService.getRecettesProduit(formData.produit);
       
       if (error) {
@@ -85,62 +85,55 @@ export default function ProductionManager({ currentUser }) {
   };
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  setSubmitting(true);
-  setError('');
-  
-  try {
-    const result = await productionService.create({
-      ...formData,
-      quantite: parseFloat(formData.quantite)
-    });
-
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-
-    // Si destination est Boutique, vérifier le prix de vente
-    if (formData.destination === 'Boutique') {
-      // Trouver l'ID du produit depuis le nom
-      const produitTrouve = produits.find(p => p.nom === formData.produit);
-      
-      if (produitTrouve) {
-        // Vérifier si le produit a un prix de vente défini
-        const { data: prixVente } = await supabase
-          .from('prix_vente')
-          .select('prix_vente')
-          .eq('produit_id', produitTrouve.id)
-          .single();
-
-        if (!prixVente || !prixVente.prix_vente) {
-          alert(`⚠️ Production créée avec succès !\n\nATTENTION: Le produit "${formData.produit}" n'a pas de prix de vente défini.\nIl ne sera pas disponible en boutique tant que le prix n'est pas défini dans l'onglet "Prix Vente".`);
-        } else {
-          alert(`✅ Production créée avec succès !\n\n${result.production?.message || ''}\n\nProduit ajouté à la boutique avec le prix de vente: ${utils.formatCFA(prixVente.prix_vente)}`);
-        }
-      }
-    } else {
-      alert(`✅ Production créée avec succès !\n\n${result.production?.message || ''}`);
-    }
-
-    // Réinitialiser le formulaire
-    setShowAddModal(false);
-    setFormData({
-      produit: '',
-      quantite: '',
-      destination: 'Boutique',
-      date_production: new Date().toISOString().split('T')[0]
-    });
-    setRecetteInfo(null);
+    e.preventDefault();
+    setSubmitting(true);
+    setError('');
     
-    // Recharger les données
-    loadData();
-  } catch (err) {
-    setError(err.message);
-  } finally {
-    setSubmitting(false);
-  }
-};
+    try {
+      const result = await productionService.createProduction({
+        ...formData,
+        quantite: parseFloat(formData.quantite),
+        prix_vente: formData.destination === 'Boutique' && formData.prix_vente ? parseFloat(formData.prix_vente) : null
+      });
+
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+
+      let message = `✅ Production créée avec succès !\n\n${result.production?.message || ''}`;
+      
+      if (formData.destination === 'Boutique') {
+        if (formData.prix_vente) {
+          message += `\n\n🏪 Produit ajouté au stock boutique avec prix de vente: ${utils.formatCFA(parseFloat(formData.prix_vente))}`;
+        } else {
+          message += `\n\n⚠️ ATTENTION: Le produit a été ajouté au stock boutique mais SANS prix de vente.\nIl ne sera pas disponible en caisse tant que le prix n'est pas défini dans l'onglet "Prix Vente".`;
+        }
+      } else {
+        message += `\n\n📦 Produit stocké pour: ${formData.destination}`;
+      }
+      
+      alert(message);
+
+      // Réinitialiser le formulaire
+      setShowAddModal(false);
+      setFormData({
+        produit: '',
+        quantite: '',
+        destination: 'Boutique',
+        date_production: new Date().toISOString().split('T')[0],
+        prix_vente: ''
+      });
+      setRecetteInfo(null);
+      
+      // Recharger les données
+      loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const calculatedStats = {
     totalProductions: productions.length,
@@ -167,7 +160,7 @@ export default function ProductionManager({ currentUser }) {
             <ChefHat className="w-8 h-8 text-orange-600 mr-3" />
             Production - Produits Finis
           </h1>
-          <p className="text-gray-600">Enregistrement des produits finis avec déduction automatique des ingrédients</p>
+          <p className="text-gray-600">Création de produits finis - Ajout direct au stock boutique</p>
         </div>
         {(currentUser.role === 'admin' || currentUser.role === 'employe_production') && (
           <button
@@ -201,18 +194,18 @@ export default function ProductionManager({ currentUser }) {
         </div>
       )}
 
-      {/* Message d'information sur le processus */}
+      {/* Message d'information sur le nouveau processus */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div className="flex items-start">
           <Info className="w-5 h-5 text-blue-600 mr-2 mt-0.5" />
           <div className="text-blue-800">
-            <h4 className="font-medium mb-1">🔄 Processus de production automatique</h4>
+            <h4 className="font-medium mb-1">🔄 Nouveau processus de production</h4>
             <p className="text-sm">
-              <strong>Flux complet :</strong><br/>
-              1️⃣ <strong>Demandes</strong> → Les ingrédients demandés vont dans le stock atelier<br/>
-              2️⃣ <strong>Production</strong> → Les ingrédients sont déduits du stock atelier<br/>
-              3️⃣ <strong>Solde visible</strong> → Vous voyez ce qui reste dans l'atelier après production<br/>
-              ✓ Le coût de production est calculé automatiquement selon vos recettes
+              <strong>Important :</strong><br/>
+              ✅ <strong>Les productions n'ajoutent PLUS au stock principal</strong><br/>
+              🏪 <strong>Ajout direct au stock boutique</strong> selon la destination<br/>
+              💰 <strong>Définissez le prix de vente</strong> pour la destination "Boutique"<br/>
+              📦 <strong>Les ingrédients sont déduits</strong> automatiquement du stock atelier
             </p>
           </div>
         </div>
@@ -249,10 +242,12 @@ export default function ProductionManager({ currentUser }) {
         </Card>
         <Card className="p-6">
           <div className="flex items-center">
-            <Calendar className="w-8 h-8 text-purple-600" />
+            <Store className="w-8 h-8 text-purple-600" />
             <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">Aujourd'hui</p>
-              <p className="text-2xl font-bold text-gray-900">{calculatedStats.productionsJour}</p>
+              <p className="text-sm font-medium text-gray-500">Vers Boutique</p>
+              <p className="text-2xl font-bold text-gray-900">
+                {productions.filter(p => p.destination === 'Boutique').length}
+              </p>
             </div>
           </div>
         </Card>
@@ -298,8 +293,14 @@ export default function ProductionManager({ currentUser }) {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center">
-                        <MapPin className="w-4 h-4 text-gray-400 mr-1" />
-                        {production.destination}
+                        {production.destination === 'Boutique' ? (
+                          <Store className="w-4 h-4 text-green-600 mr-1" />
+                        ) : (
+                          <MapPin className="w-4 h-4 text-gray-400 mr-1" />
+                        )}
+                        <span className={production.destination === 'Boutique' ? 'text-green-600 font-medium' : ''}>
+                          {production.destination}
+                        </span>
                       </div>
                     </td>
                     <td className="px-6 py-4">{utils.formatDate(production.date_production)}</td>
@@ -386,19 +387,23 @@ export default function ProductionManager({ currentUser }) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Destination
+                    Destination *
                   </label>
                   <select
                     value={formData.destination}
-                    onChange={(e) => setFormData({...formData, destination: e.target.value})}
+                    onChange={(e) => setFormData({
+                      ...formData, 
+                      destination: e.target.value,
+                      prix_vente: e.target.value !== 'Boutique' ? '' : formData.prix_vente
+                    })}
                     className="form-input w-full"
                     disabled={submitting}
                   >
-                    <option value="Boutique">Boutique</option>
-                    <option value="Commande">Commande client</option>
-                    <option value="Stock">Stock (réserve)</option>
-                    <option value="Événement">Événement spécial</option>
-                    <option value="Test">Test/Échantillon</option>
+                    <option value="Boutique">🏪 Boutique (vente directe)</option>
+                    <option value="Commande">📦 Commande client</option>
+                    <option value="Stock">📋 Stock (réserve)</option>
+                    <option value="Événement">🎉 Événement spécial</option>
+                    <option value="Test">🧪 Test/Échantillon</option>
                   </select>
                 </div>
                 
@@ -416,6 +421,65 @@ export default function ProductionManager({ currentUser }) {
                   />
                 </div>
               </div>
+
+              {/* Champ prix de vente si destination = Boutique */}
+              {formData.destination === 'Boutique' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h4 className="font-medium text-green-800 mb-3 flex items-center">
+                    <Store className="w-5 h-5 mr-2" />
+                    Configuration Boutique
+                  </h4>
+                  <div>
+                    <label className="block text-sm font-medium text-green-700 mb-2">
+                      Prix de vente unitaire (CFA)
+                      <span className="text-xs text-green-600 block">Optionnel - peut être défini plus tard dans "Prix Vente"</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="25"
+                      min="0"
+                      value={formData.prix_vente}
+                      onChange={(e) => setFormData({...formData, prix_vente: e.target.value})}
+                      className="w-full px-3 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      placeholder="2500"
+                      disabled={submitting}
+                    />
+                    {recetteInfo && formData.prix_vente && (
+                      <div className="mt-2 p-2 bg-white border border-green-300 rounded text-xs">
+                        <div className="flex justify-between">
+                          <span>Coût production unitaire:</span>
+                          <span className="font-semibold">{utils.formatCFA(recetteInfo.coutUnitaire)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Prix de vente:</span>
+                          <span className="font-semibold text-green-600">{utils.formatCFA(parseFloat(formData.prix_vente))}</span>
+                        </div>
+                        <div className="border-t pt-1 mt-1">
+                          <div className="flex justify-between">
+                            <span>Marge unitaire:</span>
+                            <span className={`font-semibold ${(parseFloat(formData.prix_vente) - recetteInfo.coutUnitaire) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {utils.formatCFA(parseFloat(formData.prix_vente) - recetteInfo.coutUnitaire)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>% Marge:</span>
+                            <span className="font-semibold text-blue-600">
+                              {recetteInfo.coutUnitaire > 0 ? Math.round(((parseFloat(formData.prix_vente) - recetteInfo.coutUnitaire) / recetteInfo.coutUnitaire) * 100) : 0}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-3 text-xs text-green-700">
+                    ✓ Le produit sera ajouté directement au stock boutique
+                    {formData.prix_vente ? 
+                      <><br />✓ Disponible immédiatement pour la vente en caisse</> :
+                      <><br />⚠️ Prix à définir pour être vendable en caisse</>
+                    }
+                  </div>
+                </div>
+              )}
 
               {/* Informations sur la recette sélectionnée */}
               {recetteInfo && formData.quantite && (
@@ -444,10 +508,13 @@ export default function ProductionManager({ currentUser }) {
                     </div>
                   </div>
 
-                  <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded">
-                    <p className="text-green-700 text-sm">
+                  <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded">
+                    <p className="text-orange-700 text-sm">
                       <CheckCircle className="w-4 h-4 inline mr-1" />
-                      Les ingrédients seront automatiquement déduits du stock principal lors de la création.
+                      Les ingrédients seront automatiquement déduits du stock atelier.
+                      <br />
+                      <Store className="w-4 h-4 inline mr-1" />
+                      Le produit fini sera ajouté au stock boutique (plus de stock principal).
                     </p>
                   </div>
                 </div>
