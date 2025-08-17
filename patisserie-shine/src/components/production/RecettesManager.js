@@ -137,6 +137,24 @@ const handleSaveRecette = async () => {
 
   if (ingredientsValides.length === 0) {
     alert('Veuillez remplir au moins un ingrédient avec une quantité valide');
+  const handleCalculBesoins = async (e) => {
+  e.preventDefault();
+  try {
+    const { besoins, error } = await recetteService.calculerStockNecessaire(
+      calculData.nom_produit,
+      parseFloat(calculData.quantite)
+    );
+
+    if (error) {
+      alert('Erreur lors du calcul: ' + error);
+    } else {
+      setBesoins(besoins);
+    }
+  } catch (err) {
+    console.error('Erreur:', err);
+    alert('Erreur lors du calcul');
+  }
+};
     return;
   }
 
