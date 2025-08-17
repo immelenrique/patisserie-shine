@@ -88,36 +88,38 @@ export default function ProductionManager({ currentUser }) {
   };
 
   // 🔧 NOUVELLE FONCTION: Charger le prix de la recette
-  const loadPrixRecette = async () => {
+ const loadPrixRecette = async () => {
   try {
-    console.log('🔍 Recherche prix pour produit:', formData.produit);
+    console.log('🔍 Recherche prix pour:', formData.produit);
     
-    // 🔧 CORRECTION : Chercher dans prix_vente_recettes avec nom_produit
     const { data: prixData, error: prixError } = await supabase
-      .from('prix_vente_recettes')  // ✅ Bonne table
+      .from('prix_vente_recettes')
       .select('prix_vente, actif')
-      .eq('nom_produit', formData.produit)  // ✅ Bonne colonne
+      .eq('nom_produit', formData.produit)
       .eq('actif', true)
-      .single();
+      .maybeSingle(); // 🔧 AJOUTER maybeSingle() au lieu de single()
+    
+    console.log('📊 Résultat recherche prix:', { prixData, prixError });
     
     if (prixError) {
-      console.warn('⚠️ Aucun prix trouvé dans prix_vente_recettes:', prixError);
+      console.warn('⚠️ Erreur recherche prix:', prixError);
       setPrixRecetteInfo(null);
     } else if (prixData && prixData.prix_vente) {
-      console.log('✅ Prix trouvé dans prix_vente_recettes:', prixData.prix_vente);
+      console.log('✅ Prix trouvé:', prixData.prix_vente);
       setPrixRecetteInfo({
         prix_vente: parseFloat(prixData.prix_vente),
         source: 'recette'
       });
     } else {
-      console.warn('⚠️ Prix trouvé mais invalide:', prixData);
+      console.warn('⚠️ Aucun prix trouvé pour:', formData.produit);
       setPrixRecetteInfo(null);
     }
   } catch (err) {
-    console.error('❌ Erreur loadPrixRecette:', err);
+    console.error('❌ Exception loadPrixRecette:', err);
     setPrixRecetteInfo(null);
   }
 };
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
