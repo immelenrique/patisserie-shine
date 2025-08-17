@@ -1834,19 +1834,25 @@ export const stockAtelierService = {
 // ===================== SERVICES STOCK BOUTIQUE =====================
 export const stockBoutiqueService = {
   // Récupérer l'état du stock boutique (VERSION FINALE CORRIGÉE)
- async getStockBoutique() {
+async getStockBoutique() {
   try {
     const { data, error } = await supabase
       .from('stock_boutique')
       .select(`
         id,
         produit_id,
-        nom_produit,
         quantite_disponible,
         quantite_vendue,
         prix_vente,
+        statut_stock,
         created_at,
-        updated_at
+        updated_at,
+        produits!inner (
+          nom,
+          unites (
+            label
+          )
+        )
       `)
       .order('created_at', { ascending: false });
     
@@ -1854,40 +1860,42 @@ export const stockBoutiqueService = {
       return { stock: [], error: error.message };
     }
     
-    // 🔧 CORRIGER LES PRIX EN TEMPS RÉEL
-    const stockCorrige = await Promise.all(
-      (data || []).map(async (item) => {
-        let prixCorrect = item.prix_vente || 0;
-        
-        // Si pas de prix ou prix à 0, chercher le prix correct
-        if (!prixCorrect || prixCorrect <= 0) {
-          const { data: prixData } = await supabase.rpc('get_prix_vente_produit', {
-            nom_produit_param: item.nom_produit
-          });
-          
-          prixCorrect = prixData || 0;
-          
-          // Mettre à jour le stock boutique avec le prix correct
-          if (prixCorrect > 0) {
-            await supabase
-              .from('stock_boutique')
-              .update({ prix_vente: prixCorrect })
-              .eq('id', item.id);
-          }
-        }
-        
-        const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0);
-        
-        return {
-          ...item,
-          stock_reel: stockReel,
-          prix_vente: prixCorrect,
-          valeur_stock: stockReel * prixCorrect,
-          prix_defini: prixCorrect > 0
-        };
-      })
-    );
+    const stockFormate = (data || []).map(item => {
+      const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0);
+      const prixVente = item.prix_vente || 0;
+      
+      return {
+        id: item.id,
+        produit_id: item.produit_id,
+        nom_produit: item.produits?.nom || `Produit ${item.produit_id}`, // ✅ Via JOIN
+        unite: item.produits?.unites?.label || 'unité',
+        quantite_disponible: item.quantite_disponible || 0,
+        quantite_vendue: item.quantite_vendue || 0,
+        stock_reel: stockReel,
+        prix_vente: prixVente,
+        valeur_stock: stockReel * prixVente,
+        statut_stock: this.calculateStockStatus(stockReel),
+        prix_defini: prixVente > 0,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        derniere_maj: item.updated_at
+      };
+    });
     
+    return { stock: stockFormate, error: null };
+  } catch (error) {
+    console.error('Erreur dans getStockBoutique:', error);
+    return { stock: [], error: error.message };
+  }
+},
+
+// Fonction utilitaire pour calculer le statut
+calculateStockStatus(stockReel) {
+  if (stockReel <= 0) return 'rupture';
+  if (stockReel <= 5) return 'critique';
+  if (stockReel <= 10) return 'faible';
+  return 'normal';
+}
     return { stock: stockCorrige, error: null };
   } catch (error) {
     return { stock: [], error: error.message };
@@ -3055,6 +3063,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
