@@ -1112,59 +1112,167 @@ async createProduction(productionData) {
       return { production: null, error: 'Utilisateur non connecté' }
     }
 
-    // Récupérer le prix de vente depuis prix_vente_recettes si destination = Boutique
+    console.log('🏭 Début création production:', productionData);
+
+    // ÉTAPE 1: Récupérer le prix de vente depuis prix_vente_recettes
     let prixVenteRecette = null;
     if (productionData.destination === 'Boutique') {
-      const { data: prixData } = await supabase
+      console.log('🔍 Recherche prix pour recette:', productionData.produit);
+      
+      const { data: prixData, error: prixError } = await supabase
         .from('prix_vente_recettes')
-        .select('prix_vente')
+        .select('prix_vente, actif')
         .eq('nom_produit', productionData.produit)
         .eq('actif', true)
         .single();
       
-      if (prixData) {
-        prixVenteRecette = prixData.prix_vente;
-        console.log(`💰 Prix récupéré depuis recette: ${utils.formatCFA(prixVenteRecette)}`);
+      if (prixError) {
+        console.warn('⚠️ Erreur récupération prix recette:', prixError);
+      } else if (prixData && prixData.prix_vente) {
+        prixVenteRecette = parseFloat(prixData.prix_vente);
+        console.log(`✅ Prix récupéré depuis recette: ${utils.formatCFA(prixVenteRecette)}`);
       } else {
+        console.warn(`⚠️ Prix trouvé mais invalide:`, prixData);
+      }
+
+      if (!prixVenteRecette) {
         console.warn(`⚠️ Aucun prix défini pour la recette: ${productionData.produit}`);
+        return { 
+          production: null, 
+          error: `Aucun prix de vente défini pour la recette "${productionData.produit}". Veuillez d'abord définir le prix dans la création de recette.` 
+        };
       }
     }
 
-    // Utiliser la fonction PostgreSQL avec le prix de recette
-    const { data, error } = await supabase.rpc('creer_production_nouvelle_logique', {
-      p_produit: productionData.produit,
-      p_quantite: productionData.quantite,
-      p_destination: productionData.destination || 'Boutique',
-      p_date_production: productionData.date_production || new Date().toISOString().split('T')[0],
-      p_producteur_id: user.id,
-      p_prix_vente: prixVenteRecette // Utiliser le prix de la recette
-    });
-    
-    if (error) {
-      console.error('Erreur RPC create production:', error);
-      return { production: null, error: error.message };
+    // ÉTAPE 2: Essayer d'abord la fonction RPC avec le prix
+    try {
+      const { data: rpcResult, error: rpcError } = await supabase.rpc('creer_production_nouvelle_logique', {
+        p_produit: productionData.produit,
+        p_quantite: productionData.quantite,
+        p_destination: productionData.destination || 'Boutique',
+        p_date_production: productionData.date_production || new Date().toISOString().split('T')[0],
+        p_producteur_id: user.id,
+        p_prix_vente: prixVenteRecette
+      });
+      
+      if (!rpcError && rpcResult && rpcResult.success) {
+        console.log('✅ Production créée via RPC avec succès');
+        return { 
+          production: {
+            id: rpcResult.production_id,
+            message: rpcResult.message
+          }, 
+          error: null 
+        };
+      } else {
+        console.warn('⚠️ RPC échoué, fallback vers méthode manuelle:', rpcError);
+      }
+    } catch (rpcException) {
+      console.warn('⚠️ Exception RPC, fallback vers méthode manuelle:', rpcException);
     }
 
-    if (!data || !data.success) {
-      const errorMessage = data?.error || 'Erreur inconnue lors de la création';
-      console.error('Erreur création production:', errorMessage);
-      return { production: null, error: errorMessage };
+    // ÉTAPE 3: Fallback - Méthode manuelle si RPC échoue
+    console.log('🔄 Utilisation méthode manuelle...');
+    
+    // 3.1 Créer l'entrée production
+    const { data: production, error: productionError } = await supabase
+      .from('productions')
+      .insert({
+        produit: productionData.produit,
+        quantite: productionData.quantite,
+        destination: productionData.destination || 'Boutique',
+        date_production: productionData.date_production || new Date().toISOString().split('T')[0],
+        producteur_id: user.id,
+        statut: 'termine'
+      })
+      .select()
+      .single();
+
+    if (productionError) {
+      console.error('❌ Erreur création production:', productionError);
+      return { production: null, error: productionError.message };
+    }
+
+    console.log('✅ Production créée:', production);
+
+    // 3.2 Si destination = Boutique, ajouter au stock boutique avec le PRIX CORRECT
+    if (productionData.destination === 'Boutique' && prixVenteRecette) {
+      console.log('🏪 Ajout au stock boutique avec prix:', utils.formatCFA(prixVenteRecette));
+      
+      try {
+        // Vérifier si le produit existe déjà en boutique
+        const { data: stockExistant } = await supabase
+          .from('stock_boutique')
+          .select('id, quantite_disponible, prix_vente')
+          .eq('nom_produit', productionData.produit) // Chercher par nom de produit
+          .single();
+
+        if (stockExistant) {
+          // Mettre à jour stock existant AVEC LE PRIX CORRECT
+          const { error: updateError } = await supabase
+            .from('stock_boutique')
+            .update({
+              quantite_disponible: (stockExistant.quantite_disponible || 0) + productionData.quantite,
+              prix_vente: prixVenteRecette, // 🔧 FORCER le prix de la recette
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', stockExistant.id);
+
+          if (updateError) {
+            console.error('❌ Erreur mise à jour stock boutique:', updateError);
+          } else {
+            console.log(`✅ Stock boutique mis à jour avec prix: ${utils.formatCFA(prixVenteRecette)}`);
+          }
+        } else {
+          // Créer nouvelle entrée avec le prix correct
+          const { error: insertError } = await supabase
+            .from('stock_boutique')
+            .insert({
+              nom_produit: productionData.produit, // Utiliser nom du produit
+              quantite_disponible: productionData.quantite,
+              quantite_vendue: 0,
+              prix_vente: prixVenteRecette, // 🔧 Prix de la recette
+              transfere_par: user.id
+            });
+
+          if (insertError) {
+            console.error('❌ Erreur création stock boutique:', insertError);
+          } else {
+            console.log(`✅ Nouveau stock boutique créé avec prix: ${utils.formatCFA(prixVenteRecette)}`);
+          }
+        }
+
+        // Enregistrer l'entrée boutique
+        await supabase
+          .from('entrees_boutique')
+          .insert({
+            nom_produit: productionData.produit,
+            quantite: productionData.quantite,
+            source: 'Production',
+            type_entree: 'Production',
+            prix_vente: prixVenteRecette, // 🔧 Prix de la recette
+            ajoute_par: user.id
+          });
+
+      } catch (boutiqueError) {
+        console.error('❌ Erreur traitement boutique:', boutiqueError);
+        // Ne pas faire échouer toute la production pour ça
+      }
     }
 
     return { 
       production: {
-        id: data.production_id,
-        message: data.message
+        id: production.id,
+        message: `Production créée avec succès. ${productionData.destination === 'Boutique' && prixVenteRecette ? `Prix boutique: ${utils.formatCFA(prixVenteRecette)}` : ''}`
       }, 
       error: null 
     };
+
   } catch (error) {
-    console.error('Erreur dans createProduction:', error);
+    console.error('❌ Erreur générale dans createProduction:', error);
     return { production: null, error: error.message };
   }
 },
-
-
   // Créer une nouvelle demande
   async create(demandeData) {
     try {
@@ -1765,6 +1873,54 @@ export const stockBoutiqueService = {
       return await this.getStockBoutiqueDirecte()
     }
   },
+  async synchroniserPrixRecettes() {
+  try {
+    console.log('🔄 Synchronisation forcée des prix recettes...');
+    
+    // Récupérer tous les prix de recettes actifs
+    const { data: prixRecettes, error: prixError } = await supabase
+      .from('prix_vente_recettes')
+      .select('nom_produit, prix_vente')
+      .eq('actif', true);
+    
+    if (prixError || !prixRecettes) {
+      return { success: false, error: 'Erreur récupération prix recettes' };
+    }
+    
+    let corrections = 0;
+    
+    // Mettre à jour chaque produit en boutique
+    for (const prixRecette of prixRecettes) {
+      const { data: stockBoutique } = await supabase
+        .from('stock_boutique')
+        .select('id, prix_vente')
+        .eq('nom_produit', prixRecette.nom_produit)
+        .single();
+      
+      if (stockBoutique && stockBoutique.prix_vente !== prixRecette.prix_vente) {
+        // Corriger le prix
+        const { error: updateError } = await supabase
+          .from('stock_boutique')
+          .update({ 
+            prix_vente: prixRecette.prix_vente,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', stockBoutique.id);
+        
+        if (!updateError) {
+          console.log(`✅ Prix corrigé pour ${prixRecette.nom_produit}: ${utils.formatCFA(stockBoutique.prix_vente)} → ${utils.formatCFA(prixRecette.prix_vente)}`);
+          corrections++;
+        }
+      }
+    }
+    
+    console.log(`🎉 ${corrections} prix synchronisés`);
+    return { success: true, corrections };
+  } catch (error) {
+    console.error('Erreur synchronisation:', error);
+    return { success: false, error: error.message };
+  }
+},
 
   // Méthode de fallback avec requête directe
   async getStockBoutiqueDirecte() {
@@ -2879,6 +3035,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
