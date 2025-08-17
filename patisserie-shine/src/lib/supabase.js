@@ -1417,7 +1417,7 @@ export const productionService = {
     console.error('Erreur dans create produit:', error)
     return { product: null, error: error.message }
   }
-}
+},
 // ===================== SERVICES RECETTES =====================
 export const recetteService = {
   // Récupérer toutes les recettes
@@ -2878,6 +2878,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
