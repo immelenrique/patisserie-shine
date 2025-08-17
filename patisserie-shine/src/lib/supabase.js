@@ -1507,105 +1507,230 @@ export const caisseService = {
 
 
 // ===================== SERVICES COMPTABILITÉ =====================
+// Corrections pour src/lib/supabase.js - Service comptabilité avec vraies valeurs
+
 export const comptabiliteService = {
-  // Obtenir les dépenses réelles depuis la base
-  async getDepenses(dateDebut, dateFin) {
+  // Calculer les vraies dépenses depuis la base de données
+  async getDepensesReelles(dateDebut, dateFin) {
     try {
       let depensesStock = 0
       let detailsDepensesStock = []
       
-      // 1. Calculer depuis les achats de produits
-      const { data: produits, error: produitsError } = await supabase
-        .from('produits')
-        .select('nom, prix_achat, quantite, date_achat, created_at')
-        .gte('date_achat', dateDebut)
-        .lte('date_achat', dateFin)
-      
-      if (!produitsError && produits) {
-        depensesStock = produits.reduce((sum, p) => 
-          sum + ((p.prix_achat || 0) * (p.quantite || 0)), 0
-        )
-        detailsDepensesStock = produits.map(p => ({
-          date: p.date_achat || p.created_at,
-          type: 'achat_stock',
-          description: `Achat ${p.nom} - ${p.quantite} unités`,
-          montant: (p.prix_achat || 0) * (p.quantite || 0)
-        }))
-      }
-
-      // 2. Ajouter les dépenses de production si elles existent
-      let depensesProduction = 0
-      let detailsProduction = []
+      // 1. Dépenses d'achat de matières premières (achats de produits)
       try {
-        const { data: productions, error: prodError } = await supabase
-          .from('productions')
-          .select('produit, cout_ingredients, quantite, date_production')
-          .gte('date_production', dateDebut)
-          .lte('date_production', dateFin)
-          .not('cout_ingredients', 'is', null)
+        const { data: produits, error: produitsError } = await supabase
+          .from('produits')
+          .select('nom, prix_achat, quantite, date_achat, created_at')
+          .gte('date_achat', dateDebut)
+          .lte('date_achat', dateFin)
         
-        if (!prodError && productions) {
-          depensesProduction = productions.reduce((sum, p) => sum + (p.cout_ingredients || 0), 0)
-          detailsProduction = productions.map(p => ({
-            date: p.date_production,
-            type: 'production',
-            description: `Production ${p.produit} (${p.quantite} unités)`,
-            montant: p.cout_ingredients || 0
+        if (!produitsError && produits) {
+          depensesStock = produits.reduce((sum, p) => 
+            sum + ((p.prix_achat || 0) * (p.quantite || 0)), 0
+          )
+          detailsDepensesStock = produits.map(p => ({
+            date: p.date_achat || p.created_at,
+            type: 'achat_matiere_premiere',
+            description: `Achat ${p.nom} - ${p.quantite} unités`,
+            montant: (p.prix_achat || 0) * (p.quantite || 0)
           }))
         }
-      } catch (err) {
-        console.warn('Erreur dépenses production:', err)
+      } catch (stockErr) {
+        console.warn('Erreur calcul dépenses stock:', stockErr)
       }
 
-      const totalDepenses = depensesStock + depensesProduction
+      // 2. Coût des ingrédients utilisés en production (consommations réelles)
+      let coutIngredients = 0
+      let detailsIngredients = []
+      
+      try {
+        // Calculer le coût basé sur les productions ET les prix d'achat des ingrédients
+        const { data: productions, error: prodError } = await supabase
+          .from('productions')
+          .select(`
+            id,
+            produit,
+            quantite,
+            date_production,
+            cout_ingredients
+          `)
+          .gte('date_production', dateDebut)
+          .lte('date_production', dateFin)
+        
+        if (!prodError && productions) {
+          for (const production of productions) {
+            let coutProduction = 0
+            
+            // Si le coût est déjà calculé, l'utiliser
+            if (production.cout_ingredients) {
+              coutProduction = production.cout_ingredients
+            } else {
+              // Sinon, calculer à partir des recettes
+              try {
+                const { data: recettes } = await supabase
+                  .from('recettes')
+                  .select(`
+                    quantite_necessaire,
+                    produit_ingredient:produits!recettes_produit_ingredient_id_fkey(
+                      nom, prix_achat, quantite
+                    )
+                  `)
+                  .eq('nom_produit', production.produit)
+                
+                if (recettes && recettes.length > 0) {
+                  coutProduction = recettes.reduce((sum, recette) => {
+                    const produit = recette.produit_ingredient
+                    if (produit && produit.prix_achat && produit.quantite) {
+                      const coutUnitaire = produit.prix_achat / produit.quantite
+                      return sum + (coutUnitaire * recette.quantite_necessaire * production.quantite)
+                    }
+                    return sum
+                  }, 0)
+                }
+              } catch (recetteError) {
+                console.warn('Erreur calcul coût recette:', recetteError)
+              }
+            }
+            
+            coutIngredients += coutProduction
+            
+            if (coutProduction > 0) {
+              detailsIngredients.push({
+                date: production.date_production,
+                type: 'cout_production',
+                description: `Production ${production.produit} (${production.quantite} unités)`,
+                montant: coutProduction
+              })
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Erreur calcul coût ingrédients:', err)
+      }
+
+      // 3. Autres dépenses depuis la table depenses_comptables si elle existe
+      let autresDepenses = 0
+      let detailsAutres = []
+      
+      try {
+        const { data: depenses, error: depensesError } = await supabase
+          .from('depenses_comptables')
+          .select('*')
+          .gte('date_depense', dateDebut)
+          .lte('date_depense', dateFin)
+        
+        if (!depensesError && depenses) {
+          autresDepenses = depenses.reduce((sum, d) => sum + (d.montant || 0), 0)
+          detailsAutres = depenses.map(d => ({
+            date: d.date_depense,
+            type: d.type_depense || 'autre',
+            description: d.description || 'Dépense',
+            montant: d.montant || 0
+          }))
+        }
+      } catch (depensesErr) {
+        // Table peut ne pas exister, ce n'est pas grave
+        console.info('Table depenses_comptables non disponible')
+      }
+
+      const totalDepenses = depensesStock + coutIngredients + autresDepenses
       
       const details = [
         ...detailsDepensesStock,
-        ...detailsProduction
+        ...detailsIngredients,
+        ...detailsAutres
       ].filter(d => d.montant > 0).sort((a, b) => new Date(b.date) - new Date(a.date))
       
       return { 
         depenses: totalDepenses, 
         details, 
         repartition: {
-          depenses_stock: depensesStock,
-          depenses_production: depensesProduction
+          depenses_achat_matieres: depensesStock,
+          cout_ingredients_production: coutIngredients,
+          autres_depenses: autresDepenses
         },
         error: null 
       }
     } catch (error) {
-      console.error('Erreur dans getDepenses:', error)
+      console.error('Erreur dans getDepensesReelles:', error)
       return { 
         depenses: 0, 
         details: [], 
-        repartition: { depenses_stock: 0, depenses_production: 0 },
+        repartition: { 
+          depenses_achat_matieres: 0, 
+          cout_ingredients_production: 0, 
+          autres_depenses: 0 
+        },
         error: error.message 
       }
     }
   },
 
-  // Obtenir le rapport comptable avec vraies données
-  async getRapportComptable(dateDebut, dateFin) {
+  // Calculer les vraies recettes (chiffre d'affaires)
+  async getRecettesReelles(dateDebut, dateFin) {
     try {
-      // 1. Récupérer les ventes réelles
       const ventesResult = await caisseService.getVentesPeriode(dateDebut, dateFin)
       const ventes = ventesResult.ventes || []
       
       const chiffreAffaires = ventes.reduce((sum, v) => sum + (v.total || 0), 0)
       const nombreVentes = ventes.length
       const ticketMoyen = nombreVentes > 0 ? chiffreAffaires / nombreVentes : 0
+      
+      // Calculer les articles vendus
+      const articlesVendus = ventes.reduce((sum, v) => 
+        sum + (v.items?.reduce((s, i) => s + (i.quantite || 0), 0) || 0), 0)
 
-      // 2. Récupérer les dépenses réelles
-      const depensesResult = await this.getDepenses(dateDebut, dateFin)
+      return {
+        chiffre_affaires: chiffreAffaires,
+        nombre_transactions: nombreVentes,
+        ticket_moyen: ticketMoyen,
+        articles_vendus: articlesVendus,
+        ventes_details: ventes,
+        error: null
+      }
+    } catch (error) {
+      console.error('Erreur dans getRecettesReelles:', error)
+      return {
+        chiffre_affaires: 0,
+        nombre_transactions: 0,
+        ticket_moyen: 0,
+        articles_vendus: 0,
+        ventes_details: [],
+        error: error.message
+      }
+    }
+  },
+
+  // Rapport comptable avec calculs corrects
+  async getRapportComptable(dateDebut, dateFin) {
+    try {
+      // 1. Récupérer les vraies recettes
+      const recettesResult = await this.getRecettesReelles(dateDebut, dateFin)
+      if (recettesResult.error) {
+        console.error('Erreur recettes:', recettesResult.error)
+      }
+
+      // 2. Récupérer les vraies dépenses
+      const depensesResult = await this.getDepensesReelles(dateDebut, dateFin)
+      if (depensesResult.error) {
+        console.error('Erreur dépenses:', depensesResult.error)
+      }
+
+      const chiffreAffaires = recettesResult.chiffre_affaires || 0
       const totalDepenses = depensesResult.depenses || 0
 
-      // 3. Calculer la marge
+      // 3. Calculer la marge correctement
       const margeBrute = chiffreAffaires - totalDepenses
       const pourcentageMarge = chiffreAffaires > 0 ? (margeBrute / chiffreAffaires) * 100 : 0
 
-      // 4. Calculer les articles vendus
-      const articlesVendus = ventes.reduce((sum, v) => 
-        sum + (v.items?.reduce((s, i) => s + (i.quantite || 0), 0) || 0), 0)
+      // 4. Vérification des calculs
+      console.log('📊 Calculs comptables:', {
+        periode: `${dateDebut} → ${dateFin}`,
+        chiffreAffaires: chiffreAffaires,
+        totalDepenses: totalDepenses,
+        margeBrute: margeBrute,
+        pourcentageMarge: pourcentageMarge.toFixed(2) + '%'
+      })
 
       return {
         periode: { debut: dateDebut, fin: dateFin },
@@ -1616,21 +1741,90 @@ export const comptabiliteService = {
           pourcentage_marge: Math.round(pourcentageMarge * 100) / 100
         },
         ventes: {
-          nombre_transactions: nombreVentes,
-          ticket_moyen: Math.round(ticketMoyen * 100) / 100,
-          articles_vendus: articlesVendus
+          nombre_transactions: recettesResult.nombre_transactions || 0,
+          ticket_moyen: Math.round((recettesResult.ticket_moyen || 0) * 100) / 100,
+          articles_vendus: recettesResult.articles_vendus || 0
         },
         depenses_details: depensesResult.details || [],
         repartition_depenses: depensesResult.repartition || {},
+        ventes_details: recettesResult.ventes_details || [],
         error: null
       }
     } catch (error) {
       console.error('Erreur dans getRapportComptable:', error)
-      return { error: error.message }
+      return { 
+        periode: { debut: dateDebut, fin: dateFin },
+        finances: {
+          chiffre_affaires: 0,
+          depenses: 0,
+          marge_brute: 0,
+          pourcentage_marge: 0
+        },
+        ventes: {
+          nombre_transactions: 0,
+          ticket_moyen: 0,
+          articles_vendus: 0
+        },
+        depenses_details: [],
+        repartition_depenses: {},
+        ventes_details: [],
+        error: error.message 
+      }
     }
   },
 
-  // Autres méthodes...
+  // Test des données - méthode utilitaire pour debug
+  async testDonneesComptables(dateDebut, dateFin) {
+    try {
+      console.log('🔍 Test des données comptables pour:', dateDebut, '→', dateFin)
+      
+      // Test ventes
+      const { data: ventes } = await supabase
+        .from('ventes')
+        .select('*')
+        .gte('created_at', dateDebut + 'T00:00:00.000Z')
+        .lte('created_at', dateFin + 'T23:59:59.999Z')
+      
+      console.log('💰 Ventes trouvées:', ventes?.length || 0)
+      if (ventes && ventes.length > 0) {
+        const totalVentes = ventes.reduce((sum, v) => sum + (v.total || 0), 0)
+        console.log('💰 Total ventes:', totalVentes, 'CFA')
+      }
+
+      // Test produits (achats)
+      const { data: produits } = await supabase
+        .from('produits')
+        .select('*')
+        .gte('date_achat', dateDebut)
+        .lte('date_achat', dateFin)
+      
+      console.log('📦 Achats de produits:', produits?.length || 0)
+      if (produits && produits.length > 0) {
+        const totalAchats = produits.reduce((sum, p) => sum + ((p.prix_achat || 0) * (p.quantite || 0)), 0)
+        console.log('📦 Total achats:', totalAchats, 'CFA')
+      }
+
+      // Test productions
+      const { data: productions } = await supabase
+        .from('productions')
+        .select('*')
+        .gte('date_production', dateDebut)
+        .lte('date_production', dateFin)
+      
+      console.log('🏭 Productions:', productions?.length || 0)
+
+      return {
+        ventes: ventes || [],
+        produits: produits || [],
+        productions: productions || []
+      }
+    } catch (error) {
+      console.error('Erreur test données:', error)
+      return null
+    }
+  },
+
+  // Méthodes existantes...
   async getEvolutionMensuelle(annee) {
     try {
       const evolution = []
@@ -1639,13 +1833,12 @@ export const comptabiliteService = {
         const dateDebut = `${annee}-${mois.toString().padStart(2, '0')}-01`
         const dateFin = `${annee}-${mois.toString().padStart(2, '0')}-${new Date(annee, mois, 0).getDate()}`
         
-        const ventesResult = await caisseService.getVentesPeriode(dateDebut, dateFin)
-        const ventes = ventesResult.ventes || []
+        const recettesResult = await this.getRecettesReelles(dateDebut, dateFin)
         
         evolution.push({
           mois: mois,
-          chiffre_affaires: ventes.reduce((sum, v) => sum + (v.total || 0), 0),
-          nb_ventes: ventes.length
+          chiffre_affaires: recettesResult.chiffre_affaires || 0,
+          nb_ventes: recettesResult.nombre_transactions || 0
         })
       }
       
@@ -1655,7 +1848,8 @@ export const comptabiliteService = {
       return { evolution: [], error: error.message }
     }
   },
-  // Exporter les données comptables
+
+  // Export corrigé
   async exporterDonneesComptables(dateDebut, dateFin, format = 'csv') {
     try {
       const rapport = await this.getRapportComptable(dateDebut, dateFin)
@@ -1668,10 +1862,18 @@ export const comptabiliteService = {
 
       if (format === 'csv') {
         const csvContent = this.genererCSV(donnees)
-        return { success: true, content: csvContent, filename: `comptabilite_${dateDebut}_${dateFin}.csv` }
+        return { 
+          success: true, 
+          content: csvContent, 
+          filename: `comptabilite_${dateDebut}_${dateFin}.csv` 
+        }
       } else {
         const jsonContent = JSON.stringify(donnees, null, 2)
-        return { success: true, content: jsonContent, filename: `comptabilite_${dateDebut}_${dateFin}.json` }
+        return { 
+          success: true, 
+          content: jsonContent, 
+          filename: `comptabilite_${dateDebut}_${dateFin}.json` 
+        }
       }
     } catch (error) {
       console.error('Erreur dans exporterDonneesComptables:', error)
@@ -1679,17 +1881,44 @@ export const comptabiliteService = {
     }
   },
 
-  // Générer CSV
+  // CSV amélioré
   genererCSV(donnees) {
     const lignes = []
+    const rapport = donnees.rapport
     
     lignes.push('RAPPORT COMPTABLE PATISSERIE SHINE')
-    lignes.push(`Période: ${donnees.rapport.periode.debut} - ${donnees.rapport.periode.fin}`)
+    lignes.push(`Période: ${rapport.periode.debut} - ${rapport.periode.fin}`)
+    lignes.push(`Généré le: ${new Date().toLocaleDateString('fr-FR')}`)
     lignes.push('')
     lignes.push('RESUME FINANCIER')
-    lignes.push('Indicateur,Montant')
-    lignes.push(`Chiffre d'affaires,${donnees.rapport.finances.chiffre_affaires}`)
-    lignes.push(`Marge brute,${donnees.rapport.finances.marge_brute}`)
+    lignes.push('Indicateur,Montant CFA')
+    lignes.push(`Chiffre d'affaires,${rapport.finances.chiffre_affaires}`)
+    lignes.push(`Dépenses totales,${rapport.finances.depenses}`)
+    lignes.push(`Marge brute,${rapport.finances.marge_brute}`)
+    lignes.push(`Pourcentage marge,${rapport.finances.pourcentage_marge}%`)
+    lignes.push('')
+    lignes.push('REPARTITION DES DEPENSES')
+    lignes.push('Type,Montant CFA')
+    if (rapport.repartition_depenses) {
+      Object.entries(rapport.repartition_depenses).forEach(([type, montant]) => {
+        lignes.push(`${type},${montant}`)
+      })
+    }
+    lignes.push('')
+    lignes.push('ACTIVITE COMMERCIALE')
+    lignes.push('Indicateur,Valeur')
+    lignes.push(`Nombre de transactions,${rapport.ventes.nombre_transactions}`)
+    lignes.push(`Ticket moyen,${rapport.ventes.ticket_moyen}`)
+    lignes.push(`Articles vendus,${rapport.ventes.articles_vendus}`)
+    
+    if (rapport.depenses_details && rapport.depenses_details.length > 0) {
+      lignes.push('')
+      lignes.push('DETAILS DES DEPENSES')
+      lignes.push('Date,Type,Description,Montant CFA')
+      rapport.depenses_details.forEach(depense => {
+        lignes.push(`${depense.date},${depense.type},${depense.description.replace(/,/g, ';')},${depense.montant}`)
+      })
+    }
     
     return lignes.join('\n')
   }
@@ -1886,6 +2115,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
