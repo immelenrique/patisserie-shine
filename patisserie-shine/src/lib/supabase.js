@@ -1039,14 +1039,15 @@ async validateWithBoutiqueCheck(demandeId) {
               messageSpecifique = `🏪 Stock boutique mis à jour avec prix: ${utils.formatCFA(prixVenteCorrect)}`;
             }
           } else {
-            // CRÉATION avec le prix correct
-            const insertData = {
-              produit_id: demande.produit_id,
-              quantite_disponible: demande.quantite,
-              quantite_vendue: 0,
-              prix_vente: prixVenteCorrect, // 🔧 Utiliser le prix officiel
-              transfere_par: user.id
-            };
+              // CRÉATION avec le prix correct
+              const insertData = {
+                produit_id: demande.produit_id,
+                nom_produit: demande.produit?.nom,        // ← ✅ AJOUT IMPORTANT
+                quantite_disponible: demande.quantite,
+                quantite_vendue: 0,
+                prix_vente: prixVenteCorrect,
+                transfere_par: user.id
+              };
 
             const { error: insertError } = await supabase
               .from('stock_boutique')
@@ -3152,6 +3153,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
