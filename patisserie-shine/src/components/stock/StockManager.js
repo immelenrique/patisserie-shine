@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react';
 import { Search, Plus, Edit, Trash2, Package, Store } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
-import { productService, uniteService, utils } from '../../lib/supabase';
+import { productService, uniteService, referentielService, utils } from '../../lib/supabase'; // ← CORRECTION: Ajouter referentielService
 
 export default function StockManager({ currentUser }) {
   const [products, setProducts] = useState([]);
   const [unites, setUnites] = useState([]);
-  const [referentiels, setReferentiels] = useState([])
+  const [referentiels, setReferentiels] = useState([]); // ← CORRECTION: État pour référentiels
   const [loading, setLoading] = useState(true);
   const [unitesLoading, setUnitesLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -20,16 +20,15 @@ export default function StockManager({ currentUser }) {
   const [formData, setFormData] = useState({
     nom: '',
     date_achat: new Date().toISOString().split('T')[0],
-    prix_achat_total: '', // Prix total, pas unitaire
+    prix_achat_total: '',
     quantite: '',
     quantite_restante: '',
     unite_id: '',
-    // Nouvelles options boutique
-    ajouter_boutique: false,
+    definir_prix_vente: false, // ← CORRECTION: Nom correct
     prix_vente: ''
   });
 
-   useEffect(() => {
+  useEffect(() => {
     loadData();
   }, []);
 
@@ -39,7 +38,7 @@ export default function StockManager({ currentUser }) {
       await Promise.all([
         loadProducts(),
         loadUnites(),
-        loadReferentiels() // ← AJOUTER
+        loadReferentiels() // ← CORRECTION: Appeler la fonction
       ]);
     } catch (err) {
       console.error('Erreur de chargement:', err);
@@ -48,6 +47,8 @@ export default function StockManager({ currentUser }) {
       setLoading(false);
     }
   };
+
+  // ← CORRECTION: Fonction manquante
   const loadReferentiels = async () => {
     try {
       const { referentiels, error } = await referentielService.getAll();
@@ -55,28 +56,44 @@ export default function StockManager({ currentUser }) {
         console.error('Erreur chargement référentiel:', error);
       } else {
         setReferentiels(referentiels);
+        console.log('✅ Référentiels chargés:', referentiels.length);
       }
     } catch (err) {
       console.error('Erreur:', err);
     }
   };
 
-  // ← AJOUTER cette fonction
+  // ← CORRECTION: Fonction handleReferentielSelect corrigée
   const handleReferentielSelect = (referentielId) => {
+    if (!referentielId) {
+      setSelectedReferentiel(null);
+      return;
+    }
+
     const referentiel = referentiels.find(r => r.id === parseInt(referentielId));
     if (referentiel) {
       setSelectedReferentiel(referentiel);
+      
+      // Calculer le prix unitaire
+      const prixUnitaire = referentiel.quantite_par_conditionnement > 0 ? 
+        referentiel.prix_achat_total / referentiel.quantite_par_conditionnement : 0;
+
+      // Trouver l'unité correspondante
+      const uniteCorrespondante = unites.find(u => u.value === referentiel.unite_mesure);
+      
       setFormData(prev => ({
         ...prev,
         nom: referentiel.nom,
         prix_achat_total: referentiel.prix_achat_total.toString(),
         quantite: referentiel.quantite_par_conditionnement.toString(),
         quantite_restante: editingProduct ? prev.quantite_restante : referentiel.quantite_par_conditionnement.toString(),
-        // Trouver l'unité correspondante
-        unite_id: unites.find(u => u.value === referentiel.unite_mesure)?.id?.toString() || ''
+        unite_id: uniteCorrespondante ? uniteCorrespondante.id.toString() : ''
       }));
+      
+      console.log('✅ Référentiel sélectionné:', referentiel.nom);
     } else {
       setSelectedReferentiel(null);
+      console.warn('⚠️ Référentiel non trouvé pour ID:', referentielId);
     }
   };
 
@@ -125,11 +142,10 @@ export default function StockManager({ currentUser }) {
       const { product, error } = await productService.createWithPriceOption({
         nom: formData.nom,
         date_achat: formData.date_achat,
-        prix_achat: prixUnitaire, // Stocker le prix unitaire
-        prix_achat_total: parseFloat(formData.prix_achat_total), // Pour les calculs comptables
+        prix_achat: prixUnitaire,
+        prix_achat_total: parseFloat(formData.prix_achat_total),
         quantite: parseFloat(formData.quantite),
         unite_id: parseInt(formData.unite_id),
-        // Option prix de vente
         definir_prix_vente: formData.definir_prix_vente,
         prix_vente: formData.definir_prix_vente ? parseFloat(formData.prix_vente) : null
       });
@@ -212,7 +228,7 @@ export default function StockManager({ currentUser }) {
       quantite: '',
       quantite_restante: '',
       unite_id: '',
-      ajouter_boutique: false,
+      definir_prix_vente: false, // ← CORRECTION
       prix_vente: ''
     });
     setSelectedReferentiel(null);
@@ -506,7 +522,6 @@ export default function StockManager({ currentUser }) {
               )}
             </div>
 
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Date d'achat *</label>
               <input
@@ -599,7 +614,7 @@ export default function StockManager({ currentUser }) {
             )}
           </div>
 
-          {/* Nouvelle section: Option Prix de Vente */}
+          {/* Section Prix de Vente */}
           {!editingProduct && (
             <div className="border-t pt-4">
               <div className="flex items-center space-x-3 mb-4">
