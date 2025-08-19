@@ -98,6 +98,356 @@ export const authService = {
   }
 }
 
+// ===================== SERVICES RÉFÉRENTIEL =====================
+export const referentielService = {
+  // Récupérer tous les éléments du référentiel
+  async getAll() {
+    try {
+      const { data, error } = await supabase
+        .from('referentiel_produits')
+        .select('*')
+        .eq('actif', true)
+        .order('nom')
+      
+      if (error) {
+        console.error('Erreur getAll référentiel:', error)
+        return { referentiels: [], error: error.message }
+      }
+      
+      return { referentiels: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getAll référentiel:', error)
+      return { referentiels: [], error: error.message }
+    }
+  },
+
+  // Rechercher dans le référentiel
+  async search(terme) {
+    try {
+      const { data, error } = await supabase.rpc('rechercher_referentiel', {
+        terme_recherche: terme
+      })
+      
+      if (error) {
+        console.error('Erreur search référentiel:', error)
+        return { referentiels: [], error: error.message }
+      }
+      
+      return { referentiels: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans search référentiel:', error)
+      return { referentiels: [], error: error.message }
+    }
+  },
+
+  // Créer un nouvel élément
+  async create(referentielData) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { referentiel: null, error: 'Utilisateur non connecté' }
+      }
+
+      // Vérifier si la référence existe déjà
+      const { data: existingRef } = await supabase
+        .from('referentiel_produits')
+        .select('id')
+        .eq('reference', referentielData.reference.toUpperCase())
+        .maybeSingle()
+
+      if (existingRef) {
+        return { referentiel: null, error: `La référence "${referentielData.reference}" existe déjà` }
+      }
+
+      const { data, error } = await supabase
+        .from('referentiel_produits')
+        .insert({
+          reference: referentielData.reference.toUpperCase(),
+          nom: referentielData.nom,
+          type_conditionnement: referentielData.type_conditionnement,
+          unite_mesure: referentielData.unite_mesure,
+          quantite_par_conditionnement: parseFloat(referentielData.quantite_par_conditionnement),
+          prix_achat_total: parseFloat(referentielData.prix_achat_total),
+          actif: true
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erreur create référentiel:', error)
+        return { referentiel: null, error: error.message }
+      }
+
+      return { referentiel: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans create référentiel:', error)
+      return { referentiel: null, error: error.message }
+    }
+  },
+
+  // Mettre à jour un élément
+  async update(referentielId, referentielData) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { referentiel: null, error: 'Utilisateur non connecté' }
+      }
+
+      // Vérifier si la nouvelle référence existe déjà (sauf pour l'élément courant)
+      const { data: existingRef } = await supabase
+        .from('referentiel_produits')
+        .select('id')
+        .eq('reference', referentielData.reference.toUpperCase())
+        .neq('id', referentielId)
+        .maybeSingle()
+
+      if (existingRef) {
+        return { referentiel: null, error: `La référence "${referentielData.reference}" existe déjà` }
+      }
+
+      const { data, error } = await supabase
+        .from('referentiel_produits')
+        .update({
+          reference: referentielData.reference.toUpperCase(),
+          nom: referentielData.nom,
+          type_conditionnement: referentielData.type_conditionnement,
+          unite_mesure: referentielData.unite_mesure,
+          quantite_par_conditionnement: parseFloat(referentielData.quantite_par_conditionnement),
+          prix_achat_total: parseFloat(referentielData.prix_achat_total),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', referentielId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erreur update référentiel:', error)
+        return { referentiel: null, error: error.message }
+      }
+
+      return { referentiel: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans update référentiel:', error)
+      return { referentiel: null, error: error.message }
+    }
+  },
+
+  // Supprimer un élément (désactivation logique)
+  async delete(referentielId) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' }
+      }
+
+      // Vérifier si des produits utilisent cette référence
+      const { data: produitsUtilisant } = await supabase
+        .from('produits')
+        .select('id, nom')
+        .eq('reference_referentiel_id', referentielId)
+        .limit(5)
+
+      if (produitsUtilisant && produitsUtilisant.length > 0) {
+        const nomsLimites = produitsUtilisant.map(p => p.nom).join(', ')
+        return { 
+          success: false, 
+          error: `Cette référence est utilisée par ${produitsUtilisant.length} produit(s) : ${nomsLimites}${produitsUtilisant.length === 5 ? '...' : ''}` 
+        }
+      }
+
+      // Désactivation logique
+      const { error } = await supabase
+        .from('referentiel_produits')
+        .update({
+          actif: false,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', referentielId)
+
+      if (error) {
+        console.error('Erreur delete référentiel:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, message: 'Élément supprimé avec succès' }
+    } catch (error) {
+      console.error('Erreur dans delete référentiel:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Obtenir un élément par référence (pour auto-complétion)
+  async getByReference(reference) {
+    try {
+      const { data, error } = await supabase
+        .from('referentiel_produits')
+        .select('*')
+        .eq('reference', reference.toUpperCase())
+        .eq('actif', true)
+        .maybeSingle()
+
+      if (error) {
+        console.error('Erreur getByReference:', error)
+        return { referentiel: null, error: error.message }
+      }
+
+      return { referentiel: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans getByReference:', error)
+      return { referentiel: null, error: error.message }
+    }
+  },
+
+  // Importer depuis CSV
+  async importFromCSV(csvFile) {
+    try {
+      const text = await csvFile.text()
+      const lines = text.split('\n').filter(line => line.trim())
+      
+      if (lines.length < 2) {
+        return { success: false, error: 'Fichier CSV vide ou invalide' }
+      }
+
+      // Parser le CSV (format attendu : reference,nom,type_conditionnement,unite_mesure,quantite,prix_total)
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
+      const expectedHeaders = ['reference', 'nom', 'type_conditionnement', 'unite_mesure', 'quantite_par_conditionnement', 'prix_achat_total']
+      
+      // Vérifier les headers
+      const hasRequiredHeaders = expectedHeaders.every(h => 
+        headers.some(header => header.includes(h.replace('_', '')) || header === h)
+      )
+
+      if (!hasRequiredHeaders) {
+        return { 
+          success: false, 
+          error: `Headers requis: ${expectedHeaders.join(', ')}. Headers trouvés: ${headers.join(', ')}` 
+        }
+      }
+
+      let imported = 0
+      let errors = 0
+      const errorDetails = []
+
+      for (let i = 1; i < lines.length; i++) {
+        try {
+          const values = lines[i].split(',').map(v => v.trim())
+          
+          if (values.length < 6) continue
+
+          const referentielData = {
+            reference: values[0],
+            nom: values[1],
+            type_conditionnement: values[2] || 'sac',
+            unite_mesure: values[3] || 'kg',
+            quantite_par_conditionnement: parseFloat(values[4]) || 1,
+            prix_achat_total: parseFloat(values[5]) || 0
+          }
+
+          const result = await this.create(referentielData)
+          
+          if (result.error) {
+            errors++
+            errorDetails.push(`Ligne ${i + 1}: ${result.error}`)
+          } else {
+            imported++
+          }
+        } catch (lineError) {
+          errors++
+          errorDetails.push(`Ligne ${i + 1}: Erreur de format`)
+        }
+      }
+
+      return { 
+        success: true, 
+        imported, 
+        errors, 
+        errorDetails: errorDetails.slice(0, 10) // Limiter à 10 erreurs affichées
+      }
+    } catch (error) {
+      console.error('Erreur dans importFromCSV:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Exporter vers CSV
+  async exportToCSV() {
+    try {
+      const { referentiels, error } = await this.getAll()
+      
+      if (error) {
+        return { success: false, error }
+      }
+
+      const headers = [
+        'reference',
+        'nom', 
+        'type_conditionnement',
+        'unite_mesure',
+        'quantite_par_conditionnement',
+        'prix_achat_total',
+        'prix_unitaire'
+      ]
+
+      const csvLines = [headers.join(',')]
+      
+      referentiels.forEach(item => {
+        const line = [
+          item.reference,
+          `"${item.nom}"`, // Guillemets pour les noms avec virgules
+          item.type_conditionnement,
+          item.unite_mesure,
+          item.quantite_par_conditionnement,
+          item.prix_achat_total,
+          item.prix_unitaire
+        ]
+        csvLines.push(line.join(','))
+      })
+
+      const csvContent = csvLines.join('\n')
+      
+      return { success: true, csvContent }
+    } catch (error) {
+      console.error('Erreur dans exportToCSV:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Obtenir les statistiques du référentiel
+  async getStatistics() {
+    try {
+      const { data, error } = await supabase
+        .from('referentiel_produits')
+        .select('prix_achat_total, quantite_par_conditionnement, type_conditionnement')
+        .eq('actif', true)
+
+      if (error) {
+        return { stats: null, error: error.message }
+      }
+
+      const stats = {
+        total_elements: data.length,
+        valeur_totale: data.reduce((sum, item) => sum + (item.prix_achat_total || 0), 0),
+        prix_moyen: data.length > 0 ? data.reduce((sum, item) => sum + (item.prix_achat_total || 0), 0) / data.length : 0,
+        conditionnements: {}
+      }
+
+      // Compter par type de conditionnement
+      data.forEach(item => {
+        const type = item.type_conditionnement || 'non_defini'
+        stats.conditionnements[type] = (stats.conditionnements[type] || 0) + 1
+      })
+
+      return { stats, error: null }
+    } catch (error) {
+      console.error('Erreur dans getStatistics:', error)
+      return { stats: null, error: error.message }
+    }
+  }
+}
+
 // ===================== SERVICES UNITÉS =====================
 export const uniteService = {
   // Récupérer toutes les unités
@@ -3153,6 +3503,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
