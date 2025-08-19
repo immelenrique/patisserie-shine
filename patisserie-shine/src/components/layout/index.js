@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChefHat, Bell, LogOut, Home, Package, Warehouse, Calculator, ShoppingCart, Users, UserPlus, Store, CreditCard, BarChart3 } from 'lucide-react';
+import { ChefHat, Bell, LogOut, Home, Package, Warehouse, Calculator, ShoppingCart, Users, UserPlus, Store, CreditCard, BarChart3,Database } from 'lucide-react';
 
 // Header Component
 export function Header({ currentUser, stats, onLogout }) {
@@ -79,6 +79,7 @@ export function Navigation({ tabs, activeTab, onTabChange, stats }) {
     stock: Package,
     'stock-atelier': Warehouse,
     'stock-boutique': Store,
+    referentiel: Database,
     recettes: Calculator,
     demandes: ShoppingCart,
     production: ChefHat,
