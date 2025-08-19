@@ -16,6 +16,8 @@ export default function StockManager({ currentUser }) {
   const [editingProduct, setEditingProduct] = useState(null);
   const [selectedReferentiel, setSelectedReferentiel] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     nom: '',
@@ -27,6 +29,11 @@ export default function StockManager({ currentUser }) {
     definir_prix_vente: false, // ← CORRECTION: Nom correct
     prix_vente: ''
   });
+  const filtered = referentiels.filter(ref =>
+    `${ref.reference} ${ref.nom}`
+      .toLowerCase()
+      .includes(search.toLowerCase())
+  );
 
   useEffect(() => {
     loadData();
@@ -457,31 +464,54 @@ export default function StockManager({ currentUser }) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Produit du référentiel (optionnel)
-              </label>
-              <select
-                value={selectedReferentiel?.id || ''}
-                onChange={(e) => handleReferentielSelect(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent mb-3"
-                disabled={submitting}
-              >
-                <option value="">Sélectionner depuis le référentiel...</option>
-                {referentiels.map(ref => (
-                  <option key={ref.id} value={ref.id}>
-                    [{ref.reference}] {ref.nom} - {(ref.quantite_par_conditionnement)}/{ref.unite_mesure}
-                  </option>
-                ))}
-              </select>
-              
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Nom du produit * 
-                {selectedReferentiel && (
-                  <span className="text-xs text-blue-600 ml-2">
-                    (Auto-rempli depuis référentiel [{selectedReferentiel.reference}])
-                  </span>
-                )}
-              </label>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Produit du référentiel (optionnel)
+        </label>
+
+        {/* Champ de recherche au lieu de <select> */}
+        <div className="relative mb-3">
+          <input
+            type="text"
+            value={search || (selectedReferentiel ? `[${selectedReferentiel.reference}] ${selectedReferentiel.nom}` : "")}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            disabled={submitting}
+            placeholder="Sélectionner depuis le référentiel..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+          />
+
+          {/* Liste des options filtrées */}
+          {open && filtered.length > 0 && (
+            <ul className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-48 overflow-y-auto shadow">
+              {filtered.map(ref => (
+                <li
+                  key={ref.id}
+                  onClick={() => {
+                    handleReferentielSelect(ref.id);
+                    setSearch(`[${ref.reference}] ${ref.nom}`);
+                    setOpen(false);
+                  }}
+                  className="px-3 py-2 cursor-pointer hover:bg-gray-100"
+                >
+                  [{ref.reference}] {ref.nom} - {ref.quantite_par_conditionnement}/{ref.unite_mesure}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Ton champ Nom du produit */}
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Nom du produit * 
+          {selectedReferentiel && (
+            <span className="text-xs text-blue-600 ml-2">
+              (Auto-rempli depuis référentiel [{selectedReferentiel.reference}])
+            </span>
+          )}
+        </label>
               <input
                 type="text"
                 value={formData.nom}
