@@ -1,26 +1,31 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Package, Search, Upload, Download } from 'lucide-react';
-import { Card, Modal } from '../ui';
-import { referentielService, uniteService, utils } from '../../lib/supabase';
+import { Search, Plus, Edit, Trash2, Package, Store } from 'lucide-react';
+import { Card, Modal, StatusBadge } from '../ui';
+import { productService, uniteService, referentielService, utils } from '../../lib/supabase'; // ← CORRECTION: Ajouter referentielService
 
-export default function ReferentielManager({ currentUser }) {
-  const [referentiels, setReferentiels] = useState([]);
+export default function StockManager({ currentUser }) {
+  const [products, setProducts] = useState([]);
   const [unites, setUnites] = useState([]);
+  const [referentiels, setReferentiels] = useState([]); // ← CORRECTION: État pour référentiels
   const [loading, setLoading] = useState(true);
+  const [unitesLoading, setUnitesLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [selectedReferentiel, setSelectedReferentiel] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
-    reference: '',
     nom: '',
-    type_conditionnement: 'sac',
-    unite_mesure: '', // ← CORRECTION: Plus de valeur par défaut
-    quantite_par_conditionnement: '',
-    prix_achat_total: ''
+    date_achat: new Date().toISOString().split('T')[0],
+    prix_achat_total: '',
+    quantite: '',
+    quantite_restante: '',
+    unite_id: '',
+    definir_prix_vente: false, // ← CORRECTION: Nom correct
+    prix_vente: ''
   });
 
   useEffect(() => {
@@ -31,8 +36,9 @@ export default function ReferentielManager({ currentUser }) {
     setLoading(true);
     try {
       await Promise.all([
-        loadReferentiels(),
-        loadUnites()
+        loadProducts(),
+        loadUnites(),
+        loadReferentiels() // ← CORRECTION: Appeler la fonction
       ]);
     } catch (err) {
       console.error('Erreur de chargement:', err);
@@ -42,14 +48,63 @@ export default function ReferentielManager({ currentUser }) {
     }
   };
 
+  // ← CORRECTION: Fonction manquante
   const loadReferentiels = async () => {
     try {
       const { referentiels, error } = await referentielService.getAll();
       if (error) {
-        console.error('Erreur lors du chargement du référentiel:', error);
-        setError(error);
+        console.error('Erreur chargement référentiel:', error);
       } else {
         setReferentiels(referentiels);
+        console.log('✅ Référentiels chargés:', referentiels.length);
+      }
+    } catch (err) {
+      console.error('Erreur:', err);
+    }
+  };
+
+  // ← CORRECTION: Fonction handleReferentielSelect corrigée
+  const handleReferentielSelect = (referentielId) => {
+    if (!referentielId) {
+      setSelectedReferentiel(null);
+      return;
+    }
+
+    const referentiel = referentiels.find(r => r.id === parseInt(referentielId));
+    if (referentiel) {
+      setSelectedReferentiel(referentiel);
+      
+      // Calculer le prix unitaire
+      const prixUnitaire = referentiel.quantite_par_conditionnement > 0 ? 
+        referentiel.prix_achat_total / referentiel.quantite_par_conditionnement : 0;
+
+      // Trouver l'unité correspondante
+      const uniteCorrespondante = unites.find(u => u.value === referentiel.unite_mesure);
+      
+      setFormData(prev => ({
+        ...prev,
+        nom: referentiel.nom,
+        prix_achat_total: referentiel.prix_achat_total.toString(),
+        quantite: referentiel.quantite_par_conditionnement.toString(),
+        quantite_restante: editingProduct ? prev.quantite_restante : referentiel.quantite_par_conditionnement.toString(),
+        unite_id: uniteCorrespondante ? uniteCorrespondante.id.toString() : ''
+      }));
+      
+      console.log('✅ Référentiel sélectionné:', referentiel.nom);
+    } else {
+      setSelectedReferentiel(null);
+      console.warn('⚠️ Référentiel non trouvé pour ID:', referentielId);
+    }
+  };
+
+  const loadProducts = async () => {
+    try {
+      const { products, error } = await productService.getAll();
+      if (error) {
+        console.error('Erreur lors du chargement des produits:', error);
+        setError(error);
+      } else {
+        setProducts(products);
       }
     } catch (err) {
       console.error('Erreur:', err);
@@ -57,162 +112,162 @@ export default function ReferentielManager({ currentUser }) {
   };
 
   const loadUnites = async () => {
+    setUnitesLoading(true);
     try {
-      // ← CORRECTION: S'assurer que les unités de base existent
       await uniteService.createBasicUnitsIfEmpty();
       
       const { unites, error } = await uniteService.getAll();
       if (error) {
         console.error('Erreur lors du chargement des unités:', error);
-        setError('Erreur lors du chargement des unités');
+        setError(error);
       } else {
         setUnites(unites);
-        console.log('✅ Unités chargées:', unites.length);
       }
     } catch (err) {
       console.error('Erreur:', err);
+    } finally {
+      setUnitesLoading(false);
     }
   };
 
-  const handleSubmit = async (e) => {
+  const handleAddProduct = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     setError('');
 
     try {
-      if (editingItem) {
-        const { success, error } = await referentielService.update(editingItem.id, formData);
-        if (error) {
-          setError(error);
-        } else {
-          await loadReferentiels();
-          resetForm();
-          setEditingItem(null);
-          alert('Référentiel modifié avec succès !');
-        }
+      // Calculer le prix unitaire à partir du prix total
+      const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite);
+      
+      const { product, error } = await productService.createWithPriceOption({
+        nom: formData.nom,
+        date_achat: formData.date_achat,
+        prix_achat: prixUnitaire,
+        prix_achat_total: parseFloat(formData.prix_achat_total),
+        quantite: parseFloat(formData.quantite),
+        unite_id: parseInt(formData.unite_id),
+        definir_prix_vente: formData.definir_prix_vente,
+        prix_vente: formData.definir_prix_vente ? parseFloat(formData.prix_vente) : null
+      });
+
+      if (error) {
+        setError(error);
       } else {
-        const { success, error } = await referentielService.create(formData);
-        if (error) {
-          setError(error);
+        await loadProducts();
+        resetForm();
+        setShowAddModal(false);
+        
+        if (formData.definir_prix_vente) {
+          alert(`Produit créé avec succès !\n\nAjouté au stock principal avec prix de vente défini: ${utils.formatCFA(parseFloat(formData.prix_vente))}\n\nPour l'ajouter à la boutique, un employé doit faire une demande vers "Boutique".`);
         } else {
-          await loadReferentiels();
-          resetForm();
-          setShowAddModal(false);
-          alert('Référentiel créé avec succès !');
+          alert('Produit créé avec succès dans le stock principal !');
         }
       }
     } catch (err) {
       console.error('Erreur:', err);
-      setError('Erreur lors de l\'opération');
+      setError('Erreur lors de la création du produit');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDelete = async (id, nom) => {
-    if (!confirm(`Êtes-vous sûr de vouloir supprimer "${nom}" ?`)) return;
-    
+  const handleEditProduct = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError('');
+
     try {
-      const { success, error } = await referentielService.delete(id);
+      const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite);
+      
+      const { product, error } = await productService.update(editingProduct.id, {
+        nom: formData.nom,
+        date_achat: formData.date_achat,
+        prix_achat: prixUnitaire,
+        quantite: parseFloat(formData.quantite),
+        quantite_restante: parseFloat(formData.quantite_restante),
+        unite_id: parseInt(formData.unite_id)
+      });
+
       if (error) {
-        alert('Erreur lors de la suppression : ' + error);
+        setError(error);
       } else {
-        await loadReferentiels();
-        alert('Référentiel supprimé avec succès !');
+        await loadProducts();
+        resetForm();
+        setEditingProduct(null);
+        alert('Produit modifié avec succès');
       }
     } catch (err) {
       console.error('Erreur:', err);
-      alert('Erreur lors de la suppression');
+      setError('Erreur lors de la modification du produit');
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const startEdit = (item) => {
-    setEditingItem(item);
+  const startEdit = (product) => {
+    setEditingProduct(product);
+    const prixTotal = (product.prix_achat || 0) * (product.quantite || 1);
     setFormData({
-      reference: item.reference,
-      nom: item.nom,
-      type_conditionnement: item.type_conditionnement,
-      unite_mesure: item.unite_mesure,
-      quantite_par_conditionnement: item.quantite_par_conditionnement.toString(),
-      prix_achat_total: item.prix_achat_total.toString()
+      nom: product.nom,
+      date_achat: product.date_achat,
+      prix_achat_total: prixTotal.toString(),
+      quantite: product.quantite.toString(),
+      quantite_restante: product.quantite_restante.toString(),
+      unite_id: product.unite_id.toString(),
+      definir_prix_vente: false,
+      prix_vente: ''
     });
-    setShowAddModal(true);
     setError('');
   };
 
   const resetForm = () => {
     setFormData({
-      reference: '',
       nom: '',
-      type_conditionnement: 'sac',
-      unite_mesure: '', // ← CORRECTION: Réinitialiser à vide
-      quantite_par_conditionnement: '',
-      prix_achat_total: ''
+      date_achat: new Date().toISOString().split('T')[0],
+      prix_achat_total: '',
+      quantite: '',
+      quantite_restante: '',
+      unite_id: '',
+      definir_prix_vente: false, // ← CORRECTION
+      prix_vente: ''
     });
+    setSelectedReferentiel(null);
     setError('');
   };
 
   const handleCloseModal = () => {
     setShowAddModal(false);
-    setEditingItem(null);
+    setEditingProduct(null);
     resetForm();
   };
 
-  const calculatePrixUnitaire = () => {
-    if (formData.prix_achat_total && formData.quantite_par_conditionnement) {
-      const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite_par_conditionnement);
+  // Calculer le prix unitaire pour affichage
+  const getPrixUnitaire = () => {
+    if (formData.prix_achat_total && formData.quantite) {
+      const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite);
       return prixUnitaire.toFixed(2);
     }
     return '0';
   };
 
-  const handleImportCSV = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    try {
-      const { success, imported, errors, error } = await referentielService.importFromCSV(file);
+  // Calculer la marge si prix de vente défini
+  const calculerMarge = () => {
+    if (formData.prix_vente && formData.prix_achat_total && formData.quantite) {
+      const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite);
+      const prixVente = parseFloat(formData.prix_vente);
+      const marge = prixVente - prixUnitaire;
+      const pourcentageMarge = prixUnitaire > 0 ? (marge / prixUnitaire) * 100 : 0;
       
-      if (error) {
-        alert('Erreur lors de l\'import : ' + error);
-      } else {
-        alert(`Import réussi ! ${imported} éléments importés. ${errors} erreurs.`);
-        loadReferentiels();
-      }
-    } catch (err) {
-      console.error('Erreur import:', err);
-      alert('Erreur lors de l\'import du fichier');
+      return {
+        marge: marge,
+        pourcentage: pourcentageMarge
+      };
     }
-    
-    // Reset l'input file
-    event.target.value = '';
+    return { marge: 0, pourcentage: 0 };
   };
 
-  const handleExportCSV = async () => {
-    try {
-      const { success, csvContent, error } = await referentielService.exportToCSV();
-      
-      if (error) {
-        alert('Erreur lors de l\'export : ' + error);
-      } else {
-        // Télécharger le fichier CSV
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `referentiel_patisserie_${new Date().toISOString().split('T')[0]}.csv`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
-    } catch (err) {
-      console.error('Erreur export:', err);
-      alert('Erreur lors de l\'export');
-    }
-  };
-
-  const filteredReferentiels = referentiels.filter(item =>
-    item.nom.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.reference.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredProducts = products.filter(product => 
+    product.nom.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (loading) {
@@ -228,50 +283,27 @@ export default function ReferentielManager({ currentUser }) {
 
   return (
     <div className="space-y-6">
-      {/* En-tête */}
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-            <Package className="w-8 h-8 text-orange-600 mr-3" />
-            Référentiel Produits
-          </h2>
-          <p className="text-gray-600">Gestion du catalogue des matières premières et conditionnements</p>
+          <h2 className="text-2xl font-bold text-gray-900">Stock Principal</h2>
+          <p className="text-gray-600">Suivi des matières premières et inventaire</p>
         </div>
-        
-        <div className="flex flex-wrap gap-3">
-          {/* Import CSV */}
-          <div>
+        <div className="flex space-x-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
             <input
-              type="file"
-              accept=".csv"
-              onChange={handleImportCSV}
-              className="hidden"
-              id="csv-import"
+              type="text"
+              placeholder="Rechercher un produit..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
             />
-            <label
-              htmlFor="csv-import"
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-all duration-200 flex items-center space-x-2 cursor-pointer"
-            >
-              <Upload className="h-4 w-4" />
-              <span>Importer CSV</span>
-            </label>
           </div>
-
-          {/* Export CSV */}
-          <button
-            onClick={handleExportCSV}
-            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all duration-200 flex items-center space-x-2"
-          >
-            <Download className="h-4 w-4" />
-            <span>Exporter CSV</span>
-          </button>
-
-          {/* Nouveau */}
-          {currentUser.role === 'admin' && (
+          {(currentUser.role === 'admin' || currentUser.role === 'employe_production') && (
             <button 
               onClick={() => setShowAddModal(true)}
               className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-2 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 flex items-center space-x-2"
-              disabled={unites.length === 0} // ← NOUVEAU: Désactiver si pas d'unités
+              disabled={unites.length === 0}
             >
               <Plus className="h-5 w-5" />
               <span>Nouveau Produit</span>
@@ -280,105 +312,47 @@ export default function ReferentielManager({ currentUser }) {
         </div>
       </div>
 
-      {/* Recherche */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-        <input
-          type="text"
-          placeholder="Rechercher un produit..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-        />
-      </div>
-
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <div className="text-red-800">{error}</div>
         </div>
       )}
 
-      {/* ← NOUVEAU: Alerte si aucune unité */}
       {unites.length === 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="text-yellow-800">
-            <strong>⚠️ Aucune unité de mesure disponible !</strong>
+            <strong>Aucune unité de mesure disponible !</strong>
             <br />
-            Vous devez d'abord créer des unités dans l'onglet "Unités" avant de pouvoir ajouter des produits au référentiel.
+            Vous devez d'abord créer des unités dans l'onglet "Unités" avant de pouvoir ajouter des produits.
+            {unitesLoading && <span className="ml-2">Chargement en cours...</span>}
           </div>
         </div>
       )}
-
-      {/* Statistiques */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="p-6">
-          <div className="flex items-center">
-            <Package className="w-8 h-8 text-blue-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">Total produits</p>
-              <p className="text-2xl font-bold text-gray-900">{referentiels.length}</p>
-            </div>
-          </div>
-        </Card>
-        
-        <Card className="p-6">
-          <div className="flex items-center">
-            <Package className="w-8 h-8 text-green-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">Valeur totale référentiel</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {utils.formatCFA(referentiels.reduce((sum, item) => sum + (item.prix_achat_total || 0), 0))}
-              </p>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-center">
-            <Package className="w-8 h-8 text-purple-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">Prix unitaire moyen</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {referentiels.length > 0 ? 
-                  utils.formatCFA(referentiels.reduce((sum, item) => sum + (item.prix_unitaire || 0), 0) / referentiels.length) :
-                  utils.formatCFA(0)
-                }
-              </p>
-            </div>
-          </div>
-        </Card>
-      </div>
       
-      {/* Tableau */}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Référence</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nom du produit</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Conditionnement</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantité/Conditionnement</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prix total</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prix unitaire</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produit</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prix unitaire</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valeur totale</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date d'achat</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredReferentiels.length === 0 ? (
+              {filteredProducts.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="text-center py-8 text-gray-500">
-                    {referentiels.length === 0 ? (
+                    {products.length === 0 ? (
                       <>
                         <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                        Aucun produit dans le référentiel
+                        Aucun produit en stock
                         <br />
-                        <span className="text-sm">
-                          {unites.length === 0 ? 
-                            'Créez d\'abord des unités dans l\'onglet "Unités"' :
-                            'Ajoutez votre premier produit ou importez un CSV'
-                          }
-                        </span>
+                        <span className="text-sm">Ajoutez votre premier produit</span>
                       </>
                     ) : (
                       <>
@@ -389,86 +363,88 @@ export default function ReferentielManager({ currentUser }) {
                   </td>
                 </tr>
               ) : (
-                filteredReferentiels.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        {item.reference}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-gray-900">{item.nom}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">
-                        {item.type_conditionnement}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {utils.formatNumber(item.quantite_par_conditionnement, 1)} 
-                        <span className="text-gray-500 ml-1">
-                          {/* ← CORRECTION: Afficher le label de l'unité */}
-                          {unites.find(u => u.value === item.unite_mesure)?.label || item.unite_mesure}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-green-600">
-                        {utils.formatCFA(item.prix_achat_total)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-blue-600">
-                        {utils.formatCFA(item.prix_unitaire)} / 
-                        <span className="text-gray-500 ml-1">
-                          {unites.find(u => u.value === item.unite_mesure)?.value || item.unite_mesure}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {currentUser.role === 'admin' && (
-                        <div className="flex space-x-2">
-                          <button 
-                            onClick={() => startEdit(item)}
-                            className="text-indigo-600 hover:text-indigo-900 p-1 hover:bg-indigo-50 rounded transition-colors"
-                            title="Modifier"
-                          >
-                            <Edit className="h-4 w-4" />
-                          </button>
-                          <button 
-                            onClick={() => handleDelete(item.id, item.nom)}
-                            className="text-red-600 hover:text-red-900 p-1 hover:bg-red-50 rounded transition-colors"
-                            title="Supprimer"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                filteredProducts.map((product) => {
+                  const alertLevel = utils.getStockAlertLevel(product.quantite_restante, product.quantite);
+                  const percentage = utils.calculateStockPercentage(product.quantite_restante, product.quantite);
+                  const valeurTotale = (product.prix_achat || 0) * (product.quantite_restante || 0);
+                  
+                  return (
+                    <tr key={product.id} className={alertLevel === 'critique' || alertLevel === 'rupture' ? 'bg-red-50' : 'hover:bg-gray-50'}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className={`w-3 h-3 rounded-full mr-3 ${
+                            alertLevel === 'rupture' ? 'bg-red-600' :
+                            alertLevel === 'critique' ? 'bg-red-500' :
+                            alertLevel === 'faible' ? 'bg-yellow-500' : 'bg-green-500'
+                          }`}></div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{product.nom}</div>
+                            <div className="text-sm text-gray-500">{product.unite?.label}</div>
+                          </div>
                         </div>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          <span className={`font-medium ${
+                            alertLevel === 'critique' || alertLevel === 'rupture' ? 'text-red-600' : 'text-gray-900'
+                          }`}>
+                            {product.quantite_restante} / {product.quantite} {product.unite?.value}
+                          </span>
+                          <div className="text-xs text-gray-500">{percentage}% restant</div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {utils.formatCFA(product.prix_achat)} / {product.unite?.value}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                        {utils.formatCFA(valeurTotale)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {utils.formatDate(product.date_achat)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <StatusBadge status={alertLevel} />
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex space-x-2">
+                          {(currentUser.role === 'admin' || currentUser.role === 'employe_production') && (
+                            <button 
+                              onClick={() => startEdit(product)}
+                              className="text-indigo-600 hover:text-indigo-900"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                          )}
+                          {currentUser.role === 'admin' && (
+                            <button className="text-red-600 hover:text-red-900">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </Card>
 
-      {/* Modal Ajout/Edition */}
+      {/* Modal Ajout/Edition Produit */}
       <Modal 
-        isOpen={showAddModal} 
+        isOpen={showAddModal || editingProduct !== null} 
         onClose={handleCloseModal} 
-        title={editingItem ? "Modifier le Produit" : "Ajouter un Produit au Référentiel"} 
+        title={editingProduct ? "Modifier le Produit" : "Ajouter un Produit au Stock Principal"} 
         size="lg"
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={editingProduct ? handleEditProduct : handleAddProduct} className="space-y-4">
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
               <div className="text-red-800 text-sm">{error}</div>
             </div>
           )}
 
-          {/* ← NOUVEAU: Alerte si aucune unité dans le modal */}
           {unites.length === 0 && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="text-yellow-800">
@@ -480,150 +456,247 @@ export default function ReferentielManager({ currentUser }) {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Référence *</label>
-              <input
-                type="text"
-                value={formData.reference}
-                onChange={(e) => setFormData({...formData, reference: e.target.value.toUpperCase()})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                placeholder="PS1, PS2..."
-                required
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Produit du référentiel (optionnel)
+              </label>
+              <select
+                value={selectedReferentiel?.id || ''}
+                onChange={(e) => handleReferentielSelect(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent mb-3"
                 disabled={submitting}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nom du produit *</label>
+              >
+                <option value="">Sélectionner depuis le référentiel...</option>
+                {referentiels.map(ref => (
+                  <option key={ref.id} value={ref.id}>
+                    [{ref.reference}] {ref.nom} - {utils.formatCFA(ref.prix_unitaire)}/{ref.unite_mesure}
+                  </option>
+                ))}
+              </select>
+              
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nom du produit * 
+                {selectedReferentiel && (
+                  <span className="text-xs text-blue-600 ml-2">
+                    (Auto-rempli depuis référentiel [{selectedReferentiel.reference}])
+                  </span>
+                )}
+              </label>
               <input
                 type="text"
                 value={formData.nom}
                 onChange={(e) => setFormData({...formData, nom: e.target.value})}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                placeholder="Farine Etalon"
+                placeholder="Ex: Farine de Blé"
                 required
                 disabled={submitting}
               />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Type conditionnement *</label>
-              <select
-                value={formData.type_conditionnement}
-                onChange={(e) => setFormData({...formData, type_conditionnement: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                required
-                disabled={submitting}
-              >
-                <option value="sac">Sac</option>
-                <option value="carton">Carton</option>
-                <option value="bidon">Bidon</option>
-                <option value="boite">Boîte</option>
-                <option value="paquet">Paquet</option>
-                <option value="sachet">Sachet</option>
-                <option value="feuille">Feuille</option>
-                <option value="litre">Litre</option>
-                <option value="plaquette">Plaquette</option>
-                <option value="lot">Lot</option>
-              </select>
-            </div>
-
-            {/* ← CORRECTION PRINCIPALE: Utiliser les unités de la table */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Unité de mesure *</label>
-              <select
-                value={formData.unite_mesure}
-                onChange={(e) => setFormData({...formData, unite_mesure: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                required
-                disabled={submitting || unites.length === 0}
-              >
-                <option value="">
-                  {unites.length === 0 ? 'Aucune unité disponible' : 'Sélectionner une unité'}
-                </option>
-                {unites.map(unite => (
-                  <option key={unite.id} value={unite.value}>
-                    {unite.label} ({unite.value})
-                  </option>
-                ))}
-              </select>
-              {unites.length === 0 && (
-                <p className="text-xs text-red-500 mt-1">
-                  Créez d'abord des unités dans l'onglet "Unités"
-                </p>
+              {selectedReferentiel && (
+                <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="text-sm font-medium text-blue-800 mb-2">📋 Référentiel sélectionné</h4>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-blue-700">
+                    <div><strong>Référence:</strong> {selectedReferentiel.reference}</div>
+                    <div><strong>Conditionnement:</strong> {selectedReferentiel.type_conditionnement}</div>
+                    <div><strong>Quantité:</strong> {selectedReferentiel.quantite_par_conditionnement} {selectedReferentiel.unite_mesure}</div>
+                    <div><strong>Prix total:</strong> {utils.formatCFA(selectedReferentiel.prix_achat_total)}</div>
+                    <div><strong>Prix unitaire:</strong> {utils.formatCFA(selectedReferentiel.prix_unitaire)}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedReferentiel(null);
+                      setFormData(prev => ({
+                        ...prev,
+                        nom: '',
+                        prix_achat_total: '',
+                        quantite: '',
+                        quantite_restante: '',
+                        unite_id: ''
+                      }));
+                    }}
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    ✕ Effacer la sélection
+                  </button>
+                </div>
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Quantité par conditionnement *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Date d'achat *</label>
               <input
-                type="number"
-                step="0.01"
-                value={formData.quantite_par_conditionnement}
-                onChange={(e) => setFormData({...formData, quantite_par_conditionnement: e.target.value})}
+                type="date"
+                value={formData.date_achat}
+                onChange={(e) => setFormData({...formData, date_achat: e.target.value})}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                placeholder="50"
                 required
                 disabled={submitting}
               />
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Prix d'achat total (CFA) *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Unité *</label>
+              <select
+                value={formData.unite_id}
+                onChange={(e) => setFormData({...formData, unite_id: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                required
+                disabled={submitting || unitesLoading || unites.length === 0}
+              >
+                <option value="">
+                  {unites.length === 0 ? 'Aucune unité disponible' : 'Choisir une unité'}
+                </option>
+                {unites.map(unite => (
+                  <option key={unite.id} value={unite.id}>
+                    {unite.label} ({unite.value})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Quantité totale *</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.quantite}
+                onChange={(e) => {
+                  const newQuantite = e.target.value;
+                  setFormData({
+                    ...formData, 
+                    quantite: newQuantite,
+                    quantite_restante: editingProduct ? formData.quantite_restante : newQuantite
+                  });
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                placeholder="25"
+                required
+                disabled={submitting}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Prix d'achat TOTAL (CFA) *
+                <span className="text-xs text-gray-500 block">Prix total de toute la quantité</span>
+              </label>
               <input
                 type="number"
                 step="0.01"
                 value={formData.prix_achat_total}
                 onChange={(e) => setFormData({...formData, prix_achat_total: e.target.value})}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                placeholder="23400"
+                placeholder="18500"
                 required
                 disabled={submitting}
               />
+              {formData.prix_achat_total && formData.quantite && (
+                <p className="text-xs text-blue-600 mt-1">
+                  Prix unitaire: {utils.formatCFA(getPrixUnitaire())} / {unites.find(u => u.id === parseInt(formData.unite_id))?.value || 'unité'}
+                </p>
+              )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Prix unitaire calculé</label>
-              <div className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg">
-                <span className="text-gray-700 font-medium">
-                  {utils.formatCFA(calculatePrixUnitaire())} / 
-                  <span className="text-gray-500 ml-1">
-                    {/* ← CORRECTION: Afficher le label de l'unité sélectionnée */}
-                    {unites.find(u => u.value === formData.unite_mesure)?.value || formData.unite_mesure || 'unité'}
-                  </span>
-                </span>
+            {editingProduct && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Quantité restante *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.quantite_restante}
+                  onChange={(e) => setFormData({...formData, quantite_restante: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                  placeholder="20"
+                  required
+                  disabled={submitting}
+                />
               </div>
-              <p className="text-xs text-gray-500 mt-1">Calculé automatiquement</p>
-            </div>
+            )}
           </div>
 
-          <div className="bg-blue-50 p-4 rounded-xl">
-            <h4 className="font-medium text-blue-900 mb-2">💡 Avantages du référentiel</h4>
-            <div className="text-sm text-blue-800 space-y-1">
-              <p>✅ Auto-remplissage lors de l'ajout au stock principal</p>
-              <p>✅ Cohérence des unités de mesure</p>
-              <p>✅ Historique des prix d'achat</p>
-              <p>✅ Calcul automatique des prix unitaires</p>
+          {/* Section Prix de Vente */}
+          {!editingProduct && (
+            <div className="border-t pt-4">
+              <div className="flex items-center space-x-3 mb-4">
+                <input
+                  type="checkbox"
+                  id="definir_prix_vente"
+                  checked={formData.definir_prix_vente}
+                  onChange={(e) => setFormData({...formData, definir_prix_vente: e.target.checked, prix_vente: e.target.checked ? formData.prix_vente : ''})}
+                  className="w-4 h-4 text-orange-600 bg-gray-100 border-gray-300 rounded focus:ring-orange-500"
+                />
+                <label htmlFor="definir_prix_vente" className="flex items-center text-sm font-medium text-gray-700">
+                  <Store className="w-4 h-4 mr-2 text-orange-600" />
+                  Définir le prix de vente (pour futures demandes vers boutique)
+                </label>
+              </div>
+
+              {formData.definir_prix_vente && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-blue-700 mb-2">
+                        Prix de vente unitaire (CFA) *
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={formData.prix_vente}
+                        onChange={(e) => setFormData({...formData, prix_vente: e.target.value})}
+                        className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="2500"
+                        required={formData.definir_prix_vente}
+                        disabled={submitting}
+                      />
+                    </div>
+
+                    {formData.prix_vente && formData.prix_achat_total && formData.quantite && (
+                      <div className="self-end">
+                        <div className="bg-white border border-blue-300 rounded-lg p-3">
+                          <h4 className="text-sm font-medium text-blue-700 mb-2">Marge calculée</h4>
+                          <div className="text-xs space-y-1">
+                            <div>Prix d'achat unitaire: {utils.formatCFA(getPrixUnitaire())}</div>
+                            <div>Prix de vente: {utils.formatCFA(formData.prix_vente)}</div>
+                            <div className="border-t pt-1">
+                              <div className={`font-semibold ${calculerMarge().marge >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                Marge: {calculerMarge().marge >= 0 ? '+' : ''}{utils.formatCFA(calculerMarge().marge)}
+                              </div>
+                              <div className={`text-xs ${calculerMarge().pourcentage >= 20 ? 'text-green-600' : 'text-yellow-600'}`}>
+                                {Math.round(calculerMarge().pourcentage)}% de marge
+                                {calculerMarge().pourcentage < 20 && ' (⚠️ Faible)'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-3 text-xs text-blue-700">
+                    ℹ️ Le produit sera ajouté au stock principal avec prix de vente défini
+                    <br />
+                    📋 Pour l'ajouter à la boutique : Créer une demande vers "Boutique"
+                    <br />
+                    ✅ Le prix sera appliqué automatiquement lors de l'ajout en boutique
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          )}
           
           <div className="flex space-x-4 pt-4">
             <button 
               type="submit" 
-              disabled={submitting || unites.length === 0}
+              disabled={submitting || unites.length === 0 || !formData.unite_id || (formData.definir_prix_vente && !formData.prix_vente)}
               className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-2 px-4 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? (
                 <>
                   <div className="spinner w-4 h-4 inline mr-2"></div>
-                  {editingItem ? 'Modification...' : 'Création...'}
+                  {editingProduct ? 'Modification...' : 'Création...'}
                 </>
               ) : (
-                editingItem ? 'Modifier le produit' : 'Ajouter le produit'
+                editingProduct ? 'Modifier le produit' : 'Ajouter le produit'
               )}
             </button>
             <button 
