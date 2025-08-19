@@ -469,7 +469,7 @@ export default function StockManager({ currentUser }) {
                 <option value="">Sélectionner depuis le référentiel...</option>
                 {referentiels.map(ref => (
                   <option key={ref.id} value={ref.id}>
-                    [{ref.reference}] {ref.nom} - {utils.formatCFA(ref.prix_unitaire)}/{ref.unite_mesure}
+                    [{ref.reference}] {ref.nom} - {(ref.quantite_par_conditionnement)}/{ref.unite_mesure}
                   </option>
                 ))}
               </select>
