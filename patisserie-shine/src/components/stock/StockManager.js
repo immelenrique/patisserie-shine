@@ -8,11 +8,13 @@ import { productService, uniteService, utils } from '../../lib/supabase';
 export default function StockManager({ currentUser }) {
   const [products, setProducts] = useState([]);
   const [unites, setUnites] = useState([]);
+  const [referentiels, setReferentiels] = useState([])
   const [loading, setLoading] = useState(true);
   const [unitesLoading, setUnitesLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
+  const [selectedReferentiel, setSelectedReferentiel] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
@@ -27,7 +29,7 @@ export default function StockManager({ currentUser }) {
     prix_vente: ''
   });
 
-  useEffect(() => {
+   useEffect(() => {
     loadData();
   }, []);
 
@@ -36,13 +38,45 @@ export default function StockManager({ currentUser }) {
     try {
       await Promise.all([
         loadProducts(),
-        loadUnites()
+        loadUnites(),
+        loadReferentiels() // ← AJOUTER
       ]);
     } catch (err) {
       console.error('Erreur de chargement:', err);
       setError('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
+    }
+  };
+  const loadReferentiels = async () => {
+    try {
+      const { referentiels, error } = await referentielService.getAll();
+      if (error) {
+        console.error('Erreur chargement référentiel:', error);
+      } else {
+        setReferentiels(referentiels);
+      }
+    } catch (err) {
+      console.error('Erreur:', err);
+    }
+  };
+
+  // ← AJOUTER cette fonction
+  const handleReferentielSelect = (referentielId) => {
+    const referentiel = referentiels.find(r => r.id === parseInt(referentielId));
+    if (referentiel) {
+      setSelectedReferentiel(referentiel);
+      setFormData(prev => ({
+        ...prev,
+        nom: referentiel.nom,
+        prix_achat_total: referentiel.prix_achat_total.toString(),
+        quantite: referentiel.quantite_par_conditionnement.toString(),
+        quantite_restante: editingProduct ? prev.quantite_restante : referentiel.quantite_par_conditionnement.toString(),
+        // Trouver l'unité correspondante
+        unite_id: unites.find(u => u.value === referentiel.unite_mesure)?.id?.toString() || ''
+      }));
+    } else {
+      setSelectedReferentiel(null);
     }
   };
 
@@ -181,6 +215,7 @@ export default function StockManager({ currentUser }) {
       ajouter_boutique: false,
       prix_vente: ''
     });
+    setSelectedReferentiel(null);
     setError('');
   };
 
@@ -406,7 +441,31 @@ export default function StockManager({ currentUser }) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nom du produit *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Produit du référentiel (optionnel)
+              </label>
+              <select
+                value={selectedReferentiel?.id || ''}
+                onChange={(e) => handleReferentielSelect(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent mb-3"
+                disabled={submitting}
+              >
+                <option value="">Sélectionner depuis le référentiel...</option>
+                {referentiels.map(ref => (
+                  <option key={ref.id} value={ref.id}>
+                    [{ref.reference}] {ref.nom} - {utils.formatCFA(ref.prix_unitaire)}/{ref.unite_mesure}
+                  </option>
+                ))}
+              </select>
+              
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nom du produit * 
+                {selectedReferentiel && (
+                  <span className="text-xs text-blue-600 ml-2">
+                    (Auto-rempli depuis référentiel [{selectedReferentiel.reference}])
+                  </span>
+                )}
+              </label>
               <input
                 type="text"
                 value={formData.nom}
@@ -416,7 +475,37 @@ export default function StockManager({ currentUser }) {
                 required
                 disabled={submitting}
               />
+              {selectedReferentiel && (
+                <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="text-sm font-medium text-blue-800 mb-2">📋 Référentiel sélectionné</h4>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-blue-700">
+                    <div><strong>Référence:</strong> {selectedReferentiel.reference}</div>
+                    <div><strong>Conditionnement:</strong> {selectedReferentiel.type_conditionnement}</div>
+                    <div><strong>Quantité:</strong> {selectedReferentiel.quantite_par_conditionnement} {selectedReferentiel.unite_mesure}</div>
+                    <div><strong>Prix total:</strong> {utils.formatCFA(selectedReferentiel.prix_achat_total)}</div>
+                    <div><strong>Prix unitaire:</strong> {utils.formatCFA(selectedReferentiel.prix_unitaire)}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedReferentiel(null);
+                      setFormData(prev => ({
+                        ...prev,
+                        nom: '',
+                        prix_achat_total: '',
+                        quantite: '',
+                        quantite_restante: '',
+                        unite_id: ''
+                      }));
+                    }}
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    ✕ Effacer la sélection
+                  </button>
+                </div>
+              )}
             </div>
+
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Date d'achat *</label>
