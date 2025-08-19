@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Search, Plus, Edit, Trash2, Package, Store } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
-import { productService, uniteService, referentielService, utils } from '../../lib/supabase';
+import { productService, uniteService, referentielService, utils, supabase } from '../../lib/supabase';
+
 
 export default function StockManager({ currentUser }) {
   const [products, setProducts] = useState([]);
