@@ -473,7 +473,9 @@ export default function ReferentielManager({ currentUser }) {
                 <option value="feuille">Feuille</option>
                 <option value="litre">Litre</option>
                 <option value="plaquette">Plaquette</option>
+                <option value="Pièce">Lot</option>
                 <option value="lot">Lot</option>
+                <option value="Unité">Lot</option>
                 <option value="Autre">Lot</option>
               </select>
             </div>
