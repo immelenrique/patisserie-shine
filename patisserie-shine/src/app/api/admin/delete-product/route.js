@@ -15,7 +15,7 @@ const supabaseAdmin = createClient(
 
 export async function DELETE(request) {
   try {
-    const { productId } = await request.json()
+    const { productId, forceDelete } = await request.json()
     
     if (!productId) {
       return NextResponse.json(
@@ -91,8 +91,8 @@ export async function DELETE(request) {
       verifications.push(`${produit.quantite_restante} unité(s) encore en stock principal`)
     }
 
-    // Si des vérifications échouent, demander confirmation supplémentaire
-    if (verifications.length > 0) {
+    // Si des vérifications échouent ET que ce n'est pas une suppression forcée
+    if (verifications.length > 0 && !forceDelete) {
       return NextResponse.json(
         { 
           error: `Attention: Ce produit est encore utilisé.\n\n${verifications.join('\n')}\n\nLa suppression pourrait affecter ces éléments.`,
