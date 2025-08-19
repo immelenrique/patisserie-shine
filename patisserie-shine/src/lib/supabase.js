@@ -578,7 +578,7 @@ export const uniteService = {
         .update({
           value: uniteData.value,
           label: uniteData.label,
-          updated_at: new Date().toISOString()
+        
         })
         .eq('id', uniteId)
         .select()
@@ -3503,6 +3503,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
