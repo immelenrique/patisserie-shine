@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react';
 import { Search, Plus, Edit, Trash2, Package, Store } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
-import { productService, uniteService, referentielService, utils } from '../../lib/supabase'; // ← CORRECTION: Ajouter referentielService
+import { productService, uniteService, referentielService, utils } from '../../lib/supabase';
 
 export default function StockManager({ currentUser }) {
   const [products, setProducts] = useState([]);
   const [unites, setUnites] = useState([]);
-  const [referentiels, setReferentiels] = useState([]); // ← CORRECTION: État pour référentiels
+  const [referentiels, setReferentiels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [unitesLoading, setUnitesLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -26,7 +26,7 @@ export default function StockManager({ currentUser }) {
     quantite: '',
     quantite_restante: '',
     unite_id: '',
-    definir_prix_vente: false, // ← CORRECTION: Nom correct
+    definir_prix_vente: false,
     prix_vente: ''
   });
   const filtered = referentiels.filter(ref =>
@@ -45,7 +45,7 @@ export default function StockManager({ currentUser }) {
       await Promise.all([
         loadProducts(),
         loadUnites(),
-        loadReferentiels() // ← CORRECTION: Appeler la fonction
+        loadReferentiels()
       ]);
     } catch (err) {
       console.error('Erreur de chargement:', err);
@@ -55,7 +55,6 @@ export default function StockManager({ currentUser }) {
     }
   };
 
-  // ← CORRECTION: Fonction manquante
   const loadReferentiels = async () => {
     try {
       const { referentiels, error } = await referentielService.getAll();
@@ -70,7 +69,7 @@ export default function StockManager({ currentUser }) {
     }
   };
 
-  // ← CORRECTION: Fonction handleReferentielSelect corrigée
+  // 🔧 CORRECTION: Fonction handleReferentielSelect avec calcul prix total correct
   const handleReferentielSelect = (referentielId) => {
     if (!referentielId) {
       setSelectedReferentiel(null);
@@ -81,27 +80,51 @@ export default function StockManager({ currentUser }) {
     if (referentiel) {
       setSelectedReferentiel(referentiel);
       
-      // Calculer le prix unitaire
-      const prixUnitaire = referentiel.quantite_par_conditionnement > 0 ? 
-        referentiel.prix_achat_total / referentiel.quantite_par_conditionnement : 0;
-
       // Trouver l'unité correspondante
       const uniteCorrespondante = unites.find(u => u.value === referentiel.unite_mesure);
+      
+      // 🔧 CORRECTION: Utiliser quantité du conditionnement par défaut mais permettre modification
+      const quantiteDefaut = referentiel.quantite_par_conditionnement;
+      const prixUnitaire = referentiel.prix_unitaire;
       
       setFormData(prev => ({
         ...prev,
         nom: referentiel.nom,
-        prix_achat_total: referentiel.prix_achat_total.toString(),
-        quantite: referentiel.quantite_par_conditionnement.toString(),
-        quantite_restante: editingProduct ? prev.quantite_restante : referentiel.quantite_par_conditionnement.toString(),
+        quantite: quantiteDefaut.toString(),
+        prix_achat_total: (prixUnitaire * quantiteDefaut).toString(), // 🔧 Prix calculé dynamiquement
+        quantite_restante: editingProduct ? prev.quantite_restante : quantiteDefaut.toString(),
         unite_id: uniteCorrespondante ? uniteCorrespondante.id.toString() : ''
       }));
       
       console.log('✅ Référentiel sélectionné:', referentiel.nom);
+      console.log('💰 Prix unitaire:', prixUnitaire, 'CFA');
+      console.log('📦 Quantité défaut:', quantiteDefaut);
     } else {
       setSelectedReferentiel(null);
       console.warn('⚠️ Référentiel non trouvé pour ID:', referentielId);
     }
+  };
+
+  // 🔧 NOUVELLE FONCTION: Recalculer le prix total quand la quantité change
+  const handleQuantiteChange = (nouvelleQuantite) => {
+    setFormData(prev => {
+      const newFormData = {
+        ...prev,
+        quantite: nouvelleQuantite,
+        quantite_restante: editingProduct ? prev.quantite_restante : nouvelleQuantite
+      };
+
+      // Si un référentiel est sélectionné, recalculer le prix total
+      if (selectedReferentiel && nouvelleQuantite) {
+        const prixUnitaire = selectedReferentiel.prix_unitaire;
+        const quantiteNum = parseFloat(nouvelleQuantite);
+        if (!isNaN(quantiteNum) && quantiteNum > 0) {
+          newFormData.prix_achat_total = (prixUnitaire * quantiteNum).toString();
+        }
+      }
+
+      return newFormData;
+    });
   };
 
   const loadProducts = async () => {
@@ -211,6 +234,56 @@ export default function StockManager({ currentUser }) {
     }
   };
 
+  // 🔧 CORRECTION: Fonction de suppression fonctionnelle
+  const handleDeleteProduct = async (productId, productName) => {
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer "${productName}" ?\n\nCette action est irréversible.`)) {
+      return;
+    }
+
+    try {
+      setError('');
+      
+      // Vérifier d'abord si le produit est utilisé ailleurs
+      const confirmSuppress = confirm(
+        `⚠️ ATTENTION ⚠️\n\n` +
+        `La suppression de "${productName}" peut affecter :\n` +
+        `• Les recettes qui utilisent ce produit\n` +
+        `• Les demandes en cours\n` +
+        `• L'historique de production\n\n` +
+        `Voulez-vous vraiment continuer ?`
+      );
+
+      if (!confirmSuppress) return;
+
+      // Appeler l'API de suppression
+      const response = await fetch('/api/admin/delete-product', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+        },
+        body: JSON.stringify({ productId })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.error || 'Erreur lors de la suppression');
+        alert('Erreur lors de la suppression : ' + (result.error || 'Erreur inconnue'));
+        return;
+      }
+
+      // Succès
+      alert(`✅ Produit "${productName}" supprimé avec succès !`);
+      await loadProducts(); // Recharger la liste
+      
+    } catch (err) {
+      console.error('Erreur suppression produit:', err);
+      setError('Erreur lors de la suppression du produit');
+      alert('Erreur lors de la suppression : ' + err.message);
+    }
+  };
+
   const startEdit = (product) => {
     setEditingProduct(product);
     const prixTotal = (product.prix_achat || 0) * (product.quantite || 1);
@@ -235,10 +308,11 @@ export default function StockManager({ currentUser }) {
       quantite: '',
       quantite_restante: '',
       unite_id: '',
-      definir_prix_vente: false, // ← CORRECTION
+      definir_prix_vente: false,
       prix_vente: ''
     });
     setSelectedReferentiel(null);
+    setSearch('');
     setError('');
   };
 
@@ -417,13 +491,18 @@ export default function StockManager({ currentUser }) {
                           {(currentUser.role === 'admin' || currentUser.role === 'employe_production') && (
                             <button 
                               onClick={() => startEdit(product)}
-                              className="text-indigo-600 hover:text-indigo-900"
+                              className="text-indigo-600 hover:text-indigo-900 p-1 hover:bg-indigo-50 rounded transition-colors"
+                              title="Modifier"
                             >
                               <Edit className="h-4 w-4" />
                             </button>
                           )}
                           {currentUser.role === 'admin' && (
-                            <button className="text-red-600 hover:text-red-900">
+                            <button 
+                              onClick={() => handleDeleteProduct(product.id, product.nom)}
+                              className="text-red-600 hover:text-red-900 p-1 hover:bg-red-50 rounded transition-colors"
+                              title="Supprimer"
+                            >
                               <Trash2 className="h-4 w-4" />
                             </button>
                           )}
@@ -464,54 +543,57 @@ export default function StockManager({ currentUser }) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Produit du référentiel (optionnel)
-        </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Produit du référentiel (optionnel)
+              </label>
 
-        {/* Champ de recherche au lieu de <select> */}
-        <div className="relative mb-3">
-          <input
-            type="text"
-            value={search || (selectedReferentiel ? `[${selectedReferentiel.reference}] ${selectedReferentiel.nom}` : "")}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setOpen(true);
-            }}
-            onFocus={() => setOpen(true)}
-            disabled={submitting}
-            placeholder="Sélectionner depuis le référentiel..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-          />
-
-          {/* Liste des options filtrées */}
-          {open && filtered.length > 0 && (
-            <ul className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-48 overflow-y-auto shadow">
-              {filtered.map(ref => (
-                <li
-                  key={ref.id}
-                  onClick={() => {
-                    handleReferentielSelect(ref.id);
-                    setSearch(`[${ref.reference}] ${ref.nom}`);
-                    setOpen(false);
+              {/* Champ de recherche référentiel */}
+              <div className="relative mb-3">
+                <input
+                  type="text"
+                  value={search || (selectedReferentiel ? `[${selectedReferentiel.reference}] ${selectedReferentiel.nom}` : "")}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setOpen(true);
                   }}
-                  className="px-3 py-2 cursor-pointer hover:bg-gray-100"
-                >
-                  [{ref.reference}] {ref.nom} - {ref.quantite_par_conditionnement}/{ref.unite_mesure}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+                  onFocus={() => setOpen(true)}
+                  onBlur={() => setTimeout(() => setOpen(false), 200)}
+                  disabled={submitting}
+                  placeholder="Sélectionner depuis le référentiel..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                />
 
-        {/* Ton champ Nom du produit */}
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Nom du produit * 
-          {selectedReferentiel && (
-            <span className="text-xs text-blue-600 ml-2">
-              (Auto-rempli depuis référentiel [{selectedReferentiel.reference}])
-            </span>
-          )}
-        </label>
+                {/* Liste des options filtrées */}
+                {open && filtered.length > 0 && (
+                  <ul className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 max-h-48 overflow-y-auto shadow">
+                    {filtered.map(ref => (
+                      <li
+                        key={ref.id}
+                        onClick={() => {
+                          handleReferentielSelect(ref.id);
+                          setSearch(`[${ref.reference}] ${ref.nom}`);
+                          setOpen(false);
+                        }}
+                        className="px-3 py-2 cursor-pointer hover:bg-gray-100"
+                      >
+                        <div className="font-medium">[{ref.reference}] {ref.nom}</div>
+                        <div className="text-xs text-gray-500">
+                          {ref.quantite_par_conditionnement} {ref.unite_mesure} - {utils.formatCFA(ref.prix_unitaire)}/unité
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Nom du produit * 
+                {selectedReferentiel && (
+                  <span className="text-xs text-blue-600 ml-2">
+                    (Auto-rempli depuis référentiel [{selectedReferentiel.reference}])
+                  </span>
+                )}
+              </label>
               <input
                 type="text"
                 value={formData.nom}
@@ -527,9 +609,11 @@ export default function StockManager({ currentUser }) {
                   <div className="grid grid-cols-2 gap-2 text-xs text-blue-700">
                     <div><strong>Référence:</strong> {selectedReferentiel.reference}</div>
                     <div><strong>Conditionnement:</strong> {selectedReferentiel.type_conditionnement}</div>
-                    <div><strong>Quantité:</strong> {selectedReferentiel.quantite_par_conditionnement} {selectedReferentiel.unite_mesure}</div>
-                    <div><strong>Prix total:</strong> {utils.formatCFA(selectedReferentiel.prix_achat_total)}</div>
                     <div><strong>Prix unitaire:</strong> {utils.formatCFA(selectedReferentiel.prix_unitaire)}</div>
+                    <div><strong>Quantité défaut:</strong> {selectedReferentiel.quantite_par_conditionnement} {selectedReferentiel.unite_mesure}</div>
+                  </div>
+                  <div className="mt-2 text-xs text-green-700">
+                    💡 Vous pouvez modifier la quantité - le prix total sera recalculé automatiquement
                   </div>
                   <button
                     type="button"
@@ -543,6 +627,7 @@ export default function StockManager({ currentUser }) {
                         quantite_restante: '',
                         unite_id: ''
                       }));
+                      setSearch('');
                     }}
                     className="mt-2 text-xs text-blue-600 hover:text-blue-800"
                   >
@@ -585,24 +670,29 @@ export default function StockManager({ currentUser }) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Quantité totale *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Quantité totale *
+                {selectedReferentiel && (
+                  <span className="text-xs text-green-600 ml-2">
+                    (Prix recalculé automatiquement)
+                  </span>
+                )}
+              </label>
               <input
                 type="number"
                 step="0.01"
                 value={formData.quantite}
-                onChange={(e) => {
-                  const newQuantite = e.target.value;
-                  setFormData({
-                    ...formData, 
-                    quantite: newQuantite,
-                    quantite_restante: editingProduct ? formData.quantite_restante : newQuantite
-                  });
-                }}
+                onChange={(e) => handleQuantiteChange(e.target.value)} // 🔧 CORRECTION: Utiliser la nouvelle fonction
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 placeholder="25"
                 required
                 disabled={submitting}
               />
+              {selectedReferentiel && (
+                <p className="text-xs text-blue-600 mt-1">
+                  Quantité de base: {selectedReferentiel.quantite_par_conditionnement} {selectedReferentiel.unite_mesure}
+                </p>
+              )}
             </div>
 
             <div>
@@ -618,11 +708,16 @@ export default function StockManager({ currentUser }) {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 placeholder="18500"
                 required
-                disabled={submitting}
+                disabled={submitting || (selectedReferentiel && !editingProduct)} // 🔧 CORRECTION: Désactiver si référentiel sélectionné
               />
               {formData.prix_achat_total && formData.quantite && (
                 <p className="text-xs text-blue-600 mt-1">
                   Prix unitaire: {utils.formatCFA(getPrixUnitaire())} / {unites.find(u => u.id === parseInt(formData.unite_id))?.value || 'unité'}
+                </p>
+              )}
+              {selectedReferentiel && !editingProduct && (
+                <p className="text-xs text-green-600 mt-1">
+                  💡 Prix calculé automatiquement: {formData.quantite} × {utils.formatCFA(selectedReferentiel.prix_unitaire)}
                 </p>
               )}
             </div>
