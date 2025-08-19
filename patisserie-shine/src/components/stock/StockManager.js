@@ -236,55 +236,85 @@ export default function StockManager({ currentUser }) {
   };
 
   // 🔧 CORRECTION: Fonction de suppression fonctionnelle
-  const handleDeleteProduct = async (productId, productName) => {
-    if (!confirm(`Êtes-vous sûr de vouloir supprimer "${productName}" ?\n\nCette action est irréversible.`)) {
-      return;
-    }
+ const handleDeleteProduct = async (productId, productName) => {
+  if (!confirm(`Êtes-vous sûr de vouloir supprimer "${productName}" ?\n\nCette action est irréversible.`)) {
+    return;
+  }
 
-    try {
-      setError('');
-      
-      // Vérifier d'abord si le produit est utilisé ailleurs
-      const confirmSuppress = confirm(
-        `⚠️ ATTENTION ⚠️\n\n` +
-        `La suppression de "${productName}" peut affecter :\n` +
-        `• Les recettes qui utilisent ce produit\n` +
-        `• Les demandes en cours\n` +
-        `• L'historique de production\n\n` +
-        `Voulez-vous vraiment continuer ?`
+  try {
+    setError('');
+    
+    // Première tentative de suppression
+    const { data: session } = await supabase.auth.getSession();
+    
+    const response = await fetch('/api/admin/delete-product', {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.session?.access_token}`
+      },
+      body: JSON.stringify({ productId })
+    });
+
+    const result = await response.json();
+
+    // Si le serveur demande une confirmation (status 409)
+    if (response.status === 409 && result.requireConfirmation) {
+      const confirmForce = confirm(
+        `⚠️ CONFIRMATION REQUISE ⚠️\n\n` +
+        `${result.error}\n\n` +
+        `Voulez-vous FORCER la suppression malgré ces avertissements ?\n\n` +
+        `Cette action est IRRÉVERSIBLE et peut affecter d'autres données.`
       );
 
-      if (!confirmSuppress) return;
+      if (!confirmForce) {
+        return; // Utilisateur annule
+      }
 
-      // Appeler l'API de suppression
-      const response = await fetch('/api/admin/delete-product', {
+      // Suppression forcée
+      const forceResponse = await fetch('/api/admin/delete-product', {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          'Authorization': `Bearer ${session?.session?.access_token}`
         },
-        body: JSON.stringify({ productId })
+        body: JSON.stringify({ productId, forceDelete: true })
       });
 
-      const result = await response.json();
+      const forceResult = await forceResponse.json();
 
-      if (!response.ok) {
-        setError(result.error || 'Erreur lors de la suppression');
-        alert('Erreur lors de la suppression : ' + (result.error || 'Erreur inconnue'));
+      if (!forceResponse.ok) {
+        setError(forceResult.error || 'Erreur lors de la suppression forcée');
+        alert('Erreur lors de la suppression forcée : ' + (forceResult.error || 'Erreur inconnue'));
         return;
       }
 
-      // Succès
-      alert(`✅ Produit "${productName}" supprimé avec succès !`);
-      await loadProducts(); // Recharger la liste
-      
-    } catch (err) {
-      console.error('Erreur suppression produit:', err);
-      setError('Erreur lors de la suppression du produit');
-      alert('Erreur lors de la suppression : ' + err.message);
+      // Succès de la suppression forcée
+      alert(
+        `✅ Produit "${productName}" supprimé avec succès !\n\n` +
+        `Éléments affectés :\n${forceResult.details || 'Suppression complète'}`
+      );
+      await loadProducts();
+      return;
     }
-  };
 
+    // Erreur normale
+    if (!response.ok) {
+      setError(result.error || 'Erreur lors de la suppression');
+      alert('Erreur lors de la suppression : ' + (result.error || 'Erreur inconnue'));
+      return;
+    }
+
+    // Succès direct
+    alert(`✅ Produit "${productName}" supprimé avec succès !`);
+    await loadProducts();
+    
+  } catch (err) {
+    console.error('Erreur suppression produit:', err);
+    setError('Erreur lors de la suppression du produit');
+    alert('Erreur lors de la suppression : ' + err.message);
+  }
+};
   const startEdit = (product) => {
     setEditingProduct(product);
     const prixTotal = (product.prix_achat || 0) * (product.quantite || 1);
