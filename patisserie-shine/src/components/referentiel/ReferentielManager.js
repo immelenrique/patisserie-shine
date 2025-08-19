@@ -316,20 +316,7 @@ export default function ReferentielManager({ currentUser }) {
           </div>
         </Card>
 
-        <Card className="p-6">
-          <div className="flex items-center">
-            <Package className="w-8 h-8 text-purple-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">Prix unitaire moyen</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {referentiels.length > 0 ? 
-                  utils.formatCFA(referentiels.reduce((sum, item) => sum + (item.prix_unitaire || 0), 0) / referentiels.length) :
-                  utils.formatCFA(0)
-                }
-              </p>
-            </div>
-          </div>
-        </Card>
+        
       </div>
       
       {/* Tableau */}
