@@ -347,6 +347,80 @@ export default function StockManager({ currentUser }) {
     return { marge: 0, pourcentage: 0 };
   };
 
+  const exporterStockCSV = () => {
+    try {
+      // Calculer les totaux
+      const valeurTotaleStock = products.reduce((sum, p) => sum + ((p.prix_achat || 0) * (p.quantite_restante || 0)), 0);
+      const valeurTotaleInitiale = products.reduce((sum, p) => sum + ((p.prix_achat || 0) * (p.quantite || 0)), 0);
+      const valeurConsommee = valeurTotaleInitiale - valeurTotaleStock;
+      
+      // En-tête CSV
+      const csvLines = [];
+      csvLines.push('RAPPORT STOCK PRINCIPAL - PATISSERIE SHINE');
+      csvLines.push(`Date d'export: ${new Date().toLocaleDateString('fr-FR')}`);
+      csvLines.push(`Exporté par: ${currentUser?.nom || 'Utilisateur'}`);
+      csvLines.push('');
+      csvLines.push('RESUME FINANCIER');
+      csvLines.push(`Valeur totale stock actuel: ${utils.formatCFA(valeurTotaleStock)}`);
+      csvLines.push(`Valeur stock initial: ${utils.formatCFA(valeurTotaleInitiale)}`);
+      csvLines.push(`Valeur consommée: ${utils.formatCFA(valeurConsommee)}`);
+      csvLines.push(`Taux d'utilisation: ${valeurTotaleInitiale > 0 ? ((valeurConsommee / valeurTotaleInitiale) * 100).toFixed(1) : 0}%`);
+      csvLines.push('');
+      csvLines.push('DETAILS DU STOCK');
+      csvLines.push('Produit,Quantité Restante,Quantité Initiale,Prix Unitaire CFA,Valeur Stock CFA,Unité,Date Achat,Statut');
+      
+      // Données des produits
+      products.forEach(product => {
+        const valeurStock = (product.prix_achat || 0) * (product.quantite_restante || 0);
+        const alertLevel = utils.getStockAlertLevel(product.quantite_restante, product.quantite);
+        const statutFr = alertLevel === 'normal' ? 'Normal' :
+                        alertLevel === 'faible' ? 'Faible' :
+                        alertLevel === 'critique' ? 'Critique' :
+                        'Rupture';
+        
+        csvLines.push([
+          `"${product.nom}"`,
+          product.quantite_restante || 0,
+          product.quantite || 0,
+          product.prix_achat || 0,
+          valeurStock.toFixed(2),
+          product.unite?.label || '',
+          product.date_achat || '',
+          statutFr
+        ].join(','));
+      });
+      
+      // Statistiques de fin
+      csvLines.push('');
+      csvLines.push('STATISTIQUES');
+      const stockNormal = products.filter(p => utils.getStockAlertLevel(p.quantite_restante, p.quantite) === 'normal').length;
+      const stockFaible = products.filter(p => utils.getStockAlertLevel(p.quantite_restante, p.quantite) === 'faible').length;
+      const stockCritique = products.filter(p => utils.getStockAlertLevel(p.quantite_restante, p.quantite) === 'critique').length;
+      const stockRupture = products.filter(p => utils.getStockAlertLevel(p.quantite_restante, p.quantite) === 'rupture').length;
+      
+      csvLines.push(`Total produits: ${products.length}`);
+      csvLines.push(`Stock normal: ${stockNormal}`);
+      csvLines.push(`Stock faible: ${stockFaible}`);
+      csvLines.push(`Stock critique: ${stockCritique}`);
+      csvLines.push(`Stock en rupture: ${stockRupture}`);
+      
+      // Télécharger le fichier
+      const csvContent = csvLines.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `stock_principal_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      alert(`✅ Export CSV généré avec succès !\n\nValeur totale exportée: ${utils.formatCFA(valeurTotaleStock)}`);
+    } catch (err) {
+      console.error('Erreur export CSV:', err);
+      alert('Erreur lors de l\'export CSV: ' + err.message);
+    }
+  };
+
   const filteredProducts = products.filter(product => 
     product.nom.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -380,6 +454,19 @@ export default function StockManager({ currentUser }) {
               className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
             />
           </div>
+          
+          {/* Bouton Export Stock */}
+          {products.length > 0 && (
+            <button
+              onClick={exporterStockCSV}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all duration-200 flex items-center space-x-2"
+              title="Exporter le stock en CSV"
+            >
+              <Package className="h-4 w-4" />
+              <span>Export CSV</span>
+            </button>
+          )}
+          
           {(currentUser.role === 'admin' || currentUser.role === 'employe_production') && (
             <button 
               onClick={() => setShowAddModal(true)}
@@ -408,6 +495,202 @@ export default function StockManager({ currentUser }) {
             {unitesLoading && <span className="ml-2">Chargement en cours...</span>}
           </div>
         </div>
+      )}
+
+      {/* Statistiques du stock principal */}
+      {products.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card className="p-6">
+            <div className="flex items-center">
+              <Package className="w-8 h-8 text-blue-600" />
+              <div className="ml-3">
+                <p className="text-sm font-medium text-gray-500">Total produits</p>
+                <p className="text-2xl font-bold text-gray-900">{products.length}</p>
+              </div>
+            </div>
+          </Card>
+          
+          <Card className="p-6">
+            <div className="flex items-center">
+              <Package className="w-8 h-8 text-green-600" />
+              <div className="ml-3">
+                <p className="text-sm font-medium text-gray-500">Valeur totale stock</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {utils.formatCFA(
+                    products.reduce((sum, product) => 
+                      sum + ((product.prix_achat || 0) * (product.quantite_restante || 0)), 0
+                    )
+                  )}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <Package className="w-8 h-8 text-orange-600" />
+              <div className="ml-3">
+                <p className="text-sm font-medium text-gray-500">Valeur stock initial</p>
+                <p className="text-2xl font-bold text-orange-600">
+                  {utils.formatCFA(
+                    products.reduce((sum, product) => 
+                      sum + ((product.prix_achat || 0) * (product.quantite || 0)), 0
+                    )
+                  )}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <Package className="w-8 h-8 text-red-600" />
+              <div className="ml-3">
+                <p className="text-sm font-medium text-gray-500">Stock critique</p>
+                <p className="text-2xl font-bold text-red-600">
+                  {products.filter(product => {
+                    const alertLevel = utils.getStockAlertLevel(product.quantite_restante, product.quantite);
+                    return alertLevel === 'critique' || alertLevel === 'rupture';
+                  }).length}
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Analyse détaillée du stock */}
+      {products.length > 0 && (
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold mb-4">Analyse du Stock Principal</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Répartition par valeur */}
+            <div>
+              <h4 className="font-medium text-gray-700 mb-3">Répartition par valeur</h4>
+              <div className="space-y-2">
+                {(() => {
+                  const valeurActuelle = products.reduce((sum, p) => sum + ((p.prix_achat || 0) * (p.quantite_restante || 0)), 0);
+                  const valeurInitiale = products.reduce((sum, p) => sum + ((p.prix_achat || 0) * (p.quantite || 0)), 0);
+                  const valeurConsommee = valeurInitiale - valeurActuelle;
+                  const pourcentageConsomme = valeurInitiale > 0 ? (valeurConsommee / valeurInitiale) * 100 : 0;
+                  
+                  return (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Stock restant:</span>
+                        <span className="font-semibold text-green-600">{utils.formatCFA(valeurActuelle)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Valeur consommée:</span>
+                        <span className="font-semibold text-blue-600">{utils.formatCFA(valeurConsommee)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Taux d'utilisation:</span>
+                        <span className="font-semibold text-purple-600">{pourcentageConsomme.toFixed(1)}%</span>
+                      </div>
+                      
+                      {/* Barre de progression */}
+                      <div className="mt-3">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-gradient-to-r from-blue-400 to-blue-600 h-2 rounded-full transition-all duration-500"
+                            style={{ width: `${Math.min(pourcentageConsomme, 100)}%` }}
+                          ></div>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-500 mt-1">
+                          <span>0%</span>
+                          <span>50%</span>
+                          <span>100%</span>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Top 5 des produits les plus chers */}
+            <div>
+              <h4 className="font-medium text-gray-700 mb-3">Top 5 - Valeur stock</h4>
+              <div className="space-y-2">
+                {products
+                  .map(p => ({
+                    ...p,
+                    valeurStock: (p.prix_achat || 0) * (p.quantite_restante || 0)
+                  }))
+                  .sort((a, b) => b.valeurStock - a.valeurStock)
+                  .slice(0, 5)
+                  .map((produit, index) => (
+                    <div key={produit.id} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center">
+                        <span className="w-5 h-5 bg-orange-100 text-orange-600 rounded-full flex items-center justify-center text-xs font-semibold mr-2">
+                          {index + 1}
+                        </span>
+                        <span className="text-gray-700 truncate max-w-[120px]" title={produit.nom}>
+                          {produit.nom}
+                        </span>
+                      </div>
+                      <span className="font-semibold text-green-600">
+                        {utils.formatCFA(produit.valeurStock)}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            {/* Alertes stock */}
+            <div>
+              <h4 className="font-medium text-gray-700 mb-3">État du stock</h4>
+              <div className="space-y-2">
+                {(() => {
+                  const stockNormal = products.filter(p => utils.getStockAlertLevel(p.quantite_restante, p.quantite) === 'normal').length;
+                  const stockFaible = products.filter(p => utils.getStockAlertLevel(p.quantite_restante, p.quantite) === 'faible').length;
+                  const stockCritique = products.filter(p => utils.getStockAlertLevel(p.quantite_restante, p.quantite) === 'critique').length;
+                  const stockRupture = products.filter(p => utils.getStockAlertLevel(p.quantite_restante, p.quantite) === 'rupture').length;
+                  
+                  return (
+                    <>
+                      <div className="flex justify-between text-sm">
+                        <div className="flex items-center">
+                          <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+                          <span className="text-gray-600">Normal:</span>
+                        </div>
+                        <span className="font-semibold text-green-600">{stockNormal}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <div className="flex items-center">
+                          <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
+                          <span className="text-gray-600">Faible:</span>
+                        </div>
+                        <span className="font-semibold text-yellow-600">{stockFaible}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <div className="flex items-center">
+                          <div className="w-3 h-3 bg-orange-500 rounded-full mr-2"></div>
+                          <span className="text-gray-600">Critique:</span>
+                        </div>
+                        <span className="font-semibold text-orange-600">{stockCritique}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <div className="flex items-center">
+                          <div className="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+                          <span className="text-gray-600">Rupture:</span>
+                        </div>
+                        <span className="font-semibold text-red-600">{stockRupture}</span>
+                      </div>
+                      
+                      {(stockCritique > 0 || stockRupture > 0) && (
+                        <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                          <strong>⚠️ Action requise:</strong> {stockCritique + stockRupture} produit(s) nécessitent un réapprovisionnement
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </Card>
       )}
       
       <Card className="overflow-hidden">
