@@ -20,6 +20,7 @@ import ComptabiliteManager from '../components/comptabilite/ComptabiliteManager'
 import UnitesManager from '../components/admin/UnitesManager';
 import TeamManager from '../components/admin/TeamManager';
 import UserManagement from '../components/admin/UserManagement';
+import ReferentielManager from '../components/referentiel/ReferentielManager';
 
 export default function PatisserieApp() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -73,25 +74,26 @@ export default function PatisserieApp() {
   };
 
   // Navigation tabs avec vérification des permissions (SUPPRESSION DE PRIX-VENTE)
-  const tabs = [
-    { id: 'dashboard', label: 'Tableau de Bord', adminOnly: false },
-    { id: 'stock', label: 'Stock Principal', adminOnly: false },
-    { id: 'stock-atelier', label: 'Stock Atelier', adminOnly: true },
-    { id: 'stock-boutique', label: 'Stock Boutique', adminOnly: false },
-    { id: 'recettes', label: 'Recettes', adminOnly: true },
-    { id: 'demandes', label: 'Demandes', adminOnly: false },
-    { id: 'production', label: 'Production', adminOnly: false },
-    { id: 'caisse', label: 'Caisse', adminOnly: false },
-    { id: 'comptabilite', label: 'Comptabilité', adminOnly: true },
-    { id: 'unites', label: 'Unités', adminOnly: true },
-    { id: 'equipe', label: 'Équipe', adminOnly: true },
-    { 
-      id: 'users', 
-      label: 'Utilisateurs', 
-      adminOnly: true, 
-      proprietaireOnly: true
-    }
-  ];
+ const tabs = [
+  { id: 'dashboard', label: 'Tableau de Bord', adminOnly: false },
+  { id: 'stock', label: 'Stock Principal', adminOnly: false },
+  { id: 'referentiel', label: 'Référentiel Produits', adminOnly: true }, 
+  { id: 'stock-atelier', label: 'Stock Atelier', adminOnly: true },
+  { id: 'stock-boutique', label: 'Stock Boutique', adminOnly: false },
+  { id: 'recettes', label: 'Recettes', adminOnly: true },
+  { id: 'demandes', label: 'Demandes', adminOnly: false },
+  { id: 'production', label: 'Production', adminOnly: false },
+  { id: 'caisse', label: 'Caisse', adminOnly: false },
+  { id: 'comptabilite', label: 'Comptabilité', adminOnly: true },
+  { id: 'unites', label: 'Unités', adminOnly: true },
+  { id: 'equipe', label: 'Équipe', adminOnly: true },
+  { 
+    id: 'users', 
+    label: 'Utilisateurs', 
+    adminOnly: true, 
+    proprietaireOnly: true
+  }
+];
 
   // Filtrer les onglets selon les permissions
   const visibleTabs = tabs.filter(tab => {
@@ -128,6 +130,10 @@ export default function PatisserieApp() {
           return currentUser.role === 'admin' ? 
             <StockAtelierManager currentUser={currentUser} /> : 
             <Dashboard stats={stats} loading={!stats} />;
+        case 'referentiel': // ← NOUVEAU
+        return currentUser.role === 'admin' ? 
+          <ReferentielManager currentUser={currentUser} /> : 
+          <Dashboard stats={stats} loading={!stats} />;
         case 'stock-boutique':
           return <StockBoutiqueManager currentUser={currentUser} />;
         case 'recettes':
@@ -201,3 +207,4 @@ export default function PatisserieApp() {
     </div>
   );
 }
+
