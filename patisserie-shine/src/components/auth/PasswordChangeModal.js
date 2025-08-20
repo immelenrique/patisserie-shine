@@ -203,3 +203,102 @@ export default function PasswordChangeModal({ isOpen, user, onPasswordChanged, o
             </div>
             
             {/* Vérification correspondance */}
+            {passwords.confirmPassword && (
+              <div className="mt-2 text-sm">
+                {passwords.newPassword === passwords.confirmPassword ? (
+                  <span className="text-green-600 flex items-center">
+                    <CheckCircle className="w-4 h-4 mr-1" />
+                    Les mots de passe correspondent
+                  </span>
+                ) : (
+                  <span className="text-red-600 flex items-center">
+                    <AlertTriangle className="w-4 h-4 mr-1" />
+                    Les mots de passe ne correspondent pas
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Conseils de sécurité */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <h4 className="font-medium text-gray-900 mb-2">Conseils pour un mot de passe sécurisé :</h4>
+            <ul className="text-sm text-gray-600 space-y-1">
+              <li className="flex items-center">
+                <span className={`w-2 h-2 rounded-full mr-2 ${passwords.newPassword.length >= 8 ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                Au moins 8 caractères
+              </li>
+              <li className="flex items-center">
+                <span className={`w-2 h-2 rounded-full mr-2 ${/[A-Z]/.test(passwords.newPassword) ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                Une lettre majuscule
+              </li>
+              <li className="flex items-center">
+                <span className={`w-2 h-2 rounded-full mr-2 ${/[a-z]/.test(passwords.newPassword) ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                Une lettre minuscule
+              </li>
+              <li className="flex items-center">
+                <span className={`w-2 h-2 rounded-full mr-2 ${/[0-9]/.test(passwords.newPassword) ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                Un chiffre
+              </li>
+              <li className="flex items-center">
+                <span className={`w-2 h-2 rounded-full mr-2 ${/[^A-Za-z0-9]/.test(passwords.newPassword) ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+                Un caractère spécial (!@#$%^&*)
+              </li>
+            </ul>
+          </div>
+
+          {/* Message d'erreur */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="flex items-center text-red-800">
+                <AlertTriangle className="w-5 h-5 mr-2" />
+                {error}
+              </div>
+            </div>
+          )}
+
+          {/* Boutons d'action */}
+          <div className="flex space-x-4 pt-4">
+            <button
+              type="submit"
+              disabled={changing || passwords.newPassword !== passwords.confirmPassword || passwords.newPassword.length < 6}
+              className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-3 px-4 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            >
+              {changing ? (
+                <>
+                  <div className="spinner w-4 h-4 inline mr-2"></div>
+                  Changement en cours...
+                </>
+              ) : (
+                <>
+                  <Lock className="w-4 h-4 inline mr-2" />
+                  Changer le mot de passe
+                </>
+              )}
+            </button>
+            
+            <button
+              type="button"
+              onClick={onLogout}
+              disabled={changing}
+              className="flex-1 bg-gray-200 text-gray-800 py-3 px-4 rounded-lg hover:bg-gray-300 transition-all duration-200 disabled:opacity-50 font-medium"
+            >
+              Se déconnecter
+            </button>
+          </div>
+        </form>
+
+        {/* Avertissement */}
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-start">
+            <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
+            <div className="text-sm text-red-800">
+              <p className="font-medium mb-1">Important :</p>
+              <p>Vous ne pourrez pas accéder à l'application tant que vous n'aurez pas changé votre mot de passe. Cette mesure garantit la sécurité de votre compte.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
