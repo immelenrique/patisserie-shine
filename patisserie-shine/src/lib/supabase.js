@@ -19,7 +19,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // ===================== SERVICES D'AUTHENTIFICATION =====================
 export const authService = {
-  // Connexion par email
+  // Connexion par email (existant, amélioré)
   async signInWithUsername(username, password) {
     try {
       // Conversion username vers email pour Supabase Auth
@@ -51,6 +51,156 @@ export const authService = {
     } catch (error) {
       console.error('Erreur dans signInWithUsername:', error)
       return { user: null, profile: null, error: error.message }
+    }
+  },
+
+  // Mettre à jour le mot de passe de l'utilisateur connecté
+  async updatePassword(newPassword) {
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        password: newPassword
+      })
+      
+      if (error) {
+        console.error('Erreur mise à jour mot de passe:', error)
+        return { success: false, error: error.message }
+      }
+      
+      return { success: true, user: data.user, error: null }
+    } catch (error) {
+      console.error('Erreur dans updatePassword:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Marquer le changement de mot de passe comme terminé
+  async markPasswordChangeComplete() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' }
+      }
+
+      // Utiliser la fonction SQL pour marquer le changement
+      const { error } = await supabase.rpc('mark_password_changed', {
+        user_id: user.id
+      })
+
+      if (error) {
+        console.error('Erreur marquage changement mot de passe:', error)
+        // Fallback vers mise à jour directe
+        const { error: directError } = await supabase
+          .from('profiles')
+          .update({
+            force_password_change: false,
+            last_password_change: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id)
+
+        if (directError) {
+          return { success: false, error: directError.message }
+        }
+      }
+
+      return { success: true, error: null }
+    } catch (error) {
+      console.error('Erreur dans markPasswordChangeComplete:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Vérifier si l'utilisateur doit changer son mot de passe
+  async checkPasswordChangeRequired() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        return { required: false, error: 'Utilisateur non connecté' }
+      }
+
+      // Essayer d'abord avec la fonction SQL
+      try {
+        const { data, error } = await supabase.rpc('check_password_change_required', {
+          user_id: user.id
+        })
+
+        if (error) {
+          throw error
+        }
+
+        return { 
+          required: data || false, 
+          error: null 
+        }
+      } catch (rpcError) {
+        console.warn('RPC check_password_change_required échouée, fallback direct:', rpcError)
+        
+        // Fallback : requête directe
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('force_password_change, last_password_change, created_at')
+          .eq('id', user.id)
+          .single()
+
+        if (profileError) {
+          console.error('Erreur vérification changement mot de passe:', profileError)
+          return { required: false, error: profileError.message }
+        }
+
+        // Déterminer si le changement est requis
+        const isRequired = profile.force_password_change === true || 
+                          profile.last_password_change === null
+
+        return { 
+          required: isRequired, 
+          profile: profile,
+          error: null 
+        }
+      }
+    } catch (error) {
+      console.error('Erreur dans checkPasswordChangeRequired:', error)
+      return { required: false, error: error.message }
+    }
+  },
+
+  // Vérifier pour un utilisateur spécifique (utilisé par userService)
+  async checkPasswordChangeRequiredForUser(userId) {
+    try {
+      // Essayer d'abord avec la fonction SQL
+      try {
+        const { data, error } = await supabase.rpc('check_password_change_required', {
+          user_id: userId
+        })
+
+        if (error) {
+          throw error
+        }
+
+        return { required: data || false, error: null }
+      } catch (rpcError) {
+        console.warn('RPC pour utilisateur spécifique échouée, fallback direct:', rpcError)
+        
+        // Fallback : requête directe
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('force_password_change, last_password_change')
+          .eq('id', userId)
+          .single()
+
+        if (profileError) {
+          return { required: false, error: profileError.message }
+        }
+
+        const isRequired = profile.force_password_change === true || 
+                          profile.last_password_change === null
+
+        return { required: isRequired, error: null }
+      }
+    } catch (error) {
+      console.error('Erreur dans checkPasswordChangeRequiredForUser:', error)
+      return { required: false, error: error.message }
     }
   },
 
@@ -95,9 +245,73 @@ export const authService = {
       console.error('Erreur dans getCurrentUser:', error)
       return { user: null, profile: null, error: error.message }
     }
+  },
+
+  // Connexion avec vérification du changement de mot de passe
+  async signInWithPasswordCheck(username, password) {
+    try {
+      // Connexion normale
+      const loginResult = await this.signInWithUsername(username, password)
+      
+      if (loginResult.error || !loginResult.profile) {
+        return loginResult
+      }
+
+      // Vérifier si le changement de mot de passe est requis
+      const passwordCheckResult = await this.checkPasswordChangeRequired()
+      
+      return {
+        ...loginResult,
+        passwordChangeRequired: passwordCheckResult.required || false
+      }
+    } catch (error) {
+      console.error('Erreur dans signInWithPasswordCheck:', error)
+      return { user: null, profile: null, error: error.message }
+    }
+  },
+
+  // Test de la session actuelle
+  async testSession() {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession()
+      
+      if (error) {
+        return { valid: false, error: error.message }
+      }
+      
+      if (!session) {
+        return { valid: false, error: 'Aucune session active' }
+      }
+      
+      return { 
+        valid: true, 
+        session: {
+          user_id: session.user?.id,
+          expires_at: session.expires_at,
+          token_preview: session.access_token?.substring(0, 20) + '...'
+        },
+        error: null 
+      }
+    } catch (error) {
+      return { valid: false, error: error.message }
+    }
+  },
+
+  // Rafraîchir la session
+  async refreshSession() {
+    try {
+      const { data, error } = await supabase.auth.refreshSession()
+      
+      if (error) {
+        return { success: false, error: error.message }
+      }
+      
+      return { success: true, session: data.session, error: null }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
   }
 }
-
 // ===================== SERVICES RÉFÉRENTIEL =====================
 export const referentielService = {
   // Récupérer tous les éléments du référentiel
@@ -3682,6 +3896,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
