@@ -44,14 +44,23 @@ export default function PatisserieApp() {
   const checkAuth = async () => {
     try {
       const { user, profile } = await authService.getCurrentUser();
+      
       if (profile) {
         setCurrentUser(profile);
         
         // Vérifier si le changement de mot de passe est requis
-        const passwordCheck = await authService.checkPasswordChangeRequired();
-        if (passwordCheck.required) {
-          setPasswordChangeRequired(true);
-          setShowPasswordModal(true);
+        try {
+          const passwordCheck = await authService.checkPasswordChangeRequired();
+          if (passwordCheck.required) {
+            console.log('🔒 Changement de mot de passe requis pour:', profile.username);
+            setPasswordChangeRequired(true);
+            setShowPasswordModal(true);
+          } else {
+            console.log('✅ Mot de passe à jour pour:', profile.username);
+          }
+        } catch (passwordError) {
+          console.warn('⚠️ Erreur vérification mot de passe (non bloquant):', passwordError);
+          // Ne pas bloquer si la vérification échoue
         }
       }
     } catch (err) {
@@ -85,23 +94,43 @@ export default function PatisserieApp() {
     }
   };
 
-  const handlePasswordChanged = () => {
-    setPasswordChangeRequired(false);
-    setShowPasswordModal(false);
-    // Recharger les stats après changement de mot de passe
-    loadDashboardStats();
+  const handlePasswordChanged = async () => {
+    try {
+      // Marquer le changement comme terminé
+      await authService.markPasswordChangeComplete();
+      
+      setPasswordChangeRequired(false);
+      setShowPasswordModal(false);
+      
+      // Recharger les stats après changement de mot de passe
+      loadDashboardStats();
+      
+      console.log('✅ Mot de passe changé avec succès');
+    } catch (error) {
+      console.error('Erreur marquage changement mot de passe:', error);
+      // Continuer quand même
+      setPasswordChangeRequired(false);
+      setShowPasswordModal(false);
+    }
   };
 
   const handleLogin = async (profile) => {
     setCurrentUser(profile);
     
     // Vérifier immédiatement le changement de mot de passe
-    const passwordCheck = await authService.checkPasswordChangeRequired();
-    if (passwordCheck.required) {
-      setPasswordChangeRequired(true);
-      setShowPasswordModal(true);
-    } else {
-      // Charger les stats seulement si pas de changement requis
+    try {
+      const passwordCheck = await authService.checkPasswordChangeRequired();
+      if (passwordCheck.required) {
+        console.log('🔒 Changement de mot de passe requis à la connexion');
+        setPasswordChangeRequired(true);
+        setShowPasswordModal(true);
+      } else {
+        // Charger les stats seulement si pas de changement requis
+        loadDashboardStats();
+      }
+    } catch (passwordError) {
+      console.warn('⚠️ Erreur vérification mot de passe à la connexion:', passwordError);
+      // Continuer sans bloquer
       loadDashboardStats();
     }
   };
@@ -144,6 +173,7 @@ export default function PatisserieApp() {
         <div className="text-center">
           <div className="animate-spin w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full mx-auto mb-4"></div>
           <div className="text-xl font-semibold text-gray-900">Chargement...</div>
+          <div className="text-sm text-gray-500 mt-2">Vérification de l'authentification...</div>
         </div>
       </div>
     );
@@ -170,9 +200,20 @@ export default function PatisserieApp() {
               <p className="text-gray-600 mb-6">
                 Pour des raisons de sécurité, vous devez changer votre mot de passe avant d'accéder à l'application.
               </p>
-              <p className="text-sm text-gray-500">
-                Connecté en tant que <strong>{currentUser.nom || currentUser.username}</strong>
-              </p>
+              <div className="bg-blue-50 p-4 rounded-lg mb-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Connecté en tant que :</strong> {currentUser.nom || currentUser.username}
+                </p>
+                <p className="text-sm text-blue-600">
+                  Rôle : {currentUser.role}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowPasswordModal(true)}
+                className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-6 py-2 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200"
+              >
+                Changer maintenant
+              </button>
             </div>
           </div>
         </div>
@@ -241,10 +282,11 @@ export default function PatisserieApp() {
           <div className="text-red-600 mb-4">
             <h3 className="text-lg font-medium">Erreur de chargement</h3>
             <p className="text-sm">Une erreur s'est produite lors du chargement de cette section.</p>
+            <p className="text-xs text-gray-500 mt-2">{error.message}</p>
           </div>
           <button 
             onClick={() => setActiveTab('dashboard')}
-            className="btn-primary"
+            className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-2 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200"
           >
             Retour au tableau de bord
           </button>
