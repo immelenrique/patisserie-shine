@@ -98,4 +98,89 @@ export async function DELETE(request) {
       } catch (deleteError) {
         console.error('❌ Erreur suppression permanente:', deleteError)
         return NextResponse.json(
-          { error: `Erreur lors
+          { error: `Erreur lors de la suppression permanente: ${deleteError.message}` },
+          { status: 500 }
+        )
+      }
+
+    } else {
+      // DÉSACTIVATION (recommandé)
+      console.log('🔒 Désactivation de l\'utilisateur')
+      
+      try {
+        // 1. Désactiver dans profiles
+        const { error: deactivateError } = await supabaseAdmin
+          .from('profiles')
+          .update({
+            actif: false,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', userId)
+
+        if (deactivateError) {
+          throw deactivateError
+        }
+
+        // 2. Bannir dans auth.users (empêche la connexion)
+        const { error: banError } = await supabaseAdmin.auth.admin.updateUserById(
+          userId,
+          { 
+            ban_duration: "876000h" // ~100 ans
+          }
+        )
+
+        if (banError) {
+          console.warn('⚠️ Bannissement auth échoué (non bloquant):', banError)
+        }
+
+        // 3. Log de la désactivation
+        try {
+          await supabaseAdmin
+            .from('password_change_log')
+            .insert({
+              user_id: userId,
+              reason: 'Account deactivated by admin',
+              changed_by: null
+            })
+        } catch (logError) {
+          console.warn('⚠️ Erreur log (non bloquant):', logError)
+        }
+
+        deletionResult = {
+          type: 'deactivation',
+          message: `Utilisateur ${targetUser.nom || targetUser.username} désactivé avec succès`
+        }
+
+      } catch (deactivateError) {
+        console.error('❌ Erreur désactivation:', deactivateError)
+        return NextResponse.json(
+          { error: `Erreur lors de la désactivation: ${deactivateError.message}` },
+          { status: 500 }
+        )
+      }
+    }
+
+    console.log(`✅ ${deletionResult.type} réussie pour:`, targetUser.username)
+
+    return NextResponse.json({
+      success: true,
+      deletionType: deletionResult.type,
+      user: {
+        id: targetUser.id,
+        username: targetUser.username,
+        nom: targetUser.nom
+      },
+      message: deletionResult.message
+    })
+
+  } catch (error) {
+    console.error('❌ Erreur API delete-user:', error)
+    return NextResponse.json(
+      { 
+        error: 'Erreur interne du serveur',
+        details: error.message
+      },
+      { status: 500 }
+    )
+  }
+}
