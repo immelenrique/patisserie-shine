@@ -2,23 +2,36 @@
 
 import { useState, useEffect } from 'react';
 import { userService } from '../../lib/supabase';
-import { Plus, Users, User, Crown, ChefHat, ShoppingBag, Trash2, Edit, UserPlus, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Plus, Users, User, Crown, ChefHat, ShoppingBag, Trash2, Edit, UserPlus, AlertTriangle, CheckCircle, Key, Shield } from 'lucide-react';
 import { Card, Modal } from '../ui';
 
 export default function UserManagement({ currentUser }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
     nom: '',
     telephone: '',
     role: 'employe_boutique',
     password: ''
+  });
+  const [editFormData, setEditFormData] = useState({
+    nom: '',
+    telephone: '',
+    role: 'employe_boutique'
+  });
+  const [passwordData, setPasswordData] = useState({
+    newPassword: '',
+    confirmPassword: ''
   });
   const [message, setMessage] = useState({ type: '', text: '' });
 
@@ -73,6 +86,33 @@ export default function UserManagement({ currentUser }) {
     }
   };
 
+  const handleEditUser = async (e) => {
+    e.preventDefault();
+    setUpdating(true);
+    setMessage({ type: '', text: '' });
+
+    try {
+      const { user, error } = await userService.updateUser(selectedUser.id, {
+        nom: editFormData.nom,
+        telephone: editFormData.telephone,
+        role: editFormData.role
+      });
+
+      if (error) {
+        setMessage({ type: 'error', text: error });
+      } else {
+        setMessage({ type: 'success', text: `Utilisateur ${selectedUser.nom || selectedUser.username} modifié avec succès !` });
+        setShowEditModal(false);
+        setSelectedUser(null);
+        loadUsers();
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Erreur lors de la modification de l\'utilisateur' });
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const handleDeleteUser = async () => {
     if (!selectedUser) return;
     
@@ -95,6 +135,58 @@ export default function UserManagement({ currentUser }) {
     } finally {
       setDeleting(false);
     }
+  };
+
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setMessage({ type: 'error', text: 'Les mots de passe ne correspondent pas' });
+      return;
+    }
+
+    if (passwordData.newPassword.length < 6) {
+      setMessage({ type: 'error', text: 'Le mot de passe doit contenir au moins 6 caractères' });
+      return;
+    }
+
+    setChangingPassword(true);
+    setMessage({ type: '', text: '' });
+
+    try {
+      const { success, error } = await userService.changePassword(selectedUser.id, passwordData.newPassword);
+
+      if (error) {
+        setMessage({ type: 'error', text: error });
+      } else {
+        setMessage({ type: 'success', text: `Mot de passe modifié avec succès pour ${selectedUser.nom || selectedUser.username} !` });
+        setShowPasswordModal(false);
+        setSelectedUser(null);
+        setPasswordData({ newPassword: '', confirmPassword: '' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Erreur lors du changement de mot de passe' });
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const startEdit = (user) => {
+    setSelectedUser(user);
+    setEditFormData({
+      nom: user.nom || '',
+      telephone: user.telephone || '',
+      role: user.role || 'employe_boutique'
+    });
+    setShowEditModal(true);
+    setMessage({ type: '', text: '' });
+  };
+
+  const startPasswordChange = (user) => {
+    setSelectedUser(user);
+    setPasswordData({ newPassword: '', confirmPassword: '' });
+    setShowPasswordModal(true);
+    setMessage({ type: '', text: '' });
   };
 
   const resetForm = () => {
@@ -315,14 +407,22 @@ export default function UserManagement({ currentUser }) {
                     Créé le {new Date(user.created_at || Date.now()).toLocaleDateString('fr-FR')}
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex space-x-2 pt-3 border-t">
+                  {/* Actions améliorées */}
+                  <div className="grid grid-cols-3 gap-2 pt-3 border-t">
                     <button
-                      className="flex-1 text-blue-600 hover:text-blue-800 text-sm font-medium"
+                      onClick={() => startEdit(user)}
+                      className="flex items-center justify-center px-3 py-2 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors"
                       title="Modifier"
                     >
-                      <Edit className="w-4 h-4 inline mr-1" />
-                      Modifier
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    
+                    <button
+                      onClick={() => startPasswordChange(user)}
+                      className="flex items-center justify-center px-3 py-2 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg text-sm font-medium transition-colors"
+                      title="Changer mot de passe"
+                    >
+                      <Key className="w-4 h-4" />
                     </button>
                     
                     {canDelete && (
@@ -331,11 +431,10 @@ export default function UserManagement({ currentUser }) {
                           setSelectedUser(user);
                           setShowDeleteModal(true);
                         }}
-                        className="flex-1 text-red-600 hover:text-red-800 text-sm font-medium"
+                        className="flex items-center justify-center px-3 py-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg text-sm font-medium transition-colors"
                         title="Supprimer"
                       >
-                        <Trash2 className="w-4 h-4 inline mr-1" />
-                        Supprimer
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     )}
                   </div>
@@ -432,8 +531,9 @@ export default function UserManagement({ currentUser }) {
               required
               minLength="6"
             />
-            <p className="text-xs text-gray-500 mt-1">
-              L'utilisateur pourra le changer lors de sa première connexion
+            <p className="text-xs text-yellow-600 mt-1 flex items-center">
+              <Shield className="w-3 h-3 mr-1" />
+              L'utilisateur devra changer ce mot de passe lors de sa première connexion
             </p>
           </div>
           
@@ -478,6 +578,201 @@ export default function UserManagement({ currentUser }) {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Modification Utilisateur */}
+      <Modal 
+        isOpen={showEditModal} 
+        onClose={() => {
+          setShowEditModal(false);
+          setSelectedUser(null);
+          setMessage({ type: '', text: '' });
+        }} 
+        title="Modifier l'Utilisateur" 
+        size="md"
+      >
+        {selectedUser && (
+          <form onSubmit={handleEditUser} className="space-y-4">
+            <div className="bg-blue-50 p-4 rounded-xl mb-4">
+              <h4 className="font-medium text-blue-900 mb-2">Utilisateur: @{selectedUser.username}</h4>
+              <p className="text-sm text-blue-800">Modification des informations du profil</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nom complet *</label>
+              <input
+                type="text"
+                value={editFormData.nom}
+                onChange={(e) => setEditFormData({...editFormData, nom: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                placeholder="Ex: Marie Dupont"
+                required
+                maxLength="100"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Téléphone</label>
+              <input
+                type="tel"
+                value={editFormData.telephone}
+                onChange={(e) => setEditFormData({...editFormData, telephone: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                placeholder="Ex: +226 70 00 01 02 03"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Rôle *</label>
+              <select
+                value={editFormData.role}
+                onChange={(e) => setEditFormData({...editFormData, role: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                required
+                disabled={selectedUser.username === 'proprietaire'}
+              >
+                <option value="employe_boutique">🛒 Employé Boutique</option>
+                <option value="employe_production">👩‍🍳 Employé Production</option>
+                <option value="admin">👑 Administrateur</option>
+              </select>
+              {selectedUser.username === 'proprietaire' && (
+                <p className="text-xs text-yellow-600 mt-1">
+                  Le rôle du propriétaire ne peut pas être modifié
+                </p>
+              )}
+            </div>
+            
+            <div className="flex space-x-4 pt-4">
+              <button 
+                type="submit" 
+                disabled={updating}
+                className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white py-3 px-4 rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                {updating ? (
+                  <>
+                    <div className="spinner w-4 h-4 inline mr-2"></div>
+                    Modification...
+                  </>
+                ) : (
+                  <>
+                    <Edit className="w-4 h-4 inline mr-2" />
+                    Modifier l'utilisateur
+                  </>
+                )}
+              </button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setShowEditModal(false);
+                  setSelectedUser(null);
+                  setMessage({ type: '', text: '' });
+                }}
+                disabled={updating}
+                className="flex-1 bg-gray-200 text-gray-800 py-3 px-4 rounded-lg hover:bg-gray-300 transition-all duration-200 disabled:opacity-50 font-medium"
+              >
+                Annuler
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Modal Changement de Mot de Passe */}
+      <Modal 
+        isOpen={showPasswordModal} 
+        onClose={() => {
+          setShowPasswordModal(false);
+          setSelectedUser(null);
+          setPasswordData({ newPassword: '', confirmPassword: '' });
+          setMessage({ type: '', text: '' });
+        }} 
+        title="Changer le Mot de Passe" 
+        size="md"
+      >
+        {selectedUser && (
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            <div className="bg-purple-50 p-4 rounded-xl mb-4">
+              <h4 className="font-medium text-purple-900 mb-2">
+                <Key className="w-5 h-5 inline mr-2" />
+                Changement de mot de passe pour: {selectedUser.nom || selectedUser.username}
+              </h4>
+              <p className="text-sm text-purple-800">
+                L'utilisateur recevra un nouveau mot de passe temporaire
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nouveau mot de passe *</label>
+              <input
+                type="password"
+                value={passwordData.newPassword}
+                onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                placeholder="Au moins 6 caractères"
+                required
+                minLength="6"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Confirmer le mot de passe *</label>
+              <input
+                type="password"
+                value={passwordData.confirmPassword}
+                onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                placeholder="Ressaisissez le mot de passe"
+                required
+                minLength="6"
+              />
+              {passwordData.newPassword && passwordData.confirmPassword && passwordData.newPassword !== passwordData.confirmPassword && (
+                <p className="text-xs text-red-600 mt-1">Les mots de passe ne correspondent pas</p>
+              )}
+            </div>
+
+            <div className="bg-yellow-50 p-4 rounded-xl">
+              <h4 className="font-medium text-yellow-900 mb-2">⚠️ Important</h4>
+              <ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
+                <li>L'utilisateur devra utiliser ce nouveau mot de passe</li>
+                <li>Il sera invité à le changer lors de sa prochaine connexion</li>
+                <li>Assurez-vous de communiquer ce mot de passe de manière sécurisée</li>
+              </ul>
+            </div>
+            
+            <div className="flex space-x-4 pt-4">
+              <button 
+                type="submit" 
+                disabled={changingPassword || passwordData.newPassword !== passwordData.confirmPassword}
+                className="flex-1 bg-gradient-to-r from-purple-500 to-purple-600 text-white py-3 px-4 rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                {changingPassword ? (
+                  <>
+                    <div className="spinner w-4 h-4 inline mr-2"></div>
+                    Modification...
+                  </>
+                ) : (
+                  <>
+                    <Key className="w-4 h-4 inline mr-2" />
+                    Changer le mot de passe
+                  </>
+                )}
+              </button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setShowPasswordModal(false);
+                  setSelectedUser(null);
+                  setPasswordData({ newPassword: '', confirmPassword: '' });
+                  setMessage({ type: '', text: '' });
+                }}
+                disabled={changingPassword}
+                className="flex-1 bg-gray-200 text-gray-800 py-3 px-4 rounded-lg hover:bg-gray-300 transition-all duration-200 disabled:opacity-50 font-medium"
+              >
+                Annuler
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Modal Suppression */}
