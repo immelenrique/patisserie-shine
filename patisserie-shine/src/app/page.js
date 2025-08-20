@@ -5,6 +5,7 @@ import { authService, statsService } from '../lib/supabase';
 
 // Import des composants
 import LoginForm from '../components/auth/LoginForm';
+import PasswordChangeModal from '../components/auth/PasswordChangeModal';
 import { Header, Navigation, Footer } from '../components/layout';
 import Dashboard from '../components/dashboard/Dashboard';
 
@@ -27,22 +28,31 @@ export default function PatisserieApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   useEffect(() => {
     checkAuth();
   }, []);
 
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && !passwordChangeRequired) {
       loadDashboardStats();
     }
-  }, [currentUser]);
+  }, [currentUser, passwordChangeRequired]);
 
   const checkAuth = async () => {
     try {
       const { user, profile } = await authService.getCurrentUser();
       if (profile) {
         setCurrentUser(profile);
+        
+        // Vérifier si le changement de mot de passe est requis
+        const passwordCheck = await authService.checkPasswordChangeRequired();
+        if (passwordCheck.required) {
+          setPasswordChangeRequired(true);
+          setShowPasswordModal(true);
+        }
       }
     } catch (err) {
       console.error('Erreur authentification:', err);
@@ -68,32 +78,55 @@ export default function PatisserieApp() {
       setCurrentUser(null);
       setActiveTab('dashboard');
       setStats(null);
+      setPasswordChangeRequired(false);
+      setShowPasswordModal(false);
     } catch (err) {
       console.error('Erreur déconnexion:', err);
     }
   };
 
-  // Navigation tabs avec vérification des permissions (SUPPRESSION DE PRIX-VENTE)
- const tabs = [
-  { id: 'dashboard', label: 'Tableau de Bord', adminOnly: false },
-  { id: 'stock', label: 'Stock Principal', adminOnly: false },
-  { id: 'referentiel', label: 'Référentiel Produits', adminOnly: true }, 
-  { id: 'stock-atelier', label: 'Stock Atelier', adminOnly: true },
-  { id: 'stock-boutique', label: 'Stock Boutique', adminOnly: false },
-  { id: 'recettes', label: 'Recettes', adminOnly: true },
-  { id: 'demandes', label: 'Demandes', adminOnly: false },
-  { id: 'production', label: 'Production', adminOnly: false },
-  { id: 'caisse', label: 'Caisse', adminOnly: false },
-  { id: 'comptabilite', label: 'Comptabilité', adminOnly: true },
-  { id: 'unites', label: 'Unités', adminOnly: true },
-  { id: 'equipe', label: 'Équipe', adminOnly: true },
-  { 
-    id: 'users', 
-    label: 'Utilisateurs', 
-    adminOnly: true, 
-    proprietaireOnly: true
-  }
-];
+  const handlePasswordChanged = () => {
+    setPasswordChangeRequired(false);
+    setShowPasswordModal(false);
+    // Recharger les stats après changement de mot de passe
+    loadDashboardStats();
+  };
+
+  const handleLogin = async (profile) => {
+    setCurrentUser(profile);
+    
+    // Vérifier immédiatement le changement de mot de passe
+    const passwordCheck = await authService.checkPasswordChangeRequired();
+    if (passwordCheck.required) {
+      setPasswordChangeRequired(true);
+      setShowPasswordModal(true);
+    } else {
+      // Charger les stats seulement si pas de changement requis
+      loadDashboardStats();
+    }
+  };
+
+  // Navigation tabs avec vérification des permissions
+  const tabs = [
+    { id: 'dashboard', label: 'Tableau de Bord', adminOnly: false },
+    { id: 'stock', label: 'Stock Principal', adminOnly: false },
+    { id: 'referentiel', label: 'Référentiel Produits', adminOnly: true }, 
+    { id: 'stock-atelier', label: 'Stock Atelier', adminOnly: true },
+    { id: 'stock-boutique', label: 'Stock Boutique', adminOnly: false },
+    { id: 'recettes', label: 'Recettes', adminOnly: true },
+    { id: 'demandes', label: 'Demandes', adminOnly: false },
+    { id: 'production', label: 'Production', adminOnly: false },
+    { id: 'caisse', label: 'Caisse', adminOnly: false },
+    { id: 'comptabilite', label: 'Comptabilité', adminOnly: true },
+    { id: 'unites', label: 'Unités', adminOnly: true },
+    { id: 'equipe', label: 'Équipe', adminOnly: true },
+    { 
+      id: 'users', 
+      label: 'Utilisateurs', 
+      adminOnly: true, 
+      proprietaireOnly: true
+    }
+  ];
 
   // Filtrer les onglets selon les permissions
   const visibleTabs = tabs.filter(tab => {
@@ -108,17 +141,53 @@ export default function PatisserieApp() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-xl font-semibold text-gray-900">Chargement...</div>
+        <div className="text-center">
+          <div className="animate-spin w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <div className="text-xl font-semibold text-gray-900">Chargement...</div>
+        </div>
       </div>
     );
   }
 
   // Si pas connecté, afficher le formulaire de connexion
   if (!currentUser) {
-    return <LoginForm onLogin={setCurrentUser} />;
+    return <LoginForm onLogin={handleLogin} />;
   }
 
-  // Rendu du contenu selon l'onglet actif (SUPPRESSION DU CAS PRIX-VENTE)
+  // Si changement de mot de passe requis, bloquer l'accès
+  if (passwordChangeRequired) {
+    return (
+      <>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="max-w-md w-full text-center p-8">
+            <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Changement de mot de passe requis</h2>
+              <p className="text-gray-600 mb-6">
+                Pour des raisons de sécurité, vous devez changer votre mot de passe avant d'accéder à l'application.
+              </p>
+              <p className="text-sm text-gray-500">
+                Connecté en tant que <strong>{currentUser.nom || currentUser.username}</strong>
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        <PasswordChangeModal 
+          isOpen={showPasswordModal}
+          user={currentUser}
+          onPasswordChanged={handlePasswordChanged}
+          onLogout={logout}
+        />
+      </>
+    );
+  }
+
+  // Rendu du contenu selon l'onglet actif
   const renderContent = () => {
     try {
       switch (activeTab) {
@@ -130,10 +199,10 @@ export default function PatisserieApp() {
           return currentUser.role === 'admin' ? 
             <StockAtelierManager currentUser={currentUser} /> : 
             <Dashboard stats={stats} loading={!stats} />;
-        case 'referentiel': // ← NOUVEAU
-        return currentUser.role === 'admin' ? 
-          <ReferentielManager currentUser={currentUser} /> : 
-          <Dashboard stats={stats} loading={!stats} />;
+        case 'referentiel':
+          return currentUser.role === 'admin' ? 
+            <ReferentielManager currentUser={currentUser} /> : 
+            <Dashboard stats={stats} loading={!stats} />;
         case 'stock-boutique':
           return <StockBoutiqueManager currentUser={currentUser} />;
         case 'recettes':
@@ -207,4 +276,3 @@ export default function PatisserieApp() {
     </div>
   );
 }
-
