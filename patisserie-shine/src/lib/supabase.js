@@ -3380,12 +3380,12 @@ export const userService = {
     }
   },
 
-  // Créer un utilisateur via API
+  // Créer un utilisateur via API (amélioré)
   async createUser(userData) {
     try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      const { data: { session } } = await supabase.auth.getSession()
       
-      if (!currentUser) {
+      if (!session) {
         return { user: null, error: 'Vous devez être connecté' }
       }
 
@@ -3393,9 +3393,13 @@ export const userService = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          'Authorization': `Bearer ${session.access_token}`
         },
-        body: JSON.stringify(userData)
+        body: JSON.stringify({
+          ...userData,
+          // Ajouter un flag pour forcer le changement de mot de passe
+          force_password_change: true
+        })
       })
 
       const result = await response.json()
@@ -3411,7 +3415,86 @@ export const userService = {
     }
   },
 
-  // Supprimer un utilisateur
+  // 🆕 NOUVEAU : Mettre à jour un utilisateur
+  async updateUser(userId, userData) {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      
+      if (!currentUser) {
+        return { user: null, error: 'Vous devez être connecté' }
+      }
+
+      // Vérifier les permissions
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', currentUser.id)
+        .single()
+
+      if (!currentProfile || (currentProfile.role !== 'admin' && currentUser.id !== userId)) {
+        return { user: null, error: 'Permissions insuffisantes' }
+      }
+
+      // Mettre à jour le profil
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({
+          nom: userData.nom,
+          telephone: userData.telephone,
+          role: userData.role,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erreur update user:', error)
+        return { user: null, error: error.message }
+      }
+
+      return { user: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans updateUser:', error)
+      return { user: null, error: error.message }
+    }
+  },
+
+  // 🆕 NOUVEAU : Changer le mot de passe d'un utilisateur
+  async changePassword(userId, newPassword) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        return { success: false, error: 'Vous devez être connecté' }
+      }
+
+      const response = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          userId: userId,
+          newPassword: newPassword
+        })
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        return { success: false, error: result.error || 'Erreur lors du changement de mot de passe' }
+      }
+
+      return { success: true, message: result.message }
+    } catch (error) {
+      console.error('Erreur dans changePassword:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Supprimer un utilisateur (amélioré)
   async deleteUser(userId) {
     try {
       const { data: { user: currentUser } } = await supabase.auth.getUser()
@@ -3424,7 +3507,39 @@ export const userService = {
         return { success: false, error: 'Vous ne pouvez pas supprimer votre propre compte' }
       }
 
-      const { error } = await supabase
+      // Vérifier si c'est le propriétaire
+      const { data: targetUser } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', userId)
+        .single()
+
+      if (targetUser && targetUser.username === 'proprietaire') {
+        return { success: false, error: 'Le compte propriétaire ne peut pas être supprimé' }
+      }
+
+      // Utiliser l'API pour supprimer via l'admin
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      const response = await fetch('/api/admin/deactivate-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          userId: userId
+        })
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        return { success: false, error: result.error || 'Erreur lors de la suppression' }
+      }
+
+      // Marquer comme inactif dans le profil
+      await supabase
         .from('profiles')
         .update({
           actif: false,
@@ -3432,19 +3547,83 @@ export const userService = {
         })
         .eq('id', userId)
 
-      if (error) {
-        console.error('Erreur suppression utilisateur:', error)
-        return { success: false, error: error.message }
-      }
-
       return { success: true, message: 'Utilisateur supprimé avec succès' }
     } catch (error) {
       console.error('Erreur dans deleteUser:', error)
       return { success: false, error: error.message }
     }
+  },
+
+  // 🆕 NOUVEAU : Obtenir un utilisateur par ID
+  async getById(userId) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (error) {
+        console.error('Erreur getById user:', error)
+        return { user: null, error: error.message }
+      }
+
+      return { user: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans getById user:', error)
+      return { user: null, error: error.message }
+    }
+  },
+
+  // 🆕 NOUVEAU : Forcer le changement de mot de passe lors de la prochaine connexion
+  async forcePasswordChange(userId) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({
+          force_password_change: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erreur forcePasswordChange:', error)
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, user: data }
+    } catch (error) {
+      console.error('Erreur dans forcePasswordChange:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // 🆕 NOUVEAU : Vérifier si l'utilisateur doit changer son mot de passe
+  async checkPasswordChangeRequired(userId) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('force_password_change, last_password_change')
+        .eq('id', userId)
+        .single()
+
+      if (error) {
+        return { required: false, error: error.message }
+      }
+
+      return { 
+        required: data.force_password_change || false, 
+        last_change: data.last_password_change,
+        error: null 
+      }
+    } catch (error) {
+      console.error('Erreur dans checkPasswordChangeRequired:', error)
+      return { required: false, error: error.message }
+    }
   }
 }
-
 // ===================== UTILITAIRES =====================
 export const utils = {
   // Formatage de la monnaie CFA
@@ -3503,6 +3682,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
