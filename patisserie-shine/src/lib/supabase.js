@@ -2878,6 +2878,376 @@ async getStockBoutique() {
       return { sorties: [], error: error.message }
     }
   }
+   async updatePrixVente(stockId, nouveauPrix) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' };
+      }
+
+      if (!nouveauPrix || parseFloat(nouveauPrix) < 0) {
+        return { success: false, error: 'Prix invalide' };
+      }
+
+      // Mettre à jour le prix dans stock_boutique
+      const { data: stockMisAJour, error: stockError } = await supabase
+        .from('stock_boutique')
+        .update({
+          prix_vente: parseFloat(nouveauPrix),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', stockId)
+        .select()
+        .single();
+
+      if (stockError) {
+        console.error('Erreur mise à jour prix stock_boutique:', stockError);
+        return { success: false, error: stockError.message };
+      }
+
+      // Synchroniser avec prix_vente_produits si le produit a un produit_id
+      if (stockMisAJour.produit_id) {
+        try {
+          const { error: syncError } = await supabase
+            .from('prix_vente_produits')
+            .upsert({
+              produit_id: stockMisAJour.produit_id,
+              prix: parseFloat(nouveauPrix),
+              actif: true,
+              updated_at: new Date().toISOString()
+            });
+
+          if (syncError) {
+            console.warn('Erreur synchronisation prix_vente_produits:', syncError);
+          }
+        } catch (syncException) {
+          console.warn('Exception synchronisation prix_vente_produits:', syncException);
+        }
+      }
+
+      // Synchroniser avec prix_vente_recettes si c'est un produit de recette
+      if (stockMisAJour.nom_produit) {
+        try {
+          const { error: recetteError } = await supabase
+            .from('prix_vente_recettes')
+            .upsert({
+              nom_produit: stockMisAJour.nom_produit,
+              prix_vente: parseFloat(nouveauPrix),
+              actif: true,
+              updated_at: new Date().toISOString()
+            });
+
+          if (recetteError) {
+            console.warn('Erreur synchronisation prix_vente_recettes:', recetteError);
+          }
+        } catch (recetteException) {
+          console.warn('Exception synchronisation prix_vente_recettes:', recetteException);
+        }
+      }
+
+      return { 
+        success: true, 
+        message: `Prix mis à jour: ${utils.formatCFA(parseFloat(nouveauPrix))}`,
+        data: stockMisAJour
+      };
+    } catch (error) {
+      console.error('Erreur dans updatePrixVente:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // NOUVELLE MÉTHODE: Mettre à jour plusieurs prix en lot
+  async updateMultiplePrices(priceUpdates) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' };
+      }
+
+      if (!priceUpdates || priceUpdates.length === 0) {
+        return { success: false, error: 'Aucune mise à jour de prix fournie' };
+      }
+
+      let successes = 0;
+      let failures = 0;
+      const results = [];
+
+      for (const update of priceUpdates) {
+        const result = await this.updatePrixVente(update.stockId, update.nouveauPrix);
+        
+        if (result.success) {
+          successes++;
+        } else {
+          failures++;
+        }
+        
+        results.push({
+          stockId: update.stockId,
+          success: result.success,
+          error: result.error
+        });
+      }
+
+      return {
+        success: failures === 0,
+        message: `${successes} prix mis à jour avec succès, ${failures} échecs`,
+        successes,
+        failures,
+        results
+      };
+    } catch (error) {
+      console.error('Erreur dans updateMultiplePrices:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // NOUVELLE MÉTHODE: Synchroniser tous les prix avec les prix de recettes
+  async synchroniserPrixRecettes() {
+    try {
+      console.log('🔄 Synchronisation forcée des prix recettes...');
+      
+      // Récupérer tous les prix de recettes actifs
+      const { data: prixRecettes, error: prixError } = await supabase
+        .from('prix_vente_recettes')
+        .select('nom_produit, prix_vente')
+        .eq('actif', true);
+      
+      if (prixError) {
+        return { success: false, error: 'Erreur récupération prix recettes: ' + prixError.message };
+      }
+
+      if (!prixRecettes || prixRecettes.length === 0) {
+        return { success: true, corrections: 0, message: 'Aucun prix de recette à synchroniser' };
+      }
+      
+      let corrections = 0;
+      
+      // Mettre à jour chaque produit en boutique
+      for (const prixRecette of prixRecettes) {
+        try {
+          const { data: stockBoutique, error: stockError } = await supabase
+            .from('stock_boutique')
+            .select('id, prix_vente')
+            .eq('nom_produit', prixRecette.nom_produit)
+            .single();
+          
+          if (!stockError && stockBoutique && stockBoutique.prix_vente !== prixRecette.prix_vente) {
+            // Corriger le prix
+            const { error: updateError } = await supabase
+              .from('stock_boutique')
+              .update({ 
+                prix_vente: prixRecette.prix_vente,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', stockBoutique.id);
+            
+            if (!updateError) {
+              console.log(`✅ Prix corrigé pour ${prixRecette.nom_produit}: ${utils.formatCFA(stockBoutique.prix_vente)} → ${utils.formatCFA(prixRecette.prix_vente)}`);
+              corrections++;
+            }
+          }
+        } catch (itemError) {
+          console.warn(`Erreur pour ${prixRecette.nom_produit}:`, itemError);
+        }
+      }
+      
+      console.log(`🎉 ${corrections} prix synchronisés`);
+      return { success: true, corrections };
+    } catch (error) {
+      console.error('❌ Erreur synchronisation:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // NOUVELLE MÉTHODE: Obtenir les produits sans prix défini
+  async getProduitsEtsSansPrix() {
+    try {
+      const { data, error } = await supabase
+        .from('stock_boutique')
+        .select('*')
+        .or('prix_vente.is.null,prix_vente.eq.0')
+        .gt('quantite_disponible', 0)
+        .order('nom_produit');
+      
+      if (error) {
+        return { produits: [], error: error.message };
+      }
+      
+      return { produits: data || [], error: null };
+    } catch (error) {
+      console.error('Erreur dans getProduitsEtsSansPrix:', error);
+      return { produits: [], error: error.message };
+    }
+  },
+
+  // NOUVELLE MÉTHODE: Définir un prix par défaut basé sur le coût
+  async definirPrixParDefaut(stockId, margePercentage = 50) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' };
+      }
+
+      // Récupérer les informations du stock et du produit
+      const { data: stockItem, error: stockError } = await supabase
+        .from('stock_boutique')
+        .select(`
+          *,
+          produits(prix_achat)
+        `)
+        .eq('id', stockId)
+        .single();
+      
+      if (stockError || !stockItem) {
+        return { success: false, error: 'Produit non trouvé' };
+      }
+
+      if (!stockItem.produits?.prix_achat) {
+        return { success: false, error: 'Prix d\'achat non défini pour ce produit' };
+      }
+
+      // Calculer le prix de vente avec la marge
+      const prixAchat = stockItem.produits.prix_achat;
+      const prixVente = prixAchat * (1 + margePercentage / 100);
+      
+      // Arrondir à 2 décimales
+      const prixVenteArrondi = Math.round(prixVente * 100) / 100;
+
+      // Mettre à jour le prix
+      const updateResult = await this.updatePrixVente(stockId, prixVenteArrondi);
+      
+      if (updateResult.success) {
+        return {
+          success: true,
+          message: `Prix calculé automatiquement: ${utils.formatCFA(prixVenteArrondi)} (marge ${margePercentage}%)`,
+          prixCalcule: prixVenteArrondi,
+          prixAchat: prixAchat,
+          marge: margePercentage
+        };
+      } else {
+        return updateResult;
+      }
+    } catch (error) {
+      console.error('Erreur dans definirPrixParDefaut:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // NOUVELLE MÉTHODE: Exporter les prix pour backup/import
+  async exporterPrix() {
+    try {
+      const { data, error } = await supabase
+        .from('stock_boutique')
+        .select('nom_produit, prix_vente, quantite_disponible, quantite_vendue')
+        .not('prix_vente', 'is', null)
+        .order('nom_produit');
+      
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      const csvHeaders = ['nom_produit', 'prix_vente', 'quantite_disponible', 'quantite_vendue'];
+      const csvLines = [csvHeaders.join(',')];
+      
+      data.forEach(item => {
+        const line = [
+          `"${item.nom_produit}"`,
+          item.prix_vente || 0,
+          item.quantite_disponible || 0,
+          item.quantite_vendue || 0
+        ];
+        csvLines.push(line.join(','));
+      });
+
+      const csvContent = csvLines.join('\n');
+      
+      return { 
+        success: true, 
+        csvContent,
+        filename: `prix_boutique_${new Date().toISOString().split('T')[0]}.csv`,
+        count: data.length
+      };
+    } catch (error) {
+      console.error('Erreur dans exporterPrix:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // NOUVELLE MÉTHODE: Calculer les statistiques de marge
+  async getStatistiquesMarge() {
+    try {
+      const { data, error } = await supabase
+        .from('stock_boutique')
+        .select(`
+          nom_produit,
+          prix_vente,
+          quantite_disponible,
+          quantite_vendue,
+          produits(prix_achat, quantite)
+        `)
+        .not('prix_vente', 'is', null)
+        .gt('prix_vente', 0);
+      
+      if (error) {
+        return { stats: null, error: error.message };
+      }
+
+      const statistiques = {
+        produits_avec_prix: data.length,
+        marge_moyenne: 0,
+        marge_min: Infinity,
+        marge_max: -Infinity,
+        chiffre_affaires_potentiel: 0,
+        valeur_stock_total: 0,
+        produits_detailles: []
+      };
+
+      let margesValides = [];
+
+      data.forEach(item => {
+        const prixVente = item.prix_vente || 0;
+        const prixAchat = item.produits?.prix_achat || 0;
+        const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0);
+        
+        if (prixAchat > 0) {
+          const marge = ((prixVente - prixAchat) / prixAchat) * 100;
+          margesValides.push(marge);
+          
+          if (marge < statistiques.marge_min) statistiques.marge_min = marge;
+          if (marge > statistiques.marge_max) statistiques.marge_max = marge;
+        }
+        
+        const valeurStock = stockReel * prixVente;
+        statistiques.chiffre_affaires_potentiel += valeurStock;
+        statistiques.valeur_stock_total += valeurStock;
+        
+        statistiques.produits_detailles.push({
+          nom: item.nom_produit,
+          prix_vente: prixVente,
+          prix_achat: prixAchat,
+          stock_reel: stockReel,
+          marge_pourcentage: prixAchat > 0 ? ((prixVente - prixAchat) / prixAchat) * 100 : 0,
+          valeur_stock: valeurStock
+        });
+      });
+
+      if (margesValides.length > 0) {
+        statistiques.marge_moyenne = margesValides.reduce((sum, marge) => sum + marge, 0) / margesValides.length;
+      }
+
+      if (statistiques.marge_min === Infinity) statistiques.marge_min = 0;
+      if (statistiques.marge_max === -Infinity) statistiques.marge_max = 0;
+
+      return { stats: statistiques, error: null };
+    } catch (error) {
+      console.error('Erreur dans getStatistiquesMarge:', error);
+      return { stats: null, error: error.message };
+    }
+  }
+
 }
 
 
@@ -4260,6 +4630,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
