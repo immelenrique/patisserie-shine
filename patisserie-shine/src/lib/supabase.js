@@ -2877,7 +2877,7 @@ async getStockBoutique() {
       console.error('Erreur dans getHistoriqueSorties:', error)
       return { sorties: [], error: error.message }
     }
-  }
+  },
    async updatePrixVente(stockId, nouveauPrix) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -4630,6 +4630,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
