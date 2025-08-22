@@ -99,60 +99,52 @@ export default function StockBoutiqueManager({ currentUser }) {
   };
 
   // Sauvegarder le nouveau type de produit
-  const saveType = async (stockId) => {
-    if (!newType) {
-      alert('Veuillez sélectionner un type');
-      return;
-    }
+  // REMPLACEZ TOUTE LA FONCTION saveType par cette version :
 
-    setSavingPrice(true);
-    try {
-      const { error } = await supabase
-        .from('stock_boutique')
-        .update({
-          type_produit: newType,
-          // Si on passe en non-vendable, mettre le prix à null
-          prix_vente: newType === 'vendable' ? null : null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', stockId);
+const saveType = async (stockId) => {
+  if (!newType) {
+    alert('Veuillez sélectionner un type');
+    return;
+  }
 
-      if (error) {
-        console.error('Erreur mise à jour type:', error);
-        alert('Erreur lors de la mise à jour du type: ' + error.message);
-      } else {
-        setStockBoutique(prev => 
-          prev.map(item => 
-            item.id === stockId 
-              ? { 
-                  ...item, 
-                  type_produit: newType,
-                  prix_vente: newType === 'vendable' ? item.prix_vente : null,
-                  prix_defini: newType === 'vendable' ? item.prix_defini : false
-                }
-              : item
-          )
-        );
-        
-        const typeLabels = {
-          'vendable': 'Produit vendable',
-          'emballage': 'Emballage/Packaging',
-          'fourniture': 'Fourniture de boutique',
-          'materiel': 'Matériel/Équipement',
-          'consommable': 'Consommable non-vendable'
-        };
-        
-        alert(`Type mis à jour: ${typeLabels[newType]}`);
-        setEditingType(null);
-        setNewType('');
-      }
-    } catch (err) {
-      console.error('Erreur:', err);
-      alert('Erreur lors de la mise à jour du type');
-    } finally {
-      setSavingPrice(false);
+  setSavingPrice(true);
+  try {
+    const { error } = await supabase
+      .from('stock_boutique')
+      .update({
+        type_produit: newType,
+        // Si on passe en non-vendable, mettre le prix à null
+        prix_vente: newType === 'vendable' ? null : null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', stockId);
+
+    if (error) {
+      console.error('Erreur mise à jour type:', error);
+      alert('Erreur lors de la mise à jour du type: ' + error.message);
+    } else {
+      // ✅ SOLUTION : Recharger depuis la base au lieu de modifier l'état local
+      await loadData();
+      
+      const typeLabels = {
+        'vendable': 'Produit vendable',
+        'emballage': 'Emballage/Packaging',
+        'fourniture': 'Fourniture de boutique',
+        'materiel': 'Matériel/Équipement',
+        'consommable': 'Consommable non-vendable'
+      };
+      
+      alert(`Type mis à jour: ${typeLabels[newType]}`);
+      setEditingType(null);
+      setNewType('');
     }
-  };
+  } catch (err) {
+    console.error('Erreur:', err);
+    alert('Erreur lors de la mise à jour du type');
+  } finally {
+    setSavingPrice(false);
+  }
+};
 
   // Marquer l'utilisation d'un produit non-vendable
   const markAsUsed = async (stockId, quantiteUtilisee) => {
