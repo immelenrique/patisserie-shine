@@ -84,13 +84,7 @@ export default function StockBoutiqueManager({ currentUser }) {
         console.error('Erreur mise à jour prix:', error);
         alert('Erreur lors de la mise à jour du prix: ' + error.message);
       } else {
-        setStockBoutique(prev => 
-          prev.map(item => 
-            item.id === stockId 
-              ? { ...item, prix_vente: parseFloat(newPrice), prix_defini: true }
-              : item
-          )
-        );
+       await loadData();
         
         alert(`Prix mis à jour avec succès: ${utils.formatCFA(parseFloat(newPrice))}`);
         setEditingPrice(null);
