@@ -256,8 +256,8 @@ export default function StockBoutiqueManager({ currentUser }) {
   // Filtrer selon l'onglet actif
   const filteredStock = stockBoutique.filter(item => {
     const typeFilter = activeTab === 'vendables' 
-      ? (!item.type_produit || item.type_produit === 'vendable')
-      : (item.type_produit && item.type_produit !== 'vendable');
+  ? (item.type_produit === 'vendable' || item.type_produit === null || item.type_produit === undefined)
+  : (item.type_produit && item.type_produit !== 'vendable' && item.type_produit !== null);
     
     const stockFilter = showZeroStock ? true : (item.stock_reel || 0) > 0;
     
