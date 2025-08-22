@@ -1418,11 +1418,13 @@ async definirPrixVenteRecette(nomProduit, prixVente) {
 }
 
 // ===================== SERVICES DEMANDES =====================
+// Service complet pour les demandes (à remplacer dans supabase.js)
 export const demandeService = {
-  // Récupérer toutes les demandes
+  // Récupérer toutes les demandes (individuelles et groupées)
   async getAll() {
     try {
-      const { data, error } = await supabase
+      // Récupérer les demandes individuelles (sans demande_groupee_id)
+      const { data: demandesIndividuelles, error: erreurIndividuelles } = await supabase
         .from('demandes')
         .select(`
           *,
@@ -1430,459 +1432,274 @@ export const demandeService = {
           demandeur:profiles!demandes_demandeur_id_fkey(nom),
           valideur:profiles!demandes_valideur_id_fkey(nom)
         `)
-        .order('created_at', { ascending: false })
-      
-      if (error) {
-        console.error('Erreur getAll demandes:', error)
-        return { demandes: [], error: error.message }
+        .is('demande_groupee_id', null)
+        .order('created_at', { ascending: false });
+
+      // Récupérer les demandes groupées avec leurs lignes
+      const { data: demandesGroupees, error: erreurGroupees } = await supabase
+        .from('demandes_groupees')
+        .select(`
+          *,
+          demandeur:profiles!demandes_groupees_demandeur_id_fkey(nom),
+          valideur:profiles!demandes_groupees_valideur_id_fkey(nom),
+          lignes:demandes(
+            *,
+            produit:produits(id, nom, quantite_restante, unite:unites(label))
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      let toutesLesDemandes = [];
+
+      // Ajouter les demandes individuelles
+      if (demandesIndividuelles) {
+        toutesLesDemandes = [...demandesIndividuelles];
+      }
+
+      // Transformer et ajouter les demandes groupées
+      if (demandesGroupees) {
+        const demandesGroupeesFormatees = demandesGroupees.map(dg => ({
+          id: `groupe_${dg.id}`,
+          type: 'groupee',
+          demande_groupee_id: dg.id,
+          destination: dg.destination,
+          statut: dg.statut,
+          commentaire: dg.commentaire,
+          nombre_produits: dg.nombre_produits,
+          created_at: dg.created_at,
+          updated_at: dg.updated_at,
+          demandeur: dg.demandeur,
+          valideur: dg.valideur,
+          date_validation: dg.date_validation,
+          details_validation: dg.details_validation,
+          lignes: dg.lignes || [],
+          // Pour compatibilité avec l'affichage existant
+          produit: dg.lignes && dg.lignes.length > 0 ? {
+            nom: `${dg.lignes.length} produit${dg.lignes.length > 1 ? 's' : ''}`,
+            quantite_restante: null,
+            unite: { label: 'divers' }
+          } : null,
+          quantite: dg.lignes ? dg.lignes.reduce((sum, l) => sum + (l.quantite || 0), 0) : 0
+        }));
+
+        toutesLesDemandes = [...toutesLesDemandes, ...demandesGroupeesFormatees];
+      }
+
+      // Trier par date de création (plus récent en premier)
+      toutesLesDemandes.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      if (erreurIndividuelles || erreurGroupees) {
+        console.error('Erreurs lors du chargement des demandes:', {
+          individuelles: erreurIndividuelles,
+          groupees: erreurGroupees
+        });
+        return { 
+          demandes: toutesLesDemandes, 
+          error: erreurIndividuelles?.message || erreurGroupees?.message 
+        };
       }
       
-      return { demandes: data || [], error: null }
+      return { demandes: toutesLesDemandes, error: null };
     } catch (error) {
-      console.error('Erreur dans getAll demandes:', error)
-      return { demandes: [], error: error.message }
+      console.error('Erreur dans getAll demandes:', error);
+      return { demandes: [], error: error.message };
     }
   },
-  // Valider une demande avec gestion automatique des prix boutique
-// Version corrigée de validateWithBoutiqueCheck dans demandeService
-async validateWithBoutiqueCheck(demandeId) {
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return { result: null, error: 'Utilisateur non connecté' }
-    }
 
-    // 1. Récupérer les informations de la demande
-    const { data: demande, error: demandeError } = await supabase
-      .from('demandes')
-      .select(`
-        *,
-        produit:produits(
-          id, nom, prix_achat,
-          unite:unites(label)
-        )
-      `)
-      .eq('id', demandeId)
-      .eq('statut', 'en_attente')
-      .single()
+  // Créer une demande groupée multi-produits
+  async createGrouped(demandeData) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        return { demande: null, error: 'Utilisateur non connecté' };
+      }
 
-    if (demandeError || !demande) {
-      return { result: null, error: 'Demande introuvable ou déjà traitée' }
-    }
+      if (!demandeData.produits || demandeData.produits.length === 0) {
+        return { demande: null, error: 'Aucun produit sélectionné' };
+      }
 
-    console.log('🔍 Validation demande:', demande);
+      console.log('🔄 Création demande groupée:', demandeData);
 
-    // 2. Validation de la demande (marquer comme validée)
-    const { error: updateError } = await supabase
-      .from('demandes')
-      .update({
-        statut: 'validee',
-        valideur_id: user.id,
-        date_validation: new Date().toISOString()
-      })
-      .eq('id', demandeId)
-      .eq('statut', 'en_attente')
-
-    if (updateError) {
-      console.error('❌ Erreur validation demande:', updateError)
-      return { result: null, error: updateError.message }
-    }
-
-    // 3. Vérifier le stock principal et le décrémenter
-    const { data: produitActuel, error: produitError } = await supabase
-      .from('produits')
-      .select('quantite_restante')
-      .eq('id', demande.produit_id)
-      .single()
-
-    if (produitError || !produitActuel) {
-      return { result: null, error: 'Produit introuvable' }
-    }
-
-    if (produitActuel.quantite_restante < demande.quantite) {
-      return { result: null, error: 'Stock insuffisant dans le stock principal' }
-    }
-
-    // Décrémenter le stock principal
-    const { error: stockError } = await supabase
-      .from('produits')
-      .update({
-        quantite_restante: produitActuel.quantite_restante - demande.quantite,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', demande.produit_id)
-
-    if (stockError) {
-      console.error('❌ Erreur mise à jour stock principal:', stockError)
-      return { result: null, error: 'Erreur lors de la mise à jour du stock principal' }
-    }
-
-    // 4. Traitement selon la destination
-    let messageSpecifique = ''
-
-    if (demande.destination === 'Boutique') {
-      // ===== TRAITEMENT BOUTIQUE AVEC PRIX CORRIGÉ =====
-      try {
-        console.log('🏪 Traitement demande vers boutique pour produit:', demande.produit_id);
-        
-        // ÉTAPE A: Récupérer le prix de vente officiel
-        const { data: prixVenteOfficial, error: prixError } = await supabase
-          .from('prix_vente_produits')
-          .select('prix, actif')
-          .eq('produit_id', demande.produit_id)
-          .eq('actif', true)
-          .single();
-
-        if (prixError || !prixVenteOfficial) {
-          console.warn('⚠️ Aucun prix de vente officiel défini pour ce produit');
-          
-          // Continuer sans prix (à définir plus tard)
-          const { data: stockExistant } = await supabase
-            .from('stock_boutique')
-            .select('id, quantite_disponible')
-            .eq('produit_id', demande.produit_id)
+      // Vérifier le stock pour tous les produits
+      const verificationsStock = await Promise.all(
+        demandeData.produits.map(async (item) => {
+          const { data: produit, error } = await supabase
+            .from('produits')
+            .select('nom, quantite_restante')
+            .eq('id', item.produit_id)
             .single();
 
-          if (stockExistant) {
-            // Mettre à jour quantité seulement
-            await supabase
-              .from('stock_boutique')
-              .update({
-                quantite_disponible: (stockExistant.quantite_disponible || 0) + demande.quantite,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', stockExistant.id);
-          } else {
-            // Créer nouvelle entrée sans prix
-            await supabase
-              .from('stock_boutique')
-              .insert({
-                produit_id: demande.produit_id,
-                quantite_disponible: demande.quantite,
-                quantite_vendue: 0,
-                transfere_par: user.id
-              });
-          }
-
-          messageSpecifique = '🏪 Produit ajouté au stock boutique. ⚠️ Définissez le prix dans "Prix Vente"';
-        } else {
-          // ÉTAPE B: Traitement avec prix officiel
-          const prixVenteCorrect = prixVenteOfficial.prix;
-          console.log('✅ Prix de vente officiel récupéré:', utils.formatCFA(prixVenteCorrect));
-
-          // Vérifier si le produit existe déjà en boutique
-          const { data: stockExistant } = await supabase
-            .from('stock_boutique')
-            .select('id, quantite_disponible, prix_vente')
-            .eq('produit_id', demande.produit_id)
-            .single();
-
-          if (stockExistant) {
-            // MISE À JOUR avec correction automatique de prix
-            const updateData = {
-              quantite_disponible: (stockExistant.quantite_disponible || 0) + demande.quantite,
-              prix_vente: prixVenteCorrect, // 🔧 FORCER le prix correct
-              updated_at: new Date().toISOString()
+          if (error || !produit) {
+            return { 
+              produit_id: item.produit_id, 
+              valide: false, 
+              erreur: 'Produit introuvable' 
             };
-
-            // Log si correction de prix nécessaire
-            if (stockExistant.prix_vente && stockExistant.prix_vente !== prixVenteCorrect) {
-              console.warn(`🔧 Correction prix boutique: ${utils.formatCFA(stockExistant.prix_vente)} → ${utils.formatCFA(prixVenteCorrect)}`);
-            }
-
-            const { error: updateError } = await supabase
-              .from('stock_boutique')
-              .update(updateData)
-              .eq('id', stockExistant.id);
-
-            if (updateError) {
-              console.error('❌ Erreur mise à jour stock boutique:', updateError);
-              messageSpecifique = '⚠️ Erreur mise à jour stock boutique';
-            } else {
-              messageSpecifique = `🏪 Stock boutique mis à jour avec prix: ${utils.formatCFA(prixVenteCorrect)}`;
-            }
-          } else {
-              // CRÉATION avec le prix correct
-              const insertData = {
-                produit_id: demande.produit_id,
-                nom_produit: demande.produit?.nom,        // ← ✅ AJOUT IMPORTANT
-                quantite_disponible: demande.quantite,
-                quantite_vendue: 0,
-                prix_vente: prixVenteCorrect,
-                transfere_par: user.id
-              };
-
-            const { error: insertError } = await supabase
-              .from('stock_boutique')
-              .insert(insertData);
-
-            if (insertError) {
-              console.error('❌ Erreur création stock boutique:', insertError);
-              messageSpecifique = '⚠️ Erreur création stock boutique';
-            } else {
-              messageSpecifique = `🏪 Produit ajouté au stock boutique avec prix: ${utils.formatCFA(prixVenteCorrect)}`;
-            }
           }
 
-          // ÉTAPE C: Enregistrer l'entrée boutique avec le prix correct
-          await supabase
-            .from('entrees_boutique')
-            .insert({
-              produit_id: demande.produit_id,
-              quantite: demande.quantite,
-              source: 'Demande',
-              type_entree: 'Transfert',
-              prix_vente: prixVenteCorrect, // 🔧 Prix correct
-              ajoute_par: user.id
-            });
-        }
+          if (produit.quantite_restante < item.quantite) {
+            return { 
+              produit_id: item.produit_id, 
+              valide: false, 
+              erreur: `Stock insuffisant pour ${produit.nom} (demandé: ${item.quantite}, disponible: ${produit.quantite_restante})` 
+            };
+          }
 
-      } catch (boutiqueErr) {
-        console.error('❌ Erreur traitement boutique:', boutiqueErr);
-        messageSpecifique = '⚠️ Erreur lors de l\'ajout au stock boutique';
+          return { 
+            produit_id: item.produit_id, 
+            valide: true, 
+            nom: produit.nom 
+          };
+        })
+      );
+
+      // Vérifier s'il y a des erreurs de stock
+      const erreursStock = verificationsStock.filter(v => !v.valide);
+      if (erreursStock.length > 0) {
+        const messagesErreur = erreursStock.map(e => e.erreur).join('\n');
+        return { demande: null, error: `Erreurs de stock:\n${messagesErreur}` };
       }
 
-    } else if (demande.destination === 'Production') {
-      // ===== TRAITEMENT STOCK ATELIER =====
-      try {
-        // Utiliser la fonction RPC pour ajouter au stock atelier
-        const { error: atelierError } = await supabase.rpc('ajouter_au_stock_atelier', {
-          p_produit_id: demande.produit_id,
-          p_quantite: demande.quantite,
-          p_transfere_par: user.id
-        });
-
-        if (atelierError) {
-          console.error('❌ Erreur ajout stock atelier:', atelierError);
-          messageSpecifique = '⚠️ Erreur ajout stock atelier';
-        } else {
-          messageSpecifique = `✅ ${demande.quantite} ${demande.produit?.unite?.label || 'unités'} ajouté(es) au stock atelier`;
-        }
-      } catch (atelierErr) {
-        console.error('❌ Exception stock atelier:', atelierErr);
-        messageSpecifique = '⚠️ Erreur ajout stock atelier';
-      }
-
-    } else {
-      // ===== AUTRES DESTINATIONS =====
-      messageSpecifique = `📦 Stock réservé pour: ${demande.destination}`;
-    }
-
-    // 5. Enregistrer le mouvement de stock
-    try {
-      await supabase
-        .from('mouvements_stock')
+      // Créer la demande groupée
+      const { data: demandeGroupee, error: demandeError } = await supabase
+        .from('demandes_groupees')
         .insert({
-          produit_id: demande.produit_id,
-          type_mouvement: 'sortie',
-          quantite: demande.quantite,
-          quantite_avant: produitActuel.quantite_restante,
-          quantite_apres: produitActuel.quantite_restante - demande.quantite,
-          utilisateur_id: user.id,
-          reference_id: demandeId,
-          reference_type: 'demande',
-          raison: `Validation demande vers ${demande.destination}`,
-          commentaire: `${demande.produit?.nom || 'Produit'} - ${demande.quantite} ${demande.produit?.unite?.label || 'unités'}`
-        });
-    } catch (mouvementError) {
-      console.warn('⚠️ Erreur enregistrement mouvement stock:', mouvementError);
-      // Non bloquant
-    }
-
-    // 6. Retourner le résultat de succès
-    const messageFinal = `✅ Demande validée avec succès !\n\n` +
-                        `📦 Produit: ${demande.produit?.nom || 'Inconnu'}\n` +
-                        `📊 Quantité: ${demande.quantite} ${demande.produit?.unite?.label || 'unités'}\n` +
-                        `🎯 Destination: ${demande.destination}\n\n` +
-                        `${messageSpecifique}`;
-
-    return { 
-      result: { success: true }, 
-      error: null,
-      message: messageFinal
-    };
-
-  } catch (error) {
-    console.error('❌ Erreur générale dans validateWithBoutiqueCheck:', error);
-    return { result: null, error: `Erreur lors de la validation: ${error.message}` };
-  }
-},
-
-// Modifier la méthode create pour supporter les nouvelles fonctionnalités
-async createProduction(productionData) {
-  try {
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      return { production: null, error: 'Utilisateur non connecté' }
-    }
-
-    console.log('🏭 Début création production:', productionData);
-
-    // ÉTAPE 1: Récupérer le prix de vente depuis prix_vente_recettes
-    let prixVenteRecette = null;
-    if (productionData.destination === 'Boutique') {
-      console.log('🔍 Recherche prix pour recette:', productionData.produit);
-      
-      const { data: prixData, error: prixError } = await supabase
-        .from('prix_vente_recettes')
-        .select('prix_vente, actif')
-        .eq('nom_produit', productionData.produit)
-        .eq('actif', true)
+          destination: demandeData.destination,
+          commentaire: demandeData.commentaire || null,
+          demandeur_id: user.id,
+          statut: 'en_attente',
+          nombre_produits: demandeData.produits.length
+        })
+        .select()
         .single();
-      
-      if (prixError) {
-        console.warn('⚠️ Erreur récupération prix recette:', prixError);
-      } else if (prixData && prixData.prix_vente) {
-        prixVenteRecette = parseFloat(prixData.prix_vente);
-        console.log(`✅ Prix récupéré depuis recette: ${utils.formatCFA(prixVenteRecette)}`);
-      } else {
-        console.warn(`⚠️ Prix trouvé mais invalide:`, prixData);
+
+      if (demandeError) {
+        console.error('Erreur création demande groupée:', demandeError);
+        return { demande: null, error: demandeError.message };
       }
 
-      if (!prixVenteRecette) {
-        console.warn(`⚠️ Aucun prix défini pour la recette: ${productionData.produit}`);
-        return { 
-          production: null, 
-          error: `Aucun prix de vente défini pour la recette "${productionData.produit}". Veuillez d'abord définir le prix dans la création de recette.` 
-        };
-      }
-    }
+      // Créer les lignes de demande individuelles
+      const lignesDemande = demandeData.produits.map(item => ({
+        demande_groupee_id: demandeGroupee.id,
+        produit_id: item.produit_id,
+        quantite: item.quantite,
+        demandeur_id: user.id,
+        destination: demandeData.destination,
+        statut: 'en_attente'
+      }));
 
-    // ÉTAPE 2: Essayer d'abord la fonction RPC avec le prix
-    try {
-      const { data: rpcResult, error: rpcError } = await supabase.rpc('creer_production_nouvelle_logique', {
-        p_produit: productionData.produit,
-        p_quantite: productionData.quantite,
-        p_destination: productionData.destination || 'Boutique',
-        p_date_production: productionData.date_production || new Date().toISOString().split('T')[0],
-        p_producteur_id: user.id,
-        p_prix_vente: prixVenteRecette
-      });
-      
-      if (!rpcError && rpcResult && rpcResult.success) {
-        console.log('✅ Production créée via RPC avec succès');
-        return { 
-          production: {
-            id: rpcResult.production_id,
-            message: rpcResult.message
-          }, 
-          error: null 
-        };
-      } else {
-        console.warn('⚠️ RPC échoué, fallback vers méthode manuelle:', rpcError);
-      }
-    } catch (rpcException) {
-      console.warn('⚠️ Exception RPC, fallback vers méthode manuelle:', rpcException);
-    }
+      const { data: lignesCreees, error: lignesError } = await supabase
+        .from('demandes')
+        .insert(lignesDemande)
+        .select(`
+          *,
+          produit:produits(nom, quantite_restante, unite:unites(label)),
+          demandeur:profiles!demandes_demandeur_id_fkey(nom)
+        `);
 
-    // ÉTAPE 3: Fallback - Méthode manuelle si RPC échoue
-    console.log('🔄 Utilisation méthode manuelle...');
-    
-    // 3.1 Créer l'entrée production
-    const { data: production, error: productionError } = await supabase
-      .from('productions')
-      .insert({
-        produit: productionData.produit,
-        quantite: productionData.quantite,
-        destination: productionData.destination || 'Boutique',
-        date_production: productionData.date_production || new Date().toISOString().split('T')[0],
-        producteur_id: user.id,
-        statut: 'termine'
-      })
-      .select()
-      .single();
-
-    if (productionError) {
-      console.error('❌ Erreur création production:', productionError);
-      return { production: null, error: productionError.message };
-    }
-
-    console.log('✅ Production créée:', production);
-
-    // 3.2 Si destination = Boutique, ajouter au stock boutique avec le PRIX CORRECT
-    if (productionData.destination === 'Boutique' && prixVenteRecette) {
-      console.log('🏪 Ajout au stock boutique avec prix:', utils.formatCFA(prixVenteRecette));
-      
-      try {
-        // Vérifier si le produit existe déjà en boutique
-        const { data: stockExistant } = await supabase
-          .from('stock_boutique')
-          .select('id, quantite_disponible, prix_vente')
-          .eq('nom_produit', productionData.produit) // Chercher par nom de produit
-          .single();
-
-        if (stockExistant) {
-          // Mettre à jour stock existant AVEC LE PRIX CORRECT
-          const { error: updateError } = await supabase
-            .from('stock_boutique')
-            .update({
-              quantite_disponible: (stockExistant.quantite_disponible || 0) + productionData.quantite,
-              prix_vente: prixVenteRecette, // 🔧 FORCER le prix de la recette
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', stockExistant.id);
-
-          if (updateError) {
-            console.error('❌ Erreur mise à jour stock boutique:', updateError);
-          } else {
-            console.log(`✅ Stock boutique mis à jour avec prix: ${utils.formatCFA(prixVenteRecette)}`);
-          }
-        } else {
-          // Créer nouvelle entrée avec le prix correct
-          const { error: insertError } = await supabase
-            .from('stock_boutique')
-            .insert({
-              nom_produit: productionData.produit, // Utiliser nom du produit
-              quantite_disponible: productionData.quantite,
-              quantite_vendue: 0,
-              prix_vente: prixVenteRecette, // 🔧 Prix de la recette
-              transfere_par: user.id
-            });
-
-          if (insertError) {
-            console.error('❌ Erreur création stock boutique:', insertError);
-          } else {
-            console.log(`✅ Nouveau stock boutique créé avec prix: ${utils.formatCFA(prixVenteRecette)}`);
-          }
-        }
-
-        // Enregistrer l'entrée boutique
+      if (lignesError) {
+        console.error('Erreur création lignes demande:', lignesError);
+        
+        // Nettoyer la demande groupée en cas d'erreur
         await supabase
-          .from('entrees_boutique')
-          .insert({
-            nom_produit: productionData.produit,
-            quantite: productionData.quantite,
-            source: 'Production',
-            type_entree: 'Production',
-            prix_vente: prixVenteRecette, // 🔧 Prix de la recette
-            ajoute_par: user.id
-          });
+          .from('demandes_groupees')
+          .delete()
+          .eq('id', demandeGroupee.id);
 
-      } catch (boutiqueError) {
-        console.error('❌ Erreur traitement boutique:', boutiqueError);
-        // Ne pas faire échouer toute la production pour ça
+        return { demande: null, error: lignesError.message };
       }
+
+      console.log('✅ Demande groupée créée avec succès:', {
+        demande_groupee_id: demandeGroupee.id,
+        nombre_lignes: lignesCreees.length
+      });
+
+      return { 
+        demande: {
+          ...demandeGroupee,
+          lignes: lignesCreees
+        }, 
+        error: null 
+      };
+    } catch (error) {
+      console.error('Erreur dans createGrouped:', error);
+      return { demande: null, error: error.message };
     }
+  },
 
-    return { 
-      production: {
-        id: production.id,
-        message: `Production créée avec succès. ${productionData.destination === 'Boutique' && prixVenteRecette ? `Prix boutique: ${utils.formatCFA(prixVenteRecette)}` : ''}`
-      }, 
-      error: null 
-    };
+  // Valider une demande groupée complète
+  async validateGrouped(demandeGroupeeId) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        return { result: null, error: 'Utilisateur non connecté' };
+      }
 
-  } catch (error) {
-    console.error('❌ Erreur générale dans createProduction:', error);
-    return { production: null, error: error.message };
-  }
-},
-  // Créer une nouvelle demande
+      console.log('🔄 Validation demande groupée:', demandeGroupeeId);
+
+      // Utiliser la fonction SQL pour valider toute la demande groupée
+      const { data: resultat, error } = await supabase.rpc('valider_demande_groupee_complete', {
+        p_demande_groupee_id: demandeGroupeeId,
+        p_valideur_id: user.id
+      });
+
+      if (error) {
+        console.error('Erreur RPC validation groupée:', error);
+        return { result: null, error: error.message };
+      }
+
+      console.log('✅ Validation groupée terminée:', resultat);
+
+      // Construire le message de résultat
+      const succes = resultat.succes_total || 0;
+      const echecs = resultat.echecs_total || 0;
+      const total = succes + echecs;
+
+      let messageFinal = `🎯 Validation demande groupée terminée\n\n`;
+      messageFinal += `📊 Résultats: ${succes}/${total} produits validés\n\n`;
+
+      if (succes > 0) {
+        messageFinal += `✅ ${succes} produit${succes > 1 ? 's' : ''} validé${succes > 1 ? 's' : ''} avec succès\n`;
+      }
+
+      if (echecs > 0) {
+        messageFinal += `❌ ${echecs} échec${echecs > 1 ? 's' : ''}\n`;
+        
+        // Ajouter les détails des échecs
+        const details = resultat.details || [];
+        const echecsDetails = details.filter(d => !d.succes);
+        if (echecsDetails.length > 0) {
+          messageFinal += `\nDétails des échecs:\n`;
+          echecsDetails.forEach(e => {
+            messageFinal += `• ${e.produit_nom}: ${e.message}\n`;
+          });
+        }
+      }
+
+      return {
+        result: {
+          success: echecs === 0,
+          total_produits: total,
+          succes_count: succes,
+          echecs_count: echecs,
+          details: resultat.details
+        },
+        error: null,
+        message: messageFinal
+      };
+
+    } catch (error) {
+      console.error('❌ Erreur générale dans validateGrouped:', error);
+      return { result: null, error: `Erreur lors de la validation: ${error.message}` };
+    }
+  },
+
+  // Créer une demande individuelle (méthode existante)
   async create(demandeData) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser();
       
       const { data, error } = await supabase
         .from('demandes')
@@ -1897,50 +1714,306 @@ async createProduction(productionData) {
           produit:produits(nom, quantite_restante, unite:unites(label)),
           demandeur:profiles!demandes_demandeur_id_fkey(nom)
         `)
-        .single()
+        .single();
       
       if (error) {
-        console.error('Erreur create demande:', error)
-        return { demande: null, error: error.message }
+        console.error('Erreur create demande:', error);
+        return { demande: null, error: error.message };
       }
       
-      return { demande: data, error: null }
+      return { demande: data, error: null };
     } catch (error) {
-      console.error('Erreur dans create demande:', error)
-      return { demande: null, error: error.message }
+      console.error('Erreur dans create demande:', error);
+      return { demande: null, error: error.message };
     }
   },
 
-  // Valider une demande
-  async validate(demandeId) {
+  // Valider une demande individuelle avec gestion boutique
+  async validateWithBoutiqueCheck(demandeId) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
-        return { result: null, error: 'Utilisateur non connecté' }
+        return { result: null, error: 'Utilisateur non connecté' };
+      }
+
+      // Récupérer les informations de la demande
+      const { data: demande, error: demandeError } = await supabase
+        .from('demandes')
+        .select(`
+          *,
+          produit:produits(
+            id, nom, prix_achat,
+            unite:unites(label)
+          )
+        `)
+        .eq('id', demandeId)
+        .eq('statut', 'en_attente')
+        .single();
+
+      if (demandeError || !demande) {
+        return { result: null, error: 'Demande introuvable ou déjà traitée' };
+      }
+
+      console.log('🔍 Validation demande:', demande);
+
+      // Validation de la demande (marquer comme validée)
+      const { error: updateError } = await supabase
+        .from('demandes')
+        .update({
+          statut: 'validee',
+          valideur_id: user.id,
+          date_validation: new Date().toISOString()
+        })
+        .eq('id', demandeId)
+        .eq('statut', 'en_attente');
+
+      if (updateError) {
+        console.error('❌ Erreur validation demande:', updateError);
+        return { result: null, error: updateError.message };
+      }
+
+      // Vérifier le stock principal et le décrémenter
+      const { data: produitActuel, error: produitError } = await supabase
+        .from('produits')
+        .select('quantite_restante')
+        .eq('id', demande.produit_id)
+        .single();
+
+      if (produitError || !produitActuel) {
+        return { result: null, error: 'Produit introuvable' };
+      }
+
+      if (produitActuel.quantite_restante < demande.quantite) {
+        return { result: null, error: 'Stock insuffisant dans le stock principal' };
+      }
+
+      // Décrémenter le stock principal
+      const { error: stockError } = await supabase
+        .from('produits')
+        .update({
+          quantite_restante: produitActuel.quantite_restante - demande.quantite,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', demande.produit_id);
+
+      if (stockError) {
+        console.error('❌ Erreur mise à jour stock principal:', stockError);
+        return { result: null, error: 'Erreur lors de la mise à jour du stock principal' };
+      }
+
+      // Traitement selon la destination
+      let messageSpecifique = '';
+
+      if (demande.destination === 'Boutique') {
+        // Traitement boutique avec prix
+        try {
+          console.log('🏪 Traitement demande vers boutique pour produit:', demande.produit_id);
+          
+          // Récupérer le prix de vente officiel
+          const { data: prixVenteOfficial, error: prixError } = await supabase
+            .from('prix_vente_produits')
+            .select('prix, actif')
+            .eq('produit_id', demande.produit_id)
+            .eq('actif', true)
+            .single();
+
+          if (prixError || !prixVenteOfficial) {
+            console.warn('⚠️ Aucun prix de vente officiel défini pour ce produit');
+            
+            // Continuer sans prix (à définir plus tard)
+            const { data: stockExistant } = await supabase
+              .from('stock_boutique')
+              .select('id, quantite_disponible')
+              .eq('produit_id', demande.produit_id)
+              .single();
+
+            if (stockExistant) {
+              await supabase
+                .from('stock_boutique')
+                .update({
+                  quantite_disponible: (stockExistant.quantite_disponible || 0) + demande.quantite,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', stockExistant.id);
+            } else {
+              await supabase
+                .from('stock_boutique')
+                .insert({
+                  produit_id: demande.produit_id,
+                  quantite_disponible: demande.quantite,
+                  quantite_vendue: 0,
+                  transfere_par: user.id
+                });
+            }
+
+            messageSpecifique = '🏪 Produit ajouté au stock boutique. ⚠️ Définissez le prix dans "Prix Vente"';
+          } else {
+            // Traitement avec prix officiel
+            const prixVenteCorrect = prixVenteOfficial.prix;
+            console.log('✅ Prix de vente officiel récupéré:', utils.formatCFA(prixVenteCorrect));
+
+            // Vérifier si le produit existe déjà en boutique
+            const { data: stockExistant } = await supabase
+              .from('stock_boutique')
+              .select('id, quantite_disponible, prix_vente')
+              .eq('produit_id', demande.produit_id)
+              .single();
+
+            if (stockExistant) {
+              // Mise à jour avec correction automatique de prix
+              const updateData = {
+                quantite_disponible: (stockExistant.quantite_disponible || 0) + demande.quantite,
+                prix_vente: prixVenteCorrect,
+                updated_at: new Date().toISOString()
+              };
+
+              const { error: updateError } = await supabase
+                .from('stock_boutique')
+                .update(updateData)
+                .eq('id', stockExistant.id);
+
+              if (updateError) {
+                console.error('❌ Erreur mise à jour stock boutique:', updateError);
+                messageSpecifique = '⚠️ Erreur mise à jour stock boutique';
+              } else {
+                messageSpecifique = `🏪 Stock boutique mis à jour avec prix: ${utils.formatCFA(prixVenteCorrect)}`;
+              }
+            } else {
+              // Création avec le prix correct
+              const insertData = {
+                produit_id: demande.produit_id,
+                nom_produit: demande.produit?.nom,
+                quantite_disponible: demande.quantite,
+                quantite_vendue: 0,
+                prix_vente: prixVenteCorrect,
+                transfere_par: user.id
+              };
+
+              const { error: insertError } = await supabase
+                .from('stock_boutique')
+                .insert(insertData);
+
+              if (insertError) {
+                console.error('❌ Erreur création stock boutique:', insertError);
+                messageSpecifique = '⚠️ Erreur création stock boutique';
+              } else {
+                messageSpecifique = `🏪 Produit ajouté au stock boutique avec prix: ${utils.formatCFA(prixVenteCorrect)}`;
+              }
+            }
+
+            // Enregistrer l'entrée boutique
+            await supabase
+              .from('entrees_boutique')
+              .insert({
+                produit_id: demande.produit_id,
+                quantite: demande.quantite,
+                source: 'Demande',
+                type_entree: 'Transfert',
+                prix_vente: prixVenteCorrect,
+                ajoute_par: user.id
+              });
+          }
+
+        } catch (boutiqueErr) {
+          console.error('❌ Erreur traitement boutique:', boutiqueErr);
+          messageSpecifique = '⚠️ Erreur lors de l\'ajout au stock boutique';
+        }
+
+      } else if (demande.destination === 'Production') {
+        // Traitement stock atelier
+        try {
+          const { error: atelierError } = await supabase.rpc('ajouter_au_stock_atelier', {
+            p_produit_id: demande.produit_id,
+            p_quantite: demande.quantite,
+            p_transfere_par: user.id
+          });
+
+          if (atelierError) {
+            console.error('❌ Erreur ajout stock atelier:', atelierError);
+            messageSpecifique = '⚠️ Erreur ajout stock atelier';
+          } else {
+            messageSpecifique = `✅ ${demande.quantite} ${demande.produit?.unite?.label || 'unités'} ajouté(es) au stock atelier`;
+          }
+        } catch (atelierErr) {
+          console.error('❌ Exception stock atelier:', atelierErr);
+          messageSpecifique = '⚠️ Erreur ajout stock atelier';
+        }
+
+      } else {
+        // Autres destinations
+        messageSpecifique = `📦 Stock réservé pour: ${demande.destination}`;
+      }
+
+      // Enregistrer le mouvement de stock
+      try {
+        await supabase
+          .from('mouvements_stock')
+          .insert({
+            produit_id: demande.produit_id,
+            type_mouvement: 'sortie',
+            quantite: demande.quantite,
+            quantite_avant: produitActuel.quantite_restante,
+            quantite_apres: produitActuel.quantite_restante - demande.quantite,
+            utilisateur_id: user.id,
+            reference_id: demandeId,
+            reference_type: 'demande',
+            raison: `Validation demande vers ${demande.destination}`,
+            commentaire: `${demande.produit?.nom || 'Produit'} - ${demande.quantite} ${demande.produit?.unite?.label || 'unités'}`
+          });
+      } catch (mouvementError) {
+        console.warn('⚠️ Erreur enregistrement mouvement stock:', mouvementError);
+      }
+
+      // Retourner le résultat de succès
+      const messageFinal = `✅ Demande validée avec succès !\n\n` +
+                          `📦 Produit: ${demande.produit?.nom || 'Inconnu'}\n` +
+                          `📊 Quantité: ${demande.quantite} ${demande.produit?.unite?.label || 'unités'}\n` +
+                          `🎯 Destination: ${demande.destination}\n\n` +
+                          `${messageSpecifique}`;
+
+      return { 
+        result: { success: true }, 
+        error: null,
+        message: messageFinal
+      };
+
+    } catch (error) {
+      console.error('❌ Erreur générale dans validateWithBoutiqueCheck:', error);
+      return { result: null, error: `Erreur lors de la validation: ${error.message}` };
+    }
+  },
+
+  // Valider une demande individuelle (méthode existante)
+  async validate(demandeId) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        return { result: null, error: 'Utilisateur non connecté' };
       }
 
       const { data, error } = await supabase.rpc('valider_demande', {
         demande_id_input: demandeId.toString(),
         p_valideur_id: user.id
-      })
+      });
       
       if (error) {
-        console.error('Erreur RPC valider_demande:', error)
-        return { result: null, error: error.message }
+        console.error('Erreur RPC valider_demande:', error);
+        return { result: null, error: error.message };
       }
       
-      return { result: data, error: null }
+      return { result: data, error: null };
     } catch (error) {
-      console.error('Erreur dans validate demande:', error)
-      return { result: null, error: error.message }
+      console.error('Erreur dans validate demande:', error);
+      return { result: null, error: error.message };
     }
   },
 
-  // Refuser une demande
+  // Refuser une demande individuelle
   async reject(demandeId) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser();
       
       const { data, error } = await supabase
         .from('demandes')
@@ -1952,21 +2025,81 @@ async createProduction(productionData) {
         .eq('id', demandeId)
         .eq('statut', 'en_attente')
         .select()
-        .single()
+        .single();
       
       if (error) {
-        console.error('Erreur reject demande:', error)
-        return { demande: null, error: error.message }
+        console.error('Erreur reject demande:', error);
+        return { demande: null, error: error.message };
       }
       
-      return { demande: data, error: null }
+      return { demande: data, error: null };
     } catch (error) {
-      console.error('Erreur dans reject demande:', error)
-      return { demande: null, error: error.message }
+      console.error('Erreur dans reject demande:', error);
+      return { demande: null, error: error.message };
+    }
+  },
+
+  // Obtenir les statistiques des demandes
+  async getStatistics() {
+    try {
+      const [demandesIndividuelles, demandesGroupees] = await Promise.all([
+        supabase
+          .from('demandes')
+          .select('statut, created_at, destination')
+          .is('demande_groupee_id', null),
+        supabase
+          .from('demandes_groupees')
+          .select('statut, created_at, destination, nombre_produits')
+      ]);
+
+      const stats = {
+        total_demandes_individuelles: demandesIndividuelles.data?.length || 0,
+        total_demandes_groupees: demandesGroupees.data?.length || 0,
+        en_attente_individuelles: demandesIndividuelles.data?.filter(d => d.statut === 'en_attente').length || 0,
+        en_attente_groupees: demandesGroupees.data?.filter(d => d.statut === 'en_attente').length || 0,
+        validees_individuelles: demandesIndividuelles.data?.filter(d => d.statut === 'validee').length || 0,
+        validees_groupees: demandesGroupees.data?.filter(d => d.statut === 'validee').length || 0,
+        refusees_individuelles: demandesIndividuelles.data?.filter(d => d.statut === 'refusee').length || 0,
+        refusees_groupees: demandesGroupees.data?.filter(d => d.statut === 'refusee').length || 0,
+        destinations: {}
+      };
+
+      // Calculer les statistiques par destination
+      const toutesDestinations = [
+        ...(demandesIndividuelles.data || []),
+        ...(demandesGroupees.data || [])
+      ];
+
+      toutesDestinations.forEach(demande => {
+        const dest = demande.destination || 'Non spécifié';
+        stats.destinations[dest] = (stats.destinations[dest] || 0) + 1;
+      });
+
+      // Calculer le nombre total de produits demandés (en comptant les produits dans les demandes groupées)
+      const totalProduitsGroupees = demandesGroupees.data?.reduce((sum, dg) => sum + (dg.nombre_produits || 0), 0) || 0;
+      stats.total_produits_demandes = stats.total_demandes_individuelles + totalProduitsGroupees;
+
+      return { stats, error: null };
+    } catch (error) {
+      console.error('Erreur dans getStatistics:', error);
+      return { 
+        stats: {
+          total_demandes_individuelles: 0,
+          total_demandes_groupees: 0,
+          en_attente_individuelles: 0,
+          en_attente_groupees: 0,
+          validees_individuelles: 0,
+          validees_groupees: 0,
+          refusees_individuelles: 0,
+          refusees_groupees: 0,
+          total_produits_demandes: 0,
+          destinations: {}
+        }, 
+        error: error.message 
+      };
     }
   }
-}
-
+};
 // ===================== SERVICES PRODUCTION =====================
 // src/lib/supabase.js - CORRECTION de la méthode createProduction
 
@@ -4127,6 +4260,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
