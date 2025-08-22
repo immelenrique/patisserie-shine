@@ -1,17 +1,20 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { stockBoutiqueService, productService, utils } from '../../lib/supabase';
-import { Package, AlertTriangle, Clock, TrendingUp, TrendingDown, Store, ArrowRight, ShoppingBag } from 'lucide-react';
-import { Card, StatCard } from '../ui';
+import { stockBoutiqueService, caisseService, utils, supabase } from '../../lib/supabase';
+import { Store, Package, AlertTriangle, TrendingUp, TrendingDown, Edit, Check, X, DollarSign, ShoppingCart, Eye, EyeOff } from 'lucide-react';
+import { Card, StatCard, Modal } from '../ui';
 
 export default function StockBoutiqueManager({ currentUser }) {
   const [stockBoutique, setStockBoutique] = useState([]);
-  const [entrees, setEntrees] = useState([]);
-  const [sorties, setSorties] = useState([]);
+  const [historique, setHistorique] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('stock');
+  const [editingPrice, setEditingPrice] = useState(null);
+  const [newPrice, setNewPrice] = useState('');
+  const [savingPrice, setSavingPrice] = useState(false);
+  const [showZeroStock, setShowZeroStock] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -20,22 +23,113 @@ export default function StockBoutiqueManager({ currentUser }) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [stockResult, entreesResult, sortiesResult] = await Promise.all([
+      const [stockResult, historiqueResult] = await Promise.all([
         stockBoutiqueService.getStockBoutique(),
-        stockBoutiqueService.getHistoriqueEntrees(),
-        stockBoutiqueService.getHistoriqueSorties()
+        stockBoutiqueService.getHistoriqueEntrees()
       ]);
 
       if (stockResult.error) throw new Error(stockResult.error);
-      if (entreesResult.error) throw new Error(entreesResult.error);
-      if (sortiesResult.error) throw new Error(sortiesResult.error);
+      if (historiqueResult.error) throw new Error(historiqueResult.error);
 
-      setStockBoutique(stockResult.stock);
-      setEntrees(entreesResult.entrees);
-      setSorties(sortiesResult.sorties);
+      setStockBoutique(stockResult.stock || []);
+      setHistorique(historiqueResult.entrees || []);
       setError('');
     } catch (err) {
       setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Commencer l'édition d'un prix
+  const startEditPrice = (stockItem) => {
+    setEditingPrice(stockItem.id);
+    setNewPrice(stockItem.prix_vente ? stockItem.prix_vente.toString() : '');
+  };
+
+  // Annuler l'édition
+  const cancelEditPrice = () => {
+    setEditingPrice(null);
+    setNewPrice('');
+  };
+
+  // Sauvegarder le nouveau prix
+  const savePrice = async (stockId) => {
+    if (!newPrice || parseFloat(newPrice) < 0) {
+      alert('Veuillez entrer un prix valide');
+      return;
+    }
+
+    setSavingPrice(true);
+    try {
+      const { error } = await supabase
+        .from('stock_boutique')
+        .update({
+          prix_vente: parseFloat(newPrice),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', stockId);
+
+      if (error) {
+        console.error('Erreur mise à jour prix:', error);
+        alert('Erreur lors de la mise à jour du prix: ' + error.message);
+      } else {
+        // Mettre à jour l'état local
+        setStockBoutique(prev => 
+          prev.map(item => 
+            item.id === stockId 
+              ? { ...item, prix_vente: parseFloat(newPrice), prix_defini: true }
+              : item
+          )
+        );
+        
+        // Synchroniser avec la table prix_vente_produits si le produit a un produit_id
+        const stockItem = stockBoutique.find(s => s.id === stockId);
+        if (stockItem && stockItem.produit_id) {
+          try {
+            await supabase
+              .from('prix_vente_produits')
+              .upsert({
+                produit_id: stockItem.produit_id,
+                prix: parseFloat(newPrice),
+                actif: true
+              });
+          } catch (syncError) {
+            console.warn('Erreur synchronisation prix_vente_produits:', syncError);
+          }
+        }
+        
+        alert(`Prix mis à jour avec succès: ${utils.formatCFA(parseFloat(newPrice))}`);
+        setEditingPrice(null);
+        setNewPrice('');
+      }
+    } catch (err) {
+      console.error('Erreur:', err);
+      alert('Erreur lors de la mise à jour du prix');
+    } finally {
+      setSavingPrice(false);
+    }
+  };
+
+  // Synchroniser tous les prix avec la table prix_vente_recettes
+  const syncAllPrices = async () => {
+    if (!confirm('Voulez-vous synchroniser tous les prix avec les prix de recettes définis ?')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { success, corrections, error } = await stockBoutiqueService.synchroniserPrixRecettes();
+      
+      if (error) {
+        alert('Erreur lors de la synchronisation: ' + error);
+      } else {
+        alert(`Synchronisation terminée !\n${corrections} prix ont été corrigés.`);
+        await loadData(); // Recharger les données
+      }
+    } catch (err) {
+      console.error('Erreur synchronisation:', err);
+      alert('Erreur lors de la synchronisation des prix');
     } finally {
       setLoading(false);
     }
@@ -54,6 +148,11 @@ export default function StockBoutiqueManager({ currentUser }) {
     }
   };
 
+  // Filtrer les produits selon l'affichage souhaité
+  const filteredStock = showZeroStock 
+    ? stockBoutique 
+    : stockBoutique.filter(item => (item.stock_reel || 0) > 0);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -69,21 +168,36 @@ export default function StockBoutiqueManager({ currentUser }) {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-            <Store className="w-8 h-8 text-orange-600 mr-3" />
+            <Store className="w-8 h-8 text-green-600 mr-3" />
             Stock Boutique
           </h1>
-          <p className="text-gray-600">Produits disponibles à la vente - Alimenté par les productions et demandes</p>
+          <p className="text-gray-600">Gestion des produits disponibles à la vente</p>
         </div>
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-center text-blue-800">
-            <ArrowRight className="w-5 h-5 mr-2" />
-            <div className="text-sm">
-              <p className="font-medium">Alimenté automatiquement par :</p>
-              <p>1. Productions destinées à "Boutique"</p>
-              <p>2. Demandes validées vers "Boutique"</p>
-              <p>3. Transferts manuels vers boutique</p>
-            </div>
-          </div>
+        
+        <div className="flex space-x-3">
+          {/* Bouton de synchronisation des prix */}
+          <button
+            onClick={syncAllPrices}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-all duration-200 flex items-center space-x-2"
+            title="Synchroniser avec les prix de recettes"
+          >
+            <DollarSign className="h-4 w-4" />
+            <span>Sync Prix</span>
+          </button>
+          
+          {/* Toggle affichage stock zéro */}
+          <button
+            onClick={() => setShowZeroStock(!showZeroStock)}
+            className={`px-4 py-2 rounded-lg transition-all duration-200 flex items-center space-x-2 ${
+              showZeroStock 
+                ? 'bg-gray-600 text-white' 
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+            title={showZeroStock ? "Masquer les stocks vides" : "Afficher les stocks vides"}
+          >
+            {showZeroStock ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            <span>{showZeroStock ? 'Masquer vides' : 'Afficher vides'}</span>
+          </button>
         </div>
       </div>
 
@@ -103,34 +217,23 @@ export default function StockBoutiqueManager({ currentUser }) {
             onClick={() => setActiveTab('stock')}
             className={`py-2 px-1 border-b-2 font-medium text-sm ${
               activeTab === 'stock'
-                ? 'border-orange-500 text-orange-600'
+                ? 'border-green-500 text-green-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
             <Package className="w-4 h-4 inline mr-2" />
-            Stock Boutique
+            Stock Disponible
           </button>
           <button
-            onClick={() => setActiveTab('entrees')}
+            onClick={() => setActiveTab('historique')}
             className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'entrees'
-                ? 'border-orange-500 text-orange-600'
+              activeTab === 'historique'
+                ? 'border-green-500 text-green-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            <TrendingUp className="w-4 h-4 inline mr-2" />
-            Entrées (Réceptions)
-          </button>
-          <button
-            onClick={() => setActiveTab('sorties')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'sorties'
-                ? 'border-orange-500 text-orange-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <TrendingDown className="w-4 h-4 inline mr-2" />
-            Sorties (Ventes)
+            <ShoppingCart className="w-4 h-4 inline mr-2" />
+            Historique des Entrées
           </button>
         </nav>
       </div>
@@ -141,10 +244,10 @@ export default function StockBoutiqueManager({ currentUser }) {
           {/* Statistiques rapides */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <StatCard
-              title="Produits en boutique"
+              title="Produits en stock"
               value={stockBoutique.filter(s => (s.stock_reel || 0) > 0).length}
               icon={Package}
-              color="blue"
+              color="green"
             />
             <StatCard
               title="Stock critique"
@@ -153,25 +256,38 @@ export default function StockBoutiqueManager({ currentUser }) {
               color="red"
             />
             <StatCard
-              title="Valeur totale stock"
+              title="Valeur stock total"
               value={utils.formatCFA(stockBoutique.reduce((sum, s) => sum + ((s.stock_reel || 0) * (s.prix_vente || 0)), 0))}
               icon={TrendingUp}
-              color="green"
+              color="blue"
             />
             <StatCard
-              title="Produits vendus aujourd'hui"
-              value={sorties.filter(s => s.created_at?.startsWith(new Date().toISOString().split('T')[0])).length}
-              icon={ShoppingBag}
-              color="orange"
+              title="Prix non définis"
+              value={stockBoutique.filter(s => !s.prix_defini && (s.stock_reel || 0) > 0).length}
+              icon={DollarSign}
+              color="yellow"
             />
+          </div>
+
+          {/* Information sur l'affichage */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex justify-between items-center text-blue-800">
+              <div className="text-sm">
+                <strong>Affichage actuel:</strong> {showZeroStock ? 'Tous les produits' : 'Produits avec stock > 0'} 
+                ({filteredStock.length} produit{filteredStock.length > 1 ? 's' : ''})
+              </div>
+              <div className="text-xs">
+                💡 Cliquez sur l'icône ✏️ pour modifier un prix de vente
+              </div>
+            </div>
           </div>
 
           {/* Tableau du stock */}
           <Card>
             <div className="flex justify-between items-center mb-4 p-6 border-b">
-              <h3 className="text-lg font-semibold">Produits Disponibles à la Vente</h3>
+              <h3 className="text-lg font-semibold">Produits Disponibles en Boutique</h3>
               <div className="text-sm text-gray-500">
-                Stock boutique = Réceptions - Ventes
+                Stock réel = Stock reçu - Stock vendu
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -179,49 +295,121 @@ export default function StockBoutiqueManager({ currentUser }) {
                 <thead>
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produit</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock Disponible</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock Reçu</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock Vendu</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock Réel</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prix Vente</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Valeur Stock</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dernière MAJ</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {stockBoutique.length === 0 ? (
+                  {filteredStock.length === 0 ? (
                     <tr>
-                      <td colSpan="6" className="text-center py-8 text-gray-500">
-                        <Store className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                        Aucun produit en boutique
+                      <td colSpan="8" className="text-center py-8 text-gray-500">
+                        <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                        {showZeroStock ? 'Aucun produit en boutique' : 'Aucun produit avec stock disponible'}
                         <br />
-                        <span className="text-sm">Les productions et demandes vers "Boutique" alimenteront ce stock</span>
+                        <span className="text-sm">
+                          {showZeroStock 
+                            ? 'Les demandes validées vers "Boutique" alimenteront ce stock'
+                            : 'Activez "Afficher vides" pour voir tous les produits'
+                          }
+                        </span>
                       </td>
                     </tr>
                   ) : (
-                    stockBoutique.map((stock, index) => {
+                    filteredStock.map((stock) => {
                       const statusInfo = getStockStatusInfo(stock.statut_stock || 'normal');
-                      const valeurStock = (stock.stock_reel || 0) * (stock.prix_vente || 0);
+                      const isEditing = editingPrice === stock.id;
                       
                       return (
-                        <tr key={index} className={stock.stock_reel <= 0 ? 'opacity-50' : ''}>
-                          <td className="px-6 py-4 font-medium">{stock.nom_produit || `Produit ${index + 1}`}</td>
-                          <td className="px-6 py-4">
-                            <span className={`font-bold text-lg ${stock.stock_reel <= 0 ? 'text-red-600' : 'text-blue-600'}`}>
-                              {utils.formatNumber(stock.stock_reel || 0, 1)} {stock.unite || 'unité'}
+                        <tr key={stock.id} className={stock.stock_reel <= 0 ? 'bg-gray-50 opacity-75' : 'hover:bg-gray-50'}>
+                          <td className="px-6 py-4 font-medium">
+                            {stock.nom_produit || 'Produit sans nom'}
+                            <div className="text-xs text-gray-500">{stock.unite}</div>
+                          </td>
+                          <td className="px-6 py-4 text-blue-600 font-semibold">
+                            {utils.formatNumber(stock.quantite_disponible || 0, 1)}
+                          </td>
+                          <td className="px-6 py-4 text-orange-600">
+                            {utils.formatNumber(stock.quantite_vendue || 0, 1)}
+                          </td>
+                          <td className="px-6 py-4 font-bold text-lg">
+                            <span className={stock.stock_reel <= 0 ? 'text-red-600' : 'text-green-600'}>
+                              {utils.formatNumber(stock.stock_reel || 0, 1)}
                             </span>
                           </td>
-                          <td className="px-6 py-4 font-semibold text-green-600">
-                            {stock.prix_vente ? utils.formatCFA(stock.prix_vente) : 'Non défini'}
+                          <td className="px-6 py-4">
+                            {isEditing ? (
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={newPrice}
+                                  onChange={(e) => setNewPrice(e.target.value)}
+                                  className="w-24 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                                  placeholder="Prix"
+                                  autoFocus
+                                />
+                                <span className="text-xs text-gray-500">CFA</span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center space-x-2">
+                                {stock.prix_defini ? (
+                                  <span className="font-semibold text-green-600">
+                                    {utils.formatCFA(stock.prix_vente || 0)}
+                                  </span>
+                                ) : (
+                                  <span className="text-yellow-600 text-sm font-medium">
+                                    Non défini
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </td>
-                          <td className="px-6 py-4 font-semibold text-purple-600">
-                            {utils.formatCFA(valeurStock)}
+                          <td className="px-6 py-4 font-semibold text-blue-600">
+                            {stock.prix_defini ? 
+                              utils.formatCFA((stock.stock_reel || 0) * (stock.prix_vente || 0)) : 
+                              '-'
+                            }
                           </td>
                           <td className="px-6 py-4">
-                            <span className={`badge ${statusInfo.bg} ${statusInfo.color}`}>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusInfo.bg} ${statusInfo.color}`}>
                               {statusInfo.label}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-sm text-gray-500">
-                            {utils.formatDateTime(stock.derniere_maj || stock.created_at)}
+                          <td className="px-6 py-4">
+                            {isEditing ? (
+                              <div className="flex space-x-1">
+                                <button
+                                  onClick={() => savePrice(stock.id)}
+                                  disabled={savingPrice}
+                                  className="text-green-600 hover:text-green-900 p-1 hover:bg-green-50 rounded transition-colors disabled:opacity-50"
+                                  title="Sauvegarder"
+                                >
+                                  <Check className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={cancelEditPrice}
+                                  disabled={savingPrice}
+                                  className="text-red-600 hover:text-red-900 p-1 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                                  title="Annuler"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => startEditPrice(stock)}
+                                className="text-blue-600 hover:text-blue-900 p-1 hover:bg-blue-50 rounded transition-colors"
+                                title="Modifier le prix"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );
@@ -234,10 +422,10 @@ export default function StockBoutiqueManager({ currentUser }) {
         </div>
       )}
 
-      {activeTab === 'entrees' && (
+      {activeTab === 'historique' && (
         <Card>
           <h3 className="text-lg font-semibold mb-4 flex items-center p-6 border-b">
-            <TrendingUp className="w-5 h-5 mr-2" />
+            <ShoppingCart className="w-5 h-5 mr-2" />
             Historique des Entrées en Boutique
           </h3>
           <div className="overflow-x-auto">
@@ -248,79 +436,47 @@ export default function StockBoutiqueManager({ currentUser }) {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produit</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantité</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type Entrée</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entrees.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="text-center py-8 text-gray-500">
-                      <TrendingUp className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                      Aucune entrée enregistrée
-                    </td>
-                  </tr>
-                ) : (
-                  entrees.map((entree, index) => (
-                    <tr key={index}>
-                      <td className="px-6 py-4">{utils.formatDateTime(entree.created_at)}</td>
-                      <td className="px-6 py-4 font-medium">{entree.nom_produit}</td>
-                      <td className="px-6 py-4 font-semibold text-green-600">
-                        +{utils.formatNumber(entree.quantite, 1)} {entree.unite}
-                      </td>
-                      <td className="px-6 py-4">{entree.source || 'Production'}</td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          {entree.type_entree || 'Production'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {activeTab === 'sorties' && (
-        <Card>
-          <h3 className="text-lg font-semibold mb-4 flex items-center p-6 border-b">
-            <TrendingDown className="w-5 h-5 mr-2" />
-            Historique des Sorties (Ventes)
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="table w-full">
-              <thead>
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produit</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantité</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prix Vente</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendeur</th>
                 </tr>
               </thead>
               <tbody>
-                {sorties.length === 0 ? (
+                {historique.length === 0 ? (
                   <tr>
                     <td colSpan="6" className="text-center py-8 text-gray-500">
-                      <TrendingDown className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                      Aucune vente enregistrée
+                      <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                      Aucune entrée enregistrée
+                      <br />
+                      <span className="text-sm">Les ajouts en boutique apparaîtront ici</span>
                     </td>
                   </tr>
                 ) : (
-                  sorties.map((sortie, index) => (
-                    <tr key={index}>
-                      <td className="px-6 py-4">{utils.formatDateTime(sortie.created_at)}</td>
-                      <td className="px-6 py-4 font-medium">{sortie.nom_produit}</td>
-                      <td className="px-6 py-4 font-semibold text-red-600">
-                        -{utils.formatNumber(sortie.quantite, 1)} {sortie.unite}
+                  historique.map((entree, index) => (
+                    <tr key={index} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">{utils.formatDateTime(entree.created_at)}</td>
+                      <td className="px-6 py-4 font-medium">
+                        {entree.nom_produit || 'Produit'}
+                        <div className="text-xs text-gray-500">{entree.unite}</div>
                       </td>
-                      <td className="px-6 py-4">{utils.formatCFA(sortie.prix_unitaire)}</td>
-                      <td className="px-6 py-4 font-semibold text-green-600">
-                        {utils.formatCFA(sortie.total)}
+                      <td className="px-6 py-4">
+                        <span className="font-semibold text-green-600">
+                          +{utils.formatNumber(entree.quantite || 0, 1)} {entree.unite}
+                        </span>
                       </td>
-                      <td className="px-6 py-4">{sortie.vendeur?.nom}</td>
+                      <td className="px-6 py-4">{entree.source || 'Non spécifié'}</td>
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {entree.type_entree || 'Ajout'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {entree.prix_vente ? 
+                          <span className="font-semibold text-green-600">
+                            {utils.formatCFA(entree.prix_vente)}
+                          </span> : 
+                          <span className="text-gray-400">Non défini</span>
+                        }
+                      </td>
                     </tr>
                   ))
                 )}
