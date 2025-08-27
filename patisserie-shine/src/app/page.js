@@ -41,6 +41,21 @@ export default function PatisserieApp() {
     }
   }, [currentUser, passwordChangeRequired]);
 
+  // Filtrer les onglets selon permissions personnalisées
+const getVisibleTabs = (user) => {
+  if (user.username === 'proprietaire') return tabs; // Accès total
+  
+  const customPermissions = user.permissions_onglets || {};
+  return tabs.filter(tab => {
+    // Vérifier d'abord les permissions personnalisées
+    if (customPermissions.hasOwnProperty(tab.id)) {
+      return customPermissions[tab.id];
+    }
+    // Sinon utiliser les permissions par rôle par défaut
+    return !tab.adminOnly || user.role === 'admin';
+  });
+};
+
   const checkAuth = async () => {
     try {
       const { user, profile } = await authService.getCurrentUser();
@@ -318,3 +333,4 @@ export default function PatisserieApp() {
     </div>
   );
 }
+
