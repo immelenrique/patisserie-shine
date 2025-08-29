@@ -51,49 +51,169 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // ===================== SERVICES D'AUTHENTIFICATION =====================
 // ===================== SERVICES D'AUTHENTIFICATION =====================
 export const authService = {
-  // Connexion par email
+  // Fonction de connexion principale utilisée par LoginForm
   async signInWithUsername(username, password) {
     try {
-      // Conversion username vers email pour Supabase Auth
-      const email = `${username}@shine.local`
-      
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      })
-      
-      if (error) {
-        console.error('Erreur d\'authentification:', error)
-        return { user: null, profile: null, error: error.message }
+      // 1. Connexion avec Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: `${username}@patisserie-shine.com`,
+        password: password,
+      });
+
+      if (authError) {
+        return { user: null, error: authError.message };
+      }
+
+      // 2. Charger le profil de manière sécurisée
+      try {
+        // MÉTHODE 1 : Utiliser la fonction RPC si elle existe
+        const { data: profileData, error: rpcError } = await supabase
+          .rpc('get_user_profile_safe', { user_id: authData.user.id });
+        
+        if (!rpcError && profileData && profileData.length > 0) {
+          const userData = {
+            ...authData.user,
+            ...profileData[0]
+          };
+          return { user: userData, error: null };
+        }
+        
+        // MÉTHODE 2 : Requête directe simplifiée sans jointures
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, username, nom, telephone, role, actif, force_password_change, is_super_admin, permissions_onglets')
+          .eq('id', authData.user.id)
+          .single();
+        
+        if (profileError) {
+          console.error('Erreur chargement profil:', profileError);
+          
+          // Si le profil n'existe pas, retourner une erreur
+          if (profileError.code === 'PGRST116') {
+            // Déconnecter l'utilisateur
+            await supabase.auth.signOut();
+            return { 
+              user: null, 
+              error: 'Profil utilisateur non trouvé. Contactez l\'administrateur.' 
+            };
+          }
+          
+          // Pour toute autre erreur (y compris erreur 500)
+          // Déconnecter et retourner l'erreur
+          await supabase.auth.signOut();
+          return { 
+            user: null, 
+            error: 'Impossible de charger le profil. Contactez l\'administrateur.' 
+          };
+        }
+        
+        // Profil chargé avec succès
+        const userData = {
+          ...authData.user,
+          ...profile
+        };
+        
+        return { user: userData, error: null };
+        
+      } catch (profileErr) {
+        console.error('Erreur critique profil:', profileErr);
+        await supabase.auth.signOut();
+        return { 
+          user: null, 
+          error: 'Erreur lors du chargement du profil' 
+        };
       }
       
-      // Récupérer le profil utilisateur
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', data.user.id)
-        .single()
-      
-      if (profileError) {
-        console.error('Erreur profil:', profileError)
-        return { user: data.user, profile: null, error: profileError.message }
-      }
-      
-      return { user: data.user, profile, error: null }
     } catch (error) {
-      console.error('Erreur dans signInWithUsername:', error)
-      return { user: null, profile: null, error: error.message }
+      console.error('Erreur connexion:', error);
+      return { user: null, error: error.message };
     }
   },
 
-  // Obtenir l'utilisateur actuel
+  // Fonction de déconnexion
+  async signOut() {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      return { error: null };
+    } catch (error) {
+      console.error('Erreur déconnexion:', error);
+      return { error: error.message };
+    }
+  },
+
+  // Fonction pour changer le mot de passe initial
+  async changeInitialPassword(newPassword, userId) {
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) {
+        return { error: error.message };
+      }
+
+      // Mettre à jour le flag dans le profil
+      if (userId) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ 
+            force_password_change: false,
+            last_password_change: new Date().toISOString()
+          })
+          .eq('id', userId);
+
+        if (profileError) {
+          console.error('Erreur mise à jour profil:', profileError);
+        }
+      }
+
+      return { success: true, error: null };
+    } catch (error) {
+      console.error('Erreur changement mot de passe:', error);
+      return { error: error.message };
+    }
+  },
+
+  // Fonction pour récupérer la session actuelle
+  async getSession() {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      return { session, error: null };
+    } catch (error) {
+      console.error('Erreur récupération session:', error);
+      return { session: null, error: error.message };
+    }
+  },
+
+  // Fonction pour récupérer l'utilisateur actuel
   async getCurrentUser() {
     try {
-      const { data: { user }, error } = await supabase.auth.getUser()
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) throw error;
       
-      if (error || !user) {
-        return { user: null, profile: null, error: error?.message || 'Pas d\'utilisateur connecté' }
+      if (user) {
+        // Charger le profil complet
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+        
+        return { 
+          user: profile ? { ...user, ...profile } : user, 
+          error: null 
+        };
       }
+      
+      return { user: null, error: null };
+    } catch (error) {
+      console.error('Erreur récupération utilisateur:', error);
+      return { user: null, error: error.message };
+    }
+  },
+
       
       // Récupérer le profil
       const { data: profile, error: profileError } = await supabase
@@ -4620,6 +4740,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
