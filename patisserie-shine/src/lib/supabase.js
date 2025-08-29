@@ -17,14 +17,23 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: {
       getItem: (key) => {
         try {
-          return localStorage.getItem(key);
+          const item = localStorage.getItem(key);
+          // AJOUT IMPORTANT : Vérifier les données corrompues
+          if (item === 'undefined' || item === 'null' || item === '') {
+            localStorage.removeItem(key);
+            return null;
+          }
+          return item;
         } catch {
           return null;
         }
       },
       setItem: (key, value) => {
         try {
-          localStorage.setItem(key, value);
+          // AJOUT : Ne pas stocker de valeurs invalides
+          if (value !== 'undefined' && value !== 'null') {
+            localStorage.setItem(key, value);
+          }
         } catch {
           console.warn('localStorage non disponible');
         }
@@ -39,7 +48,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     }
   }
 })
-
 // ===================== SERVICES D'AUTHENTIFICATION =====================
 // ===================== SERVICES D'AUTHENTIFICATION =====================
 export const authService = {
@@ -115,6 +123,21 @@ export const authService = {
     } catch (error) {
       console.error('Erreur déconnexion:', error)
       return { error: error.message }
+    }
+  },
+   async cleanupSession() {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      
+      if (error || !session) {
+        await supabase.auth.signOut();
+        return { cleaned: true };
+      }
+      
+      return { cleaned: false };
+    } catch (error) {
+      await supabase.auth.signOut();
+      return { cleaned: true, error: error.message };
     }
   },
 
@@ -4597,6 +4620,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
