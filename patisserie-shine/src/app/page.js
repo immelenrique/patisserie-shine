@@ -21,7 +21,7 @@ import TeamManager from '../components/admin/TeamManager';
 import UserManagement from '../components/admin/UserManagement';
 import PermissionsManager from '../components/admin/PermissionsManager';
 import { Modal } from '../components/ui';
-
+import { statsService } from '../lib/supabase';
 import { supabase, authService, userService } from '../lib/supabase';
 import { permissionsService } from '../services/permissionsService';
 
@@ -40,20 +40,14 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [sessionError, setSessionError] = useState(false);
   useEffect(() => {
+useEffect(() => {
   const initializeAuth = async () => {
     try {
-      // Essayer plusieurs fois de récupérer la session
-      const { user: currentUser, error } = await authService.getCurrentUserWithRetry();
+      // Utiliser getCurrentUser (sans WithRetry qui n'existe pas)
+      const { user, profile, error } = await authService.getCurrentUser();
       
-      if (currentUser) {
-        // Récupérer le profil
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', currentUser.id)
-          .single();
-        
-        setUser({ ...currentUser, ...profile });
+      if (user && profile) {
+        setCurrentUser({ ...user, profile });
       } else {
         setSessionError(true);
       }
@@ -80,10 +74,36 @@ export default function Home() {
           .eq('id', session.user.id)
           .single();
         
-        setUser({ ...session.user, ...profile });
+        setCurrentUser({ ...session.user, profile });
         setSessionError(false);
       } else if (event === 'SIGNED_OUT') {
-        setUser(null);
+        setCurrentUser(null);
+      }
+    }
+  );
+
+  return () => subscription?.unsubscribe();
+}, []);
+  initializeAuth();
+  
+  // Écouter les changements d'état d'authentification
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    async (event, session) => {
+      console.log('Auth state change:', event);
+      
+      if (event === 'SIGNED_IN' && session) {
+        // Récupérer le profil après connexion
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        setCurrentUser({ ...session.user, profile });
+
+        setSessionError(false);
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
       }
     }
   );
@@ -494,6 +514,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
