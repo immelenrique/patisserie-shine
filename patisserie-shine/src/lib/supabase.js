@@ -63,11 +63,28 @@ export const utils = {
       year: 'numeric'
     })
   },
-  formatNumber(value) {
-    if (value === null || value === undefined) return '0'
-    return new Intl.NumberFormat('fr-FR').format(value)
+  // Calculer le pourcentage de stock restant
+  calculateStockPercentage(quantiteRestante, quantiteInitiale) {
+    if (quantiteInitiale === 0) return 0
+    return Math.round((quantiteRestante / quantiteInitiale) * 100)
   },
 
+  // Déterminer le niveau d'alerte stock
+  getStockAlertLevel(quantiteRestante, quantiteInitiale) {
+    const percentage = this.calculateStockPercentage(quantiteRestante, quantiteInitiale)
+    if (percentage <= 0) return 'rupture'
+    if (percentage <= 20) return 'critique'
+    if (percentage <= 50) return 'faible'
+    return 'normal'
+  },
+   // Formater un nombre avec séparateurs
+  formatNumber(number, decimals = 0) {
+    return new Intl.NumberFormat('fr-FR', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    }).format(number || 0)
+  }
+},
   formatDateTime(date) {
     if (!date) return ''
     return new Date(date).toLocaleDateString('fr-FR', {
@@ -2817,6 +2834,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
