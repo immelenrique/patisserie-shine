@@ -263,5 +263,8 @@ export default function PermissionsManager({ currentUser }) {
       </div>
     )}
   </div>
-}  
+</div>
+    </div>
+  );
+}
     
