@@ -12,15 +12,15 @@ import Dashboard from '../components/dashboard/Dashboard';
 // Sinon, ajustez le chemin selon votre structure réelle
 import LoginForm from '../components/auth/LoginForm'
 import StockManager from  '../components/stock/StockManager';
-import ReferentielProduits from '../components/referentiel/ReferentielProduits';
-import StockAtelier from '../components/production/StockAtelier';
-import StockBoutique from '../components/boutique/StockBoutique';
+import ReferentielManager from '../components/referentiel/ReferentielManager';
+import StockAtelierManager from '../components/stock/StockAtelierManager';
+import StockBoutiqueManager from '../components/stock/StockBoutiqueManager';
 import RecettesManager from '../components/production/RecettesManager';
 import DemandesManager from '../components/demandes/DemandesManager';
 import ProductionManager from '../components/production/ProductionManager';
-import Caisse from '@/components/Caisse'; // ou '@/components/caisse/Caisse'
-import Comptabilite from  '../components/comptabilite/ComptabiliteManager';
-import UniteManager from '../components/admin/UniteManager';
+import CaisseManager from '../components/caisse/CaisseManager';
+import ComptabiliteManager from '../components/comptabilite/ComptabiliteManager';
+import UnitesManager from '../components/admin/UnitesManager'
 import TeamManager from '../components/admin/TeamManager';
 import UserManagement from '../components/admin/UserManagement';
 import PermissionsManager from '../components/admin/PermissionsManager';
@@ -632,6 +632,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
