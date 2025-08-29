@@ -11,104 +11,34 @@ export default function LoginForm({ onLogin }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const loadUserProfile = async (userId) => {
-  try {
-    // MÉTHODE 1 : Utiliser la fonction RPC sécurisée (recommandé)
-    const { data: profileData, error: rpcError } = await supabase
-      .rpc('get_user_profile_safe', { user_id: userId });
-    
-    if (!rpcError && profileData && profileData.length > 0) {
-      return { profile: profileData[0], error: null };
-    }
-    
-    // MÉTHODE 2 : Si RPC échoue, essayer une requête directe simplifiée
-    if (rpcError) {
-      console.log('RPC échoué, tentative directe...');
-      
-      // NE PAS utiliser select('*') qui peut causer la récursion
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, username, nom, telephone, role, actif, force_password_change, is_super_admin, permissions_onglets')
-        .eq('id', userId)
-        .maybeSingle();
-      
-      if (!error && data) {
-        return { profile: data, error: null };
+  // Définir handleLogin comme une fonction séparée
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const { user, error: authError } = await authService.signInWithUsername(username, password);
+
+      if (authError) {
+        setError(authError);
+      } else if (user) {
+        onLogin(user);
+      } else {
+        setError('Utilisateur introuvable');
       }
+    } catch (err) {
+      setError('Erreur de connexion');
+      console.error('Erreur de connexion:', err);
+    } finally {
+      setIsLoading(false);
     }
-    
-    // Si les deux méthodes échouent, retourner une erreur
-    return { 
-      profile: null, 
-      error: rpcError?.message || 'Impossible de charger le profil' 
-    };
-    
-  } catch (error) {
-    console.error('Erreur chargement profil:', error);
-    return { 
-      profile: null, 
-      error: error.message 
-    };
-  }
-};
+  };
 
-// Dans votre fonction d'authentification
-const signInWithUsername = async (username, password) => {
-  try {
-    setSessionError(null);
-    
-    // 1. Connexion basique
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: `${username}@patisserie-shine.com`,
-      password: password,
-    });
-
-    if (authError) {
-      setSessionError(authError.message);
-      return { user: null, error: authError };
-    }
-
-    // 2. Charger le profil de manière sécurisée
-    const { profile, error: profileError } = await loadUserProfile(authData.user.id);
-    
-    if (profileError || !profile) {
-      console.error('Erreur profil:', profileError);
-      setSessionError('Impossible de charger le profil utilisateur. Contactez l\'administrateur.');
-      // Déconnecter l'utilisateur si le profil ne peut pas être chargé
-      await supabase.auth.signOut();
-      return { user: null, error: profileError || 'Profil non trouvé' };
-    }
-
-    // 3. Combiner les données
-    const userData = {
-      ...authData.user,
-      ...profile,
-    };
-
-    setCurrentUser(userData);
-    
-    // 4. Vérifier si changement de mot de passe requis
-    if (profile?.force_password_change) {
-      setPasswordChangeRequired(true);
-      setShowPasswordModal(true);
-    }
-
-    // 5. Charger les stats du dashboard
-    if (!profile?.force_password_change) {
-      loadDashboardStats();
-    }
-
-    return { user: userData, error: null };
-    
-  } catch (error) {
-    console.error('Erreur connexion:', error);
-    setSessionError(error.message);
-    return { user: null, error };
-  }
-};
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full">
+        {/* Logo et titre */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-r from-orange-500 to-amber-500 rounded-3xl mb-6 shadow-xl">
             <ChefHat className="h-10 w-10 text-white" />
@@ -119,15 +49,18 @@ const signInWithUsername = async (username, password) => {
           <p className="text-gray-600 text-lg">Gestion de stock professionnelle</p>
         </div>
 
+        {/* Formulaire de connexion */}
         <div className="bg-white rounded-2xl shadow-2xl p-8 border border-gray-100">
           <form onSubmit={handleLogin} className="space-y-6">
+            {/* Champ username */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label htmlFor="username" className="block text-sm font-semibold text-gray-700 mb-2">
                 Nom d'utilisateur
               </label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
+                  id="username"
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -139,18 +72,20 @@ const signInWithUsername = async (username, password) => {
               </div>
             </div>
 
+            {/* Champ password */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-2">
                 Mot de passe
               </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
                 <input
+                  id="password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  required                 
+                  required
                   autoComplete="current-password"
                   className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200 text-gray-900"
                 />
@@ -158,18 +93,21 @@ const signInWithUsername = async (username, password) => {
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                 >
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
             </div>
 
+            {/* Message d'erreur */}
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
                 {error}
               </div>
             )}
 
+            {/* Bouton de connexion */}
             <button
               type="submit"
               disabled={isLoading}
@@ -186,7 +124,17 @@ const signInWithUsername = async (username, password) => {
             </button>
           </form>
 
-          
+          {/* Information complémentaire */}
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <div className="text-center text-sm text-gray-600">
+              <p>Utilisez vos identifiants fournis par l'administrateur</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="text-center mt-6 text-sm text-gray-500">
+          <p>© 2024 Pâtisserie Shine - Tous droits réservés</p>
         </div>
       </div>
     </div>
