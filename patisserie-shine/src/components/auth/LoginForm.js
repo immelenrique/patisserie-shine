@@ -12,27 +12,27 @@ export default function LoginForm({ onLogin }) {
   const [error, setError] = useState('');
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError('');
+  e.preventDefault();
+  setIsLoading(true);
+  setError('');
 
-    try {
-      const { user, profile, error } = await authService.signInWithUsername(username, password);
-      
-      if (error) {
-        setError(error);
-      } else if (profile) {
-        onLogin(profile);
-      } else {
-        setError('Profil utilisateur introuvable');
-      }
-    } catch (err) {
-      setError('Erreur de connexion');
-      console.error('Erreur de connexion:', err);
-    } finally {
-      setIsLoading(false);
+  try {
+    const { user, error } = await authService.signInWithUsername(username, password);
+
+    if (error) {
+      setError(error.message || error);
+    } else if (user) {
+      onLogin(user); // 🔑 envoie l'user brut à Home
+    } else {
+      setError('Utilisateur introuvable');
     }
-  };
+  } catch (err) {
+    setError('Erreur de connexion');
+    console.error('Erreur de connexion:', err);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center p-4">
