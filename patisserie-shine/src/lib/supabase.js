@@ -1026,7 +1026,9 @@ export const stockAtelierService = {
 
 // ===================== SERVICES STOCK BOUTIQUE =====================
 export const stockBoutiqueService = {
-  async getStockBoutique() {
+  export const stockBoutiqueService = {
+  // Récupérer l'état du stock boutique (VERSION FINALE CORRIGÉE)
+async getStockBoutique() {
     try {
       // Essayer d'abord la vue finale
       const { data, error } = await supabase
@@ -1138,114 +1140,597 @@ export const stockBoutiqueService = {
       return await this.getStockBoutiqueDirecte()
     }
   },
-  async getAll() {
+        valeur_stock: stockReel * (item.prix_vente || 0),
+        statut_stock: this.calculateStockStatus(stockReel),
+        prix_defini: (item.prix_vente && item.prix_vente > 0),
+        type_produit: item.type_produit, // ✅ IMPORTANT : Inclure type_produit
+        transfere_par: item.transfere_par,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        derniere_maj: item.updated_at
+      };
+    });
+    
+    console.log('✅ Stock formaté avec types:', stockFormate.map(s => ({ 
+      nom: s.nom_produit, 
+      type: s.type_produit 
+    })));
+    
+    return { stock: stockFormate, error: null };
+    
+  } catch (error) {
+    console.error('Erreur dans getStockBoutique:', error);
+    return { stock: [], error: error.message };
+  }
+},
+
+  // Fonction utilitaire pour calculer le statut du stock
+  calculateStockStatus(stockReel) {
+    if (stockReel <= 0) return 'rupture'
+    if (stockReel <= 5) return 'critique'
+    if (stockReel <= 10) return 'faible'
+    return 'normal'
+  },
+  async synchroniserPrixRecettes() {
+  try {
+    console.log('🔄 Synchronisation forcée des prix recettes...');
+
+    // Récupérer tous les prix de recettes actifs
+    const { data: prixRecettes, error: prixError } = await supabase
+      .from('prix_vente_recettes')
+      .select('nom_produit, prix_vente')
+      .eq('actif', true);
+
+    if (prixError || !prixRecettes) {
+      return { success: false, error: 'Erreur récupération prix recettes' };
+    }
+
+    let corrections = 0;
+
+    // Mettre à jour chaque produit en boutique
+    for (const prixRecette of prixRecettes) {
+      const { data: stockBoutique } = await supabase
+        .from('stock_boutique')
+        .select('id, prix_vente')
+        .eq('nom_produit', prixRecette.nom_produit)
+        .single();
+
+      if (stockBoutique && stockBoutique.prix_vente !== prixRecette.prix_vente) {
+        // Corriger le prix
+        const { error: updateError } = await supabase
+          .from('stock_boutique')
+          .update({ 
+            prix_vente: prixRecette.prix_vente,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', stockBoutique.id);
+
+        if (!updateError) {
+          console.log(`✅ Prix corrigé pour ${prixRecette.nom_produit}: ${utils.formatCFA(stockBoutique.prix_vente)} → ${utils.formatCFA(prixRecette.prix_vente)}`);
+          corrections++;
+        }
+      }
+    }
+
+    console.log(`🎉 ${corrections} prix synchronisés`);
+    return { success: true, corrections };
+  } catch (error) {
+    console.error('Erreur synchronisation:', error);
+    return { success: false, error: error.message };
+  }
+},
+
+  // Méthode de fallback avec requête directe
+  async getStockBoutiqueDirecte() {
+    try {
+      console.log('🔄 Utilisation de la méthode directe pour stock boutique')
+
+      const { data, error } = await supabase
+        .from('stock_boutique')
+        .select(`
+          id,
+          produit_id,
+          quantite_disponible,
+          quantite_vendue,
+          prix_vente,
+          transfere_par,
+          created_at,
+          updated_at,
+          produits (
+            nom,
+            unites (
+              label
+            )
+          )
+        `)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Erreur requête directe stock boutique:', error)
+        return { stock: [], error: error.message }
+      }
+
+      const stockFormate = (data || []).map(item => {
+        const quantiteDisponible = item.quantite_disponible || 0
+        const quantiteVendue = item.quantite_vendue || 0
+        const stockReel = quantiteDisponible - quantiteVendue
+        const prixVente = item.prix_vente || 0
+
+        return {
+          id: item.id,
+          produit_id: item.produit_id,
+          nom_produit: item.produits?.nom || `Produit ${item.produit_id || 'Inconnu'}`,
+          unite: item.produits?.unites?.label || 'unité',
+          quantite_disponible: quantiteDisponible,
+          quantite_vendue: quantiteVendue,
+          stock_reel: stockReel,
+          prix_vente: prixVente,
+          valeur_stock: stockReel * prixVente,
+          statut_stock: stockReel <= 0 ? 'rupture' :
+                       stockReel <= 5 ? 'critique' :
+                       stockReel <= 10 ? 'faible' : 'normal',
+          prix_defini: prixVente > 0,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          derniere_maj: item.updated_at
+        }
+      })
+
+      return { stock: stockFormate, error: null }
+    } catch (error) {
+      console.error('Erreur fatale dans getStockBoutiqueDirecte:', error)
+      return { stock: [], error: error.message }
+    }
+  },
+
+  // Obtenir l'historique des entrées
+  async getHistoriqueEntrees(limit = 50) {
+    try {
+      const { data, error } = await supabase
+        .from('entrees_boutique')
+        .select(`
+          id,
+          produit_id,
+          quantite,
+          source,
+          type_entree,
+          created_at,
+          produits (
+            nom,
+            unites (
+              label
+            )
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+      if (error) {
+        console.error('Erreur getHistoriqueEntrees:', error)
+        return { entrees: [], error: error.message }
+      }
+
+      const entreesFormatees = (data || []).map(item => ({
+        ...item,
+        nom_produit: item.produits?.nom || 'Produit inconnu',
+        unite: item.produits?.unites?.label || 'unité'
+      }))
+
+      return { entrees: entreesFormatees, error: null }
+    } catch (error) {
+      console.error('Erreur dans getHistoriqueEntrees:', error)
+      return { entrees: [], error: error.message }
+    }
+  },
+
+  // Obtenir l'historique des sorties
+  async getHistoriqueSorties(limit = 50) {
+    try {
+      const { data, error } = await supabase
+        .from('sorties_boutique')
+        .select(`
+          id,
+          vente_id,
+          produit_id,
+          quantite,
+          prix_unitaire,
+          total,
+          created_at,
+          ventes (
+            vendeur:profiles (
+              nom
+            )
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+      if (error) {
+        console.error('Erreur getHistoriqueSorties:', error)
+        return { sorties: [], error: error.message }
+      }
+
+      const sortiesFormatees = (data || []).map(item => ({
+        ...item,
+        vendeur: item.ventes?.vendeur
+      }))
+
+      return { sorties: sortiesFormatees, error: null }
+    } catch (error) {
+      console.error('Erreur dans getHistoriqueSorties:', error)
+      return { sorties: [], error: error.message }
+    }
+  },
+   async updatePrixVente(stockId, nouveauPrix) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' };
+      }
+
+      if (!nouveauPrix || parseFloat(nouveauPrix) < 0) {
+        return { success: false, error: 'Prix invalide' };
+      }
+
+      // Mettre à jour le prix dans stock_boutique
+      const { data: stockMisAJour, error: stockError } = await supabase
+        .from('stock_boutique')
+        .update({
+          prix_vente: parseFloat(nouveauPrix),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', stockId)
+        .select()
+        .single();
+
+      if (stockError) {
+        console.error('Erreur mise à jour prix stock_boutique:', stockError);
+        return { success: false, error: stockError.message };
+      }
+
+      // Synchroniser avec prix_vente_produits si le produit a un produit_id
+      if (stockMisAJour.produit_id) {
+        try {
+          const { error: syncError } = await supabase
+            .from('prix_vente_produits')
+            .upsert({
+              produit_id: stockMisAJour.produit_id,
+              prix: parseFloat(nouveauPrix),
+              actif: true,
+              updated_at: new Date().toISOString()
+            });
+
+          if (syncError) {
+            console.warn('Erreur synchronisation prix_vente_produits:', syncError);
+          }
+        } catch (syncException) {
+          console.warn('Exception synchronisation prix_vente_produits:', syncException);
+        }
+      }
+
+      // Synchroniser avec prix_vente_recettes si c'est un produit de recette
+      if (stockMisAJour.nom_produit) {
+        try {
+          const { error: recetteError } = await supabase
+            .from('prix_vente_recettes')
+            .upsert({
+              nom_produit: stockMisAJour.nom_produit,
+              prix_vente: parseFloat(nouveauPrix),
+              actif: true,
+              updated_at: new Date().toISOString()
+            });
+
+          if (recetteError) {
+            console.warn('Erreur synchronisation prix_vente_recettes:', recetteError);
+          }
+        } catch (recetteException) {
+          console.warn('Exception synchronisation prix_vente_recettes:', recetteException);
+        }
+      }
+
+      return { 
+        success: true, 
+        message: `Prix mis à jour: ${utils.formatCFA(parseFloat(nouveauPrix))}`,
+        data: stockMisAJour
+      };
+    } catch (error) {
+      console.error('Erreur dans updatePrixVente:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // NOUVELLE MÉTHODE: Mettre à jour plusieurs prix en lot
+  async updateMultiplePrices(priceUpdates) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' };
+      }
+
+      if (!priceUpdates || priceUpdates.length === 0) {
+        return { success: false, error: 'Aucune mise à jour de prix fournie' };
+      }
+
+      let successes = 0;
+      let failures = 0;
+      const results = [];
+
+      for (const update of priceUpdates) {
+        const result = await this.updatePrixVente(update.stockId, update.nouveauPrix);
+
+        if (result.success) {
+          successes++;
+        } else {
+          failures++;
+        }
+
+        results.push({
+          stockId: update.stockId,
+          success: result.success,
+          error: result.error
+        });
+      }
+
+      return {
+        success: failures === 0,
+        message: `${successes} prix mis à jour avec succès, ${failures} échecs`,
+        successes,
+        failures,
+        results
+      };
+    } catch (error) {
+      console.error('Erreur dans updateMultiplePrices:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // NOUVELLE MÉTHODE: Synchroniser tous les prix avec les prix de recettes
+  async synchroniserPrixRecettes() {
+    try {
+      console.log('🔄 Synchronisation forcée des prix recettes...');
+
+      // Récupérer tous les prix de recettes actifs
+      const { data: prixRecettes, error: prixError } = await supabase
+        .from('prix_vente_recettes')
+        .select('nom_produit, prix_vente')
+        .eq('actif', true);
+
+      if (prixError) {
+        return { success: false, error: 'Erreur récupération prix recettes: ' + prixError.message };
+      }
+
+      if (!prixRecettes || prixRecettes.length === 0) {
+        return { success: true, corrections: 0, message: 'Aucun prix de recette à synchroniser' };
+      }
+
+      let corrections = 0;
+
+      // Mettre à jour chaque produit en boutique
+      for (const prixRecette of prixRecettes) {
+        try {
+          const { data: stockBoutique, error: stockError } = await supabase
+            .from('stock_boutique')
+            .select('id, prix_vente')
+            .eq('nom_produit', prixRecette.nom_produit)
+            .single();
+
+          if (!stockError && stockBoutique && stockBoutique.prix_vente !== prixRecette.prix_vente) {
+            // Corriger le prix
+            const { error: updateError } = await supabase
+              .from('stock_boutique')
+              .update({ 
+                prix_vente: prixRecette.prix_vente,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', stockBoutique.id);
+
+            if (!updateError) {
+              console.log(`✅ Prix corrigé pour ${prixRecette.nom_produit}: ${utils.formatCFA(stockBoutique.prix_vente)} → ${utils.formatCFA(prixRecette.prix_vente)}`);
+              corrections++;
+            }
+          }
+        } catch (itemError) {
+          console.warn(`Erreur pour ${prixRecette.nom_produit}:`, itemError);
+        }
+      }
+
+      console.log(`🎉 ${corrections} prix synchronisés`);
+      return { success: true, corrections };
+    } catch (error) {
+      console.error('❌ Erreur synchronisation:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // NOUVELLE MÉTHODE: Obtenir les produits sans prix défini
+  async getProduitsEtsSansPrix() {
+    try {
+      const { data, error } = await supabase
+        .from('stock_boutique')
+        .select('*')
+        .or('prix_vente.is.null,prix_vente.eq.0')
+        .gt('quantite_disponible', 0)
+        .order('nom_produit');
+
+      if (error) {
+        return { produits: [], error: error.message };
+      }
+
+      return { produits: data || [], error: null };
+    } catch (error) {
+      console.error('Erreur dans getProduitsEtsSansPrix:', error);
+      return { produits: [], error: error.message };
+    }
+  },
+
+  // NOUVELLE MÉTHODE: Définir un prix par défaut basé sur le coût
+  async definirPrixParDefaut(stockId, margePercentage = 50) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        return { success: false, error: 'Utilisateur non connecté' };
+      }
+
+      // Récupérer les informations du stock et du produit
+      const { data: stockItem, error: stockError } = await supabase
+        .from('stock_boutique')
+        .select(`
+          *,
+          produits(prix_achat)
+        `)
+        .eq('id', stockId)
+        .single();
+
+      if (stockError || !stockItem) {
+        return { success: false, error: 'Produit non trouvé' };
+      }
+
+      if (!stockItem.produits?.prix_achat) {
+        return { success: false, error: 'Prix d\'achat non défini pour ce produit' };
+      }
+
+      // Calculer le prix de vente avec la marge
+      const prixAchat = stockItem.produits.prix_achat;
+      const prixVente = prixAchat * (1 + margePercentage / 100);
+
+      // Arrondir à 2 décimales
+      const prixVenteArrondi = Math.round(prixVente * 100) / 100;
+
+      // Mettre à jour le prix
+      const updateResult = await this.updatePrixVente(stockId, prixVenteArrondi);
+
+      if (updateResult.success) {
+        return {
+          success: true,
+          message: `Prix calculé automatiquement: ${utils.formatCFA(prixVenteArrondi)} (marge ${margePercentage}%)`,
+          prixCalcule: prixVenteArrondi,
+          prixAchat: prixAchat,
+          marge: margePercentage
+        };
+      } else {
+        return updateResult;
+      }
+    } catch (error) {
+      console.error('Erreur dans definirPrixParDefaut:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // NOUVELLE MÉTHODE: Exporter les prix pour backup/import
+  async exporterPrix() {
+    try {
+      const { data, error } = await supabase
+        .from('stock_boutique')
+        .select('nom_produit, prix_vente, quantite_disponible, quantite_vendue')
+        .not('prix_vente', 'is', null)
+        .order('nom_produit');
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+
+      const csvHeaders = ['nom_produit', 'prix_vente', 'quantite_disponible', 'quantite_vendue'];
+      const csvLines = [csvHeaders.join(',')];
+
+      data.forEach(item => {
+        const line = [
+          `"${item.nom_produit}"`,
+          item.prix_vente || 0,
+          item.quantite_disponible || 0,
+          item.quantite_vendue || 0
+        ];
+        csvLines.push(line.join(','));
+      });
+
+      const csvContent = csvLines.join('\n');
+
+      return { 
+        success: true, 
+        csvContent,
+        filename: `prix_boutique_${new Date().toISOString().split('T')[0]}.csv`,
+        count: data.length
+      };
+    } catch (error) {
+      console.error('Erreur dans exporterPrix:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // NOUVELLE MÉTHODE: Calculer les statistiques de marge
+  async getStatistiquesMarge() {
     try {
       const { data, error } = await supabase
         .from('stock_boutique')
         .select(`
-          *,
-          produit:produits(id, nom, unite:unites(label))
+          nom_produit,
+          prix_vente,
+          quantite_disponible,
+          quantite_vendue,
+          produits(prix_achat, quantite)
         `)
-        .order('updated_at', { ascending: false })
-      
-      if (error) {
-        return { stocks: [], error: error.message }
-      }
-      
-      return { stocks: data || [], error: null }
-    } catch (error) {
-      console.error('Erreur dans getAll stock boutique:', error)
-      return { stocks: [], error: error.message }
-    }
-  },
-
-  async transferer(nomProduit, quantite, prixVente) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      const { data: existingStock } = await supabase
-        .from('stock_boutique')
-        .select('*')
-        .eq('nom_produit', nomProduit)
-        .single()
-
-      if (existingStock) {
-        const { data, error } = await supabase
-          .from('stock_boutique')
-          .update({
-            quantite_disponible: existingStock.quantite_disponible + quantite,
-            prix_vente: prixVente || existingStock.prix_vente,
-            transfere_par: user?.id,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingStock.id)
-          .select()
-          .single()
-
-        if (error) {
-          return { stock: null, error: error.message }
-        }
-        return { stock: data, error: null }
-      } else {
-        const { data, error } = await supabase
-          .from('stock_boutique')
-          .insert({
-            nom_produit: nomProduit,
-            quantite_disponible: quantite,
-            quantite_vendue: 0,
-            prix_vente: prixVente,
-            transfere_par: user?.id,
-            type_produit: 'vendable'
-          })
-          .select()
-          .single()
-
-        if (error) {
-          return { stock: null, error: error.message }
-        }
-        return { stock: data, error: null }
-      }
-    } catch (error) {
-      console.error('Erreur dans transferer stock boutique:', error)
-      return { stock: null, error: error.message }
-    }
-  },
-
-  async vendre(stockId, quantite) {
-    try {
-      const { data: stock } = await supabase
-        .from('stock_boutique')
-        .select('*')
-        .eq('id', stockId)
-        .single()
-
-      if (!stock) {
-        return { success: false, error: 'Stock non trouvé' }
-      }
-
-      if (stock.quantite_disponible < quantite) {
-        return { success: false, error: 'Stock insuffisant' }
-      }
-
-      const { error } = await supabase
-        .from('stock_boutique')
-        .update({
-          quantite_disponible: stock.quantite_disponible - quantite,
-          quantite_vendue: stock.quantite_vendue + quantite,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', stockId)
+        .not('prix_vente', 'is', null)
+        .gt('prix_vente', 0);
 
       if (error) {
-        return { success: false, error: error.message }
+        return { stats: null, error: error.message };
       }
 
-      return { success: true, error: null }
+      const statistiques = {
+        produits_avec_prix: data.length,
+        marge_moyenne: 0,
+        marge_min: Infinity,
+        marge_max: -Infinity,
+        chiffre_affaires_potentiel: 0,
+        valeur_stock_total: 0,
+        produits_detailles: []
+      };
+
+      let margesValides = [];
+
+      data.forEach(item => {
+        const prixVente = item.prix_vente || 0;
+        const prixAchat = item.produits?.prix_achat || 0;
+        const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0);
+
+        if (prixAchat > 0) {
+          const marge = ((prixVente - prixAchat) / prixAchat) * 100;
+          margesValides.push(marge);
+
+          if (marge < statistiques.marge_min) statistiques.marge_min = marge;
+          if (marge > statistiques.marge_max) statistiques.marge_max = marge;
+        }
+
+        const valeurStock = stockReel * prixVente;
+        statistiques.chiffre_affaires_potentiel += valeurStock;
+        statistiques.valeur_stock_total += valeurStock;
+
+        statistiques.produits_detailles.push({
+          nom: item.nom_produit,
+          prix_vente: prixVente,
+          prix_achat: prixAchat,
+          stock_reel: stockReel,
+          marge_pourcentage: prixAchat > 0 ? ((prixVente - prixAchat) / prixAchat) * 100 : 0,
+          valeur_stock: valeurStock
+        });
+      });
+
+      if (margesValides.length > 0) {
+        statistiques.marge_moyenne = margesValides.reduce((sum, marge) => sum + marge, 0) / margesValides.length;
+      }
+
+      if (statistiques.marge_min === Infinity) statistiques.marge_min = 0;
+      if (statistiques.marge_max === -Infinity) statistiques.marge_max = 0;
+
+      return { stats: statistiques, error: null };
     } catch (error) {
-      console.error('Erreur dans vendre stock boutique:', error)
-      return { success: false, error: error.message }
+      console.error('Erreur dans getStatistiquesMarge:', error);
+      return { stats: null, error: error.message };
     }
   }
+
 }
 
 // ===================== SERVICES PRIX =====================
@@ -1368,170 +1853,330 @@ export const prixService = {
 
 // ===================== SERVICES CAISSE =====================
 export const caisseService = {
-  async creerVente(venteData) {
+  export const caisseService = {
+  // Vérifier la disponibilité des produits avec prix
+  async getProduitsDisponiblesCaisse() {
+    try {
+      // Essayer d'abord la vue finale
+      const { data: stockBoutique, error } = await supabase
+        .from('vue_stock_boutique_final')
+        .select('*')
+        .gt('stock_reel', 0)
+        .gt('prix_vente', 0)
+
+      if (error) {
+        console.warn('Vue finale échouée pour caisse, fallback direct:', error)
+
+        // Fallback : requête directe
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('stock_boutique')
+          .select(`
+            produit_id,
+            quantite_disponible,
+            quantite_vendue,
+            prix_vente,
+            produits (
+              nom,
+              unites (
+                label
+              )
+            )
+          `)
+          .gt('quantite_disponible', 0)
+          .not('prix_vente', 'is', null)
+          .gt('prix_vente', 0)
+
+        if (fallbackError) {
+          return { produits: [], error: fallbackError.message }
+        }
+
+        const produitsFormates = (fallbackData || []).map(item => {
+          const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0)
+          return {
+            id: item.produit_id,
+            nom_produit: item.produits?.nom || 'Produit',
+            unite: item.produits?.unites?.label || 'unité',
+            stock_reel: stockReel,
+            prix_vente: item.prix_vente,
+            prix_defini: true
+          }
+        }).filter(p => p.stock_reel > 0)
+
+        return { produits: produitsFormates, error: null }
+      }
+
+      // Formater les données de la vue finale
+      const produitsFormates = (stockBoutique || []).map(item => ({
+        id: item.produit_id,
+        nom_produit: item.nom_produit,
+        unite: item.unite_label,
+        stock_reel: item.stock_reel,
+        prix_vente: item.prix_vente,
+        prix_defini: item.prix_defini
+      })).filter(p => p.stock_reel > 0 && p.prix_defini)
+
+      return { produits: produitsFormates, error: null }
+    } catch (error) {
+      console.error('Erreur dans getProduitsDisponiblesCaisse:', error)
+      return { produits: [], error: error.message }
+    }
+  },
+
+  // Enregistrer une vente (méthode manuelle corrigée)
+  async enregistrerVente(venteData) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      
-      const numeroTicket = `T${Date.now()}`
-      
+
+      if (!user) {
+        return { vente: null, error: 'Utilisateur non connecté' }
+      }
+
+      const numeroTicket = 'V-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5)
+
+      // Créer la vente
       const { data: vente, error: venteError } = await supabase
         .from('ventes')
         .insert({
           numero_ticket: numeroTicket,
           total: venteData.total,
-          montant_donne: venteData.montantDonne,
-          monnaie_rendue: venteData.monnaieRendue,
-          vendeur_id: user?.id,
+          montant_donne: venteData.montant_donne,
+          monnaie_rendue: venteData.monnaie_rendue,
+          vendeur_id: venteData.vendeur_id,
           statut: 'validee'
         })
         .select()
         .single()
 
-      if (venteError) {
-        return { vente: null, error: venteError.message }
-      }
+      if (venteError) throw venteError
 
-      const lignesVente = venteData.articles.map(article => ({
-        vente_id: vente.id,
-        produit_id: article.produit_id,
-        nom_produit: article.nom_produit,
-        quantite: article.quantite,
-        prix_unitaire: article.prix_unitaire,
-        total: article.total
-      }))
+      // Traiter chaque article
+      for (const item of venteData.items) {
+        // Insérer la ligne de vente
+        await supabase
+          .from('lignes_vente')
+          .insert({
+            vente_id: vente.id,
+            produit_id: item.id,
+            nom_produit: item.nom,
+            quantite: item.quantite,
+            prix_unitaire: item.prix,
+            total: item.quantite * item.prix
+          })
 
-      const { error: lignesError } = await supabase
-        .from('lignes_vente')
-        .insert(lignesVente)
+        // Insérer dans les sorties boutique
+        await supabase
+          .from('sorties_boutique')
+          .insert({
+            vente_id: vente.id,
+            produit_id: item.id,
+            quantite: item.quantite,
+            prix_unitaire: item.prix,
+            total: item.quantite * item.prix
+          })
 
-      if (lignesError) {
-        await supabase.from('ventes').delete().eq('id', vente.id)
-        return { vente: null, error: lignesError.message }
-      }
+        // Mettre à jour le stock boutique
+        const { data: stockActuel } = await supabase
+          .from('stock_boutique')
+          .select('quantite_vendue')
+          .eq('produit_id', item.id)
+          .single()
 
-      for (const article of venteData.articles) {
-        if (article.stock_boutique_id) {
-          await stockBoutiqueService.vendre(article.stock_boutique_id, article.quantite)
+        if (stockActuel) {
+          await supabase
+            .from('stock_boutique')
+            .update({
+              quantite_vendue: (stockActuel.quantite_vendue || 0) + item.quantite,
+              updated_at: new Date().toISOString()
+            })
+            .eq('produit_id', item.id)
         }
       }
 
-      return { vente: { ...vente, lignes: lignesVente }, error: null }
+      return { 
+        vente: {
+          ...vente,
+          items: venteData.items
+        }, 
+        error: null 
+      }
     } catch (error) {
-      console.error('Erreur dans creerVente:', error)
+      console.error('Erreur enregistrerVente:', error)
       return { vente: null, error: error.message }
     }
-  },
+  },async getVentesPeriode(dateDebut, dateFin) {
+  try {
+    const { data: ventes, error } = await supabase
+      .from('ventes')
+      .select(`
+        id,
+        numero_ticket,
+        total,
+        montant_donne,
+        monnaie_rendue,
+        created_at,
+        vendeur:profiles!ventes_vendeur_id_fkey(nom)
+      `)
+      .gte('created_at', dateDebut + 'T00:00:00.000Z')
+      .lte('created_at', dateFin + 'T23:59:59.999Z')
+      .eq('statut', 'validee')
+      .order('created_at', { ascending: false })
 
+    if (error) {
+      console.error('Erreur getVentesPeriode:', error)
+      return { ventes: [], error: error.message }
+    }
+
+    // Récupérer les items pour chaque vente
+    const ventesAvecItems = await Promise.all(
+      (ventes || []).map(async (vente) => {
+        try {
+          const { data: items } = await supabase
+            .from('lignes_vente')
+            .select('*')
+            .eq('vente_id', vente.id)
+
+          return { ...vente, items: items || [] }
+        } catch (err) {
+          return { ...vente, items: [] }
+        }
+      })
+    )
+
+    return { ventes: ventesAvecItems, error: null }
+  } catch (error) {
+    console.error('Erreur dans getVentesPeriode:', error)
+    return { ventes: [], error: error.message }
+  }
+},
+
+  // Obtenir les ventes du jour
   async getVentesJour(date = null) {
     try {
-      const dateVente = date || new Date().toISOString().split('T')[0]
-      
-      const { data, error } = await supabase
+      const dateRecherche = date || new Date().toISOString().split('T')[0]
+
+      const { data: ventes, error } = await supabase
         .from('ventes')
         .select(`
-          *,
-          vendeur:profiles!ventes_vendeur_id_fkey(nom),
-          lignes_vente(*)
+          id,
+          numero_ticket,
+          total,
+          montant_donne,
+          monnaie_rendue,
+          created_at,
+          vendeur:profiles!ventes_vendeur_id_fkey(nom)
         `)
-        .gte('created_at', `${dateVente}T00:00:00`)
-        .lt('created_at', `${dateVente}T23:59:59`)
+        .gte('created_at', dateRecherche + 'T00:00:00.000Z')
+        .lt('created_at', dateRecherche + 'T23:59:59.999Z')
+        .eq('statut', 'validee')
         .order('created_at', { ascending: false })
 
       if (error) {
+        console.error('Erreur getVentesJour:', error)
         return { ventes: [], error: error.message }
       }
 
-      return { ventes: data || [], error: null }
+      // Récupérer les items pour chaque vente
+      const ventesAvecItems = await Promise.all(
+        (ventes || []).map(async (vente) => {
+          try {
+            const { data: items } = await supabase
+              .from('lignes_vente')
+              .select('*')
+              .eq('vente_id', vente.id)
+
+            return { ...vente, items: items || [] }
+          } catch (err) {
+            return { ...vente, items: [] }
+          }
+        })
+      )
+
+      return { ventes: ventesAvecItems, error: null }
     } catch (error) {
       console.error('Erreur dans getVentesJour:', error)
       return { ventes: [], error: error.message }
     }
   },
-
-  async annulerVente(venteId) {
+   // Obtenir les produits les plus vendus
+  async getProduitsTopVentes(limit = 10, periode = 'mois') {
     try {
-      const { data: vente } = await supabase
-        .from('ventes')
+      let dateDebut = '';
+      const aujourdhui = new Date();
+
+      // Calculer la période selon le paramètre
+      if (periode === 'semaine') {
+        const semaineDerniere = new Date(aujourdhui.getTime() - 7 * 24 * 60 * 60 * 1000);
+        dateDebut = semaineDerniere.toISOString().split('T')[0];
+      } else if (periode === 'mois') {
+        const moisDernier = new Date(aujourdhui.getFullYear(), aujourdhui.getMonth(), 1);
+        dateDebut = moisDernier.toISOString().split('T')[0];
+      } else if (periode === 'annee') {
+        const anneeDerniere = new Date(aujourdhui.getFullYear(), 0, 1);
+        dateDebut = anneeDerniere.toISOString().split('T')[0];
+      } else {
+        // Par défaut, derniers 30 jours
+        const trenteDerniers = new Date(aujourdhui.getTime() - 30 * 24 * 60 * 60 * 1000);
+        dateDebut = trenteDerniers.toISOString().split('T')[0];
+      }
+
+      const dateFin = aujourdhui.toISOString().split('T')[0];
+
+      // Récupérer les lignes de vente pour la période
+      const { data: lignesVente, error } = await supabase
+        .from('lignes_vente')
         .select(`
-          *,
-          lignes_vente(*)
+          nom_produit,
+          quantite,
+          prix_unitaire,
+          total,
+          created_at
         `)
-        .eq('id', venteId)
-        .single()
+        .gte('created_at', dateDebut + 'T00:00:00.000Z')
+        .lte('created_at', dateFin + 'T23:59:59.999Z')
+        .order('created_at', { ascending: false })
 
-      if (!vente) {
-        return { success: false, error: 'Vente non trouvée' }
+      if (error) {
+        console.error('Erreur getProduitsTopVentes:', error)
+        return { produits: [], error: error.message }
       }
 
-      const { error: updateError } = await supabase
-        .from('ventes')
-        .update({ statut: 'annulee' })
-        .eq('id', venteId)
+      // Grouper par produit et calculer les totaux
+      const produitsGroupes = {}
 
-      if (updateError) {
-        return { success: false, error: updateError.message }
-      }
-
-      for (const ligne of vente.lignes_vente) {
-        const { data: stockBoutique } = await supabase
-          .from('stock_boutique')
-          .select('*')
-          .eq('nom_produit', ligne.nom_produit)
-          .single()
-
-        if (stockBoutique) {
-          await supabase
-            .from('stock_boutique')
-            .update({
-              quantite_disponible: stockBoutique.quantite_disponible + ligne.quantite,
-              quantite_vendue: Math.max(0, stockBoutique.quantite_vendue - ligne.quantite)
-            })
-            .eq('id', stockBoutique.id)
+      lignesVente.forEach(ligne => {
+        const nom = ligne.nom_produit
+        if (!produitsGroupes[nom]) {
+          produitsGroupes[nom] = {
+            nom_produit: nom,
+            quantite_vendue: 0,
+            chiffre_affaires: 0,
+            nombre_ventes: 0
+          }
         }
-      }
 
-      return { success: true, error: null }
+        produitsGroupes[nom].quantite_vendue += ligne.quantite || 0
+        produitsGroupes[nom].chiffre_affaires += ligne.total || 0
+        produitsGroupes[nom].nombre_ventes += 1
+      })
+
+      // Convertir en tableau et trier par chiffre d'affaires
+      const produitsArray = Object.values(produitsGroupes)
+        .sort((a, b) => b.chiffre_affaires - a.chiffre_affaires)
+        .slice(0, limit)
+
+      return { produits: produitsArray, error: null }
     } catch (error) {
-      console.error('Erreur dans annulerVente:', error)
-      return { success: false, error: error.message }
-    }
-  },
-
-  async getArretCaisse(date = null) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      const dateArret = date || new Date().toISOString().split('T')[0]
-      
-      const { data: ventes } = await supabase
-        .from('ventes')
-        .select('*')
-        .eq('vendeur_id', user?.id)
-        .eq('statut', 'validee')
-        .gte('created_at', `${dateArret}T00:00:00`)
-        .lt('created_at', `${dateArret}T23:59:59`)
-
-      const chiffreAffaires = ventes?.reduce((sum, v) => sum + parseFloat(v.total), 0) || 0
-      const nombreVentes = ventes?.length || 0
-
-      return {
-        arret: {
-          date: dateArret,
-          vendeur_id: user?.id,
-          nombre_ventes: nombreVentes,
-          chiffre_affaires: chiffreAffaires,
-          ventes: ventes || []
-        },
-        error: null
-      }
-    } catch (error) {
-      console.error('Erreur dans getArretCaisse:', error)
-      return { arret: null, error: error.message }
+      console.error('Erreur dans getProduitsTopVentes:', error)
+      return { produits: [], error: error.message }
     }
   }
 }
 
+
+
 // ===================== SERVICES COMPTABILITÉ =====================
 export const comptabiliteService = {
+  export const comptabiliteService = {
   // Calculer les vraies dépenses depuis la base de données
   async getDepensesReelles(dateDebut, dateFin) {
     try {
@@ -1984,7 +2629,6 @@ export const comptabiliteService = {
     return lignes.join('\n')
   }
 }
-
 
 // ===================== SERVICES PRODUCTION =====================
 export const productionService = {
@@ -2751,6 +3395,7 @@ export const backupService = {
 
 // Export par défaut
 export default supabase
+
 
 
 
