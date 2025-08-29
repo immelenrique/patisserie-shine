@@ -10,7 +10,7 @@ import Dashboard from '../components/dashboard/Dashboard';
 
 // Si ces fichiers existent directement dans components/
 // Sinon, ajustez le chemin selon votre structure réelle
-import Login from '../components/auth/Login' si dans un sous-dossier
+import LoginForm from '../components/auth/LoginForm'
 import StockManager from  '../components/stock/StockManager';
 import ReferentielProduits from '../components/referentiel/ReferentielProduits';
 import StockAtelier from '../components/production/StockAtelier';
@@ -632,6 +632,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
