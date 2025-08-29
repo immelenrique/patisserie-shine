@@ -79,9 +79,17 @@ export const utils = {
 
 // ===================== SERVICES D'AUTHENTIFICATION =====================
 export const authService = {
-  async signInWithUsername(username, password) {
+   async signInWithUsername(usernameOrEmail, password) {
     try {
-      const email = `${username}@@shine.local`
+      // Déterminer si c'est un email ou un username
+      let email = usernameOrEmail;
+      
+      // Si ce n'est pas un email (pas de @), ajouter le domaine
+      if (!usernameOrEmail.includes('@')) {
+        email = `${usernameOrEmail}@patisserie-shine.com`;
+      }
+      
+      console.log('Tentative de connexion avec:', email);
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -90,13 +98,23 @@ export const authService = {
       
       if (error) {
         console.error('Erreur d\'authentification:', error)
+        
+        // Messages d'erreur plus clairs
         if (error.message.includes('Invalid login credentials')) {
-          return { user: null, error: 'Nom d\'utilisateur ou mot de passe incorrect' }
+          return { 
+            user: null, 
+            error: 'Email ou mot de passe incorrect. Vérifiez vos identifiants.' 
+          }
+        }
+        if (error.message.includes('Email not confirmed')) {
+          return { 
+            user: null, 
+            error: 'Email non confirmé. Vérifiez votre boîte mail.' 
+          }
         }
         return { user: null, error: error.message }
-      }
-      
-      const { data: profile, error: profileError } = await supabase
+        
+     const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', data.user.id)
@@ -104,54 +122,51 @@ export const authService = {
       
       if (profileError) {
         console.error('Erreur profil:', profileError)
-        if (profileError.message?.includes('infinite recursion')) {
-          const { data: simpleProfile } = await supabase
+        
+        // Si le profil n'existe pas, le créer
+        if (profileError.code === 'PGRST116') {
+          const username = email.split('@')[0];
+          
+          const { data: newProfile, error: createError } = await supabase
             .from('profiles')
-            .select('id, username, nom, telephone, role, actif, force_password_change, is_super_admin')
-            .eq('id', data.user.id)
+            .insert({
+              id: data.user.id,
+              username: username,
+              nom: username,
+              role: 'employe_boutique',
+              actif: true,
+              force_password_change: true
+            })
+            .select()
             .single()
           
-          if (simpleProfile) {
-            return { user: { ...data.user, ...simpleProfile }, error: null }
+          if (createError) {
+            console.error('Erreur création profil:', createError)
+            return { user: data.user, error: 'Profil non créé - contactez l\'admin' }
           }
+          
+          return { user: { ...data.user, ...newProfile }, error: null }
         }
+        
+        // Pour les autres erreurs de profil
         return { user: data.user, error: 'Profil non chargé - contactez l\'admin' }
       }
       
+      // Vérifier si le compte est actif
+      if (!profile.actif) {
+        await supabase.auth.signOut()
+        return { user: null, error: 'Compte désactivé. Contactez l\'administrateur.' }
+      }
+      
+      // Retourner l'utilisateur avec son profil complet
       return { user: { ...data.user, ...profile }, error: null }
       
     } catch (error) {
       console.error('Erreur dans signInWithUsername:', error)
-      return { user: null, error: 'Erreur de connexion' }
+      return { user: null, error: 'Erreur de connexion. Réessayez plus tard.' }
     }
   },
-
-  async getCurrentUser() {
-    try {
-      const { data: { user }, error } = await supabase.auth.getUser()
-      
-      if (error || !user) {
-        return { user: null, profile: null, error: error?.message || 'Pas d\'utilisateur connecté' }
-      }
-      
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single()
-      
-      if (profileError) {
-        console.error('Erreur récupération profil:', profileError)
-        return { user, profile: null, error: null }
-      }
-      
-      return { user, profile, error: null }
-    } catch (error) {
-      console.error('Erreur getCurrentUser:', error)
-      return { user: null, profile: null, error: error.message }
-    }
-  },
-
+  
   async signOut() {
     try {
       const { error } = await supabase.auth.signOut()
@@ -2248,4 +2263,5 @@ export const backupService = {
 
 // Export par défaut
 export default supabase
+
 
