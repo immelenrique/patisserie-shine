@@ -44,7 +44,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       }
     }
   }
-})
+}
 
 // ===================== UTILS =====================
 export const utils = {
@@ -2847,6 +2847,7 @@ export const permissionService = {
       return { success: false, error: error.message }
     }
   }
+
 
 
 
