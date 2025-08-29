@@ -54,14 +54,36 @@ export const authService = {
     }
   },
 // Ajouter cette méthode dans authService
-async changeInitialPassword(newPassword) {
+async changeInitialPassword(newPassword, userId) {
   try {
+    // Si pas d'userId fourni, essayer de le récupérer
+    let userIdToUse = userId;
+    
+    if (!userIdToUse) {
+      // Essayer de récupérer l'utilisateur même sans session complète
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          userIdToUse = user.id;
+        }
+      } catch (error) {
+        console.warn('Impossible de récupérer l\'utilisateur, utilisation du fallback');
+      }
+    }
+    
+    if (!userIdToUse) {
+      return { success: false, error: 'Impossible d\'identifier l\'utilisateur' };
+    }
+
     const response = await fetch('/api/auth/change-initial-password', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ newPassword })
+      body: JSON.stringify({ 
+        userId: userIdToUse,
+        newPassword 
+      })
     });
 
     const data = await response.json();
@@ -75,6 +97,26 @@ async changeInitialPassword(newPassword) {
     console.error('Erreur changeInitialPassword:', error);
     return { success: false, error: error.message };
   }
+},
+
+// Ajouter une méthode pour récupérer l'utilisateur avec retry
+async getCurrentUserWithRetry(maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (user) return { user, error: null };
+      
+      if (error && i < maxRetries - 1) {
+        console.log(`Tentative ${i + 1} échouée, nouvelle tentative...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    } catch (error) {
+      if (i === maxRetries - 1) {
+        return { user: null, error: error.message };
+      }
+    }
+  }
+  return { user: null, error: 'Impossible de récupérer l\'utilisateur' };
 },
   // Mettre à jour le mot de passe de l'utilisateur connecté
   async updatePassword(newPassword) {
@@ -4651,6 +4693,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
