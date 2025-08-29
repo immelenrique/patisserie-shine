@@ -67,49 +67,41 @@ useEffect(() => {
 
   const initializeAuth = async () => {
     try {
-      // ✅ vérifier qu’on est bien dans le navigateur
-      if (typeof window === "undefined") return;
-
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       if (!mounted) return;
 
       if (session?.user) {
+        // ⚡ mettre immédiatement l'user brut
+        setCurrentUser(session.user);
+
+        // 🔎 charger le profil en parallèle
         const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
+          .from("profiles")
+          .select("*")
+          .eq("id", session.user.id)
           .single();
-        
+
         if (profile) {
           setCurrentUser({ ...session.user, profile });
         }
       }
     } catch (error) {
-      console.error('Erreur init:', error);
+      console.error("Erreur init:", error);
     } finally {
       if (mounted) {
-        setLoading(false); // 🔑 sortir du "chargement infini"
+        setLoading(false); // ⚡ ne jamais bloquer ici
       }
     }
   };
 
   initializeAuth();
 
-  // Listener auth
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-
-        if (profile) {
-          setCurrentUser({ ...session.user, profile });
-        }
-      } else if (event === 'SIGNED_OUT') {
+      if (event === "SIGNED_IN" && session) {
+        setCurrentUser(session.user);
+      } else if (event === "SIGNED_OUT") {
         setCurrentUser(null);
       }
     }
@@ -120,6 +112,7 @@ useEffect(() => {
     subscription?.unsubscribe();
   };
 }, []);
+
 
 
  
@@ -517,6 +510,7 @@ useEffect(() => {
     </div>
   );
 }
+
 
 
 
