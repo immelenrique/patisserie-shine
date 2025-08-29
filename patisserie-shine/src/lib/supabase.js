@@ -86,7 +86,7 @@ export const authService = {
       
       // Si ce n'est pas un email (pas de @), ajouter le domaine
       if (!usernameOrEmail.includes('@')) {
-        email = `${usernameOrEmail}@patisserie-shine.com`;
+        email = `${usernameOrEmail}@shine.local`;
       }
       
       console.log('Tentative de connexion avec:', email);
@@ -2263,5 +2263,6 @@ export const backupService = {
 
 // Export par défaut
 export default supabase
+
 
 
