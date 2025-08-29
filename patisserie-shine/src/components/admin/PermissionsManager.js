@@ -15,6 +15,64 @@ export default function PermissionsManager({ currentUser }) {
   useEffect(() => {
     loadData();
   }, []);
+    // Ajouter dans PermissionsManager.js après la ligne 16
+  const [users, setUsers] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [userPermissions, setUserPermissions] = useState([]);
+  
+  // Ajouter cette fonction pour charger les utilisateurs
+  const loadUsers = async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('nom');
+    
+    if (!error) {
+      setUsers(data || []);
+    }
+  };
+  
+  // Ajouter cette fonction pour gérer les permissions d'un utilisateur
+  const togglePermission = async (userId, permissionId, granted) => {
+    if (granted) {
+      // Retirer la permission
+      await supabase
+        .from('user_permissions')
+        .delete()
+        .eq('user_id', userId)
+        .eq('permission_id', permissionId);
+    } else {
+      // Ajouter la permission
+      await supabase
+        .from('user_permissions')
+        .insert({
+          user_id: userId,
+          permission_id: permissionId,
+          granted: true,
+          accorded_by: currentUser.id
+        });
+    }
+    
+    // Recharger les permissions de l'utilisateur
+    loadUserPermissions(userId);
+  };
+  
+  // Ajouter cette fonction pour charger les permissions d'un utilisateur
+  const loadUserPermissions = async (userId) => {
+    const { data } = await supabase
+      .from('user_permissions')
+      .select('permission_id')
+      .eq('user_id', userId);
+    
+    setUserPermissions(data?.map(p => p.permission_id) || []);
+    setSelectedUser(userId);
+  };
+  
+  // Modifier useEffect pour charger aussi les utilisateurs
+  useEffect(() => {
+    loadData();
+    loadUsers();
+  }, []);
 
   const loadData = async () => {
     try {
