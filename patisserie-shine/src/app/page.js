@@ -120,7 +120,7 @@ useEffect(() => {
     mounted = false;
     subscription?.unsubscribe();
   };
-}, []);S
+}, []);
 
  
 
@@ -517,6 +517,7 @@ useEffect(() => {
     </div>
   );
 }
+
 
 
 
