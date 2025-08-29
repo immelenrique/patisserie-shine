@@ -64,47 +64,42 @@ export default function Home() {
 
 useEffect(() => {
   let mounted = true;
-  let initCompleted = false;
   
   const initializeAuth = async () => {
-    if (initCompleted) return;
-    initCompleted = true;
-    
     try {
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Timeout')), 5000)
-      );
-      
-      const authPromise = authService.getCurrentUser();
-      
-      const result = await Promise.race([authPromise, timeoutPromise]);
+      // Récupérer juste la session sans appeler getCurrentUser
+      const { data: { session } } = await supabase.auth.getSession();
       
       if (!mounted) return;
       
-      if (result?.user && result?.profile) {
-        setCurrentUser({ ...result.user, profile: result.profile });
+      if (session?.user) {
+        // Récupérer le profil directement
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (profile) {
+          setCurrentUser({ ...session.user, profile });
+        }
       }
-      
-      setLoading(false);
       
     } catch (error) {
       console.error('Erreur init:', error);
+    } finally {
       if (mounted) {
         setLoading(false);
-        setSessionError(true);
       }
     }
   };
-
-  setTimeout(() => {
-    if (mounted) initializeAuth();
-  }, 100);
   
-  // CORRECTION: Structure correcte pour Supabase v2
+  // Appeler immédiatement
+  initializeAuth();
+  
+  // Listener pour les changements
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
-      console.log('Auth state change:', event);
-      
       if (event === 'SIGNED_IN' && session) {
         const { data: profile } = await supabase
           .from('profiles')
@@ -112,8 +107,9 @@ useEffect(() => {
           .eq('id', session.user.id)
           .single();
         
-        setCurrentUser({ ...session.user, profile });
-        setSessionError(false);
+        if (profile) {
+          setCurrentUser({ ...session.user, profile });
+        }
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
       }
@@ -122,9 +118,9 @@ useEffect(() => {
   
   return () => {
     mounted = false;
-    subscription?.unsubscribe(); // Correction ici
+    subscription?.unsubscribe();
   };
-}, []);
+}, []);S
 
  
 
@@ -521,6 +517,7 @@ useEffect(() => {
     </div>
   );
 }
+
 
 
 
