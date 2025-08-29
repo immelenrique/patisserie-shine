@@ -53,7 +53,29 @@ export const authService = {
       return { user: null, profile: null, error: error.message }
     }
   },
+// Ajouter cette méthode dans authService
+async changeInitialPassword(newPassword) {
+  try {
+    const response = await fetch('/api/auth/change-initial-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ newPassword })
+    });
 
+    const data = await response.json();
+
+    if (!response.ok) {
+      return { success: false, error: data.error || 'Erreur lors du changement de mot de passe' };
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Erreur changeInitialPassword:', error);
+    return { success: false, error: error.message };
+  }
+},
   // Mettre à jour le mot de passe de l'utilisateur connecté
   async updatePassword(newPassword) {
     try {
@@ -4629,6 +4651,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
