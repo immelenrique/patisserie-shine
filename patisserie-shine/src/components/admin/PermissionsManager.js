@@ -147,7 +147,7 @@ export default function PermissionsManager({ currentUser }) {
           <Lock className="inline-block w-4 h-4 mr-2" />
           Permissions ({permissions.length})
         </button>
-           {/* 🔴 AJOUT 4 : Nouveau bouton */}
+         
     <button
       onClick={() => setActiveTab('attribution')}
       className={`pb-2 px-4 ${activeTab === 'attribution' ? 'border-b-2 border-orange-600 text-orange-600' : 'text-gray-600'}`}
@@ -264,7 +264,4 @@ export default function PermissionsManager({ currentUser }) {
     )}
   </div>
 }  
-      </div>
-    </div>
-  );
-}
+    
