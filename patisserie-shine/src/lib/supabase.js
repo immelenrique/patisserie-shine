@@ -2387,6 +2387,25 @@ export const recetteService = {
       return { success: false, error: error.message }
     }
   },
+  async getProduitsRecettes() {
+    try {
+      const { data, error } = await supabase
+        .from('recettes')
+        .select('nom_produit')
+        .order('nom_produit')
+
+      if (error) {
+        console.error('Erreur getProduitsRecettes:', error)
+        return { produits: [], error: error.message }
+      }
+
+      const nomsUniques = [...new Set((data || []).map(item => item.nom_produit))].sort()
+      return { produits: nomsUniques, error: null }
+    } catch (error) {
+      console.error('Erreur dans getProduitsRecettes:', error)
+      return { produits: [], error: error.message }
+    }
+  },
 
   async calculerBesoins(nomProduit, quantite) {
     try {
@@ -2834,6 +2853,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
