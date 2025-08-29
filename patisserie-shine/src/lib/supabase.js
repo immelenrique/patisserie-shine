@@ -1,4 +1,4 @@
-// lib/supabase.js - Configuration Supabase pour Pâtisserie Shine (VERSION FINALE)
+// lib/supabase.js - Configuration Supabase pour Pâtisserie Shine (VERSION COMPLÈTE CORRIGÉE)
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -18,8 +18,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 })
 
 // ===================== SERVICES D'AUTHENTIFICATION =====================
+// ===================== SERVICES D'AUTHENTIFICATION =====================
 export const authService = {
-  // Connexion par email (existant, amélioré)
+  // Connexion par email
   async signInWithUsername(username, password) {
     try {
       // Conversion username vers email pour Supabase Auth
@@ -53,91 +54,88 @@ export const authService = {
       return { user: null, profile: null, error: error.message }
     }
   },
-// Ajouter cette méthode dans authService
-async changeInitialPassword(newPassword, userId) {
-  try {
-    // Si pas d'userId fourni, essayer de le récupérer
-    let userIdToUse = userId;
-    
-    if (!userIdToUse) {
-      // Essayer de récupérer l'utilisateur même sans session complète
-      try {
+
+  // Obtenir l'utilisateur actuel
+  async getCurrentUser() {
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser()
+      
+      if (error || !user) {
+        return { user: null, profile: null, error: error?.message || 'Pas d\'utilisateur connecté' }
+      }
+      
+      // Récupérer le profil
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+      
+      if (profileError) {
+        console.error('Erreur récupération profil:', profileError)
+        return { user, profile: null, error: profileError.message }
+      }
+      
+      return { user, profile, error: null }
+    } catch (error) {
+      console.error('Erreur getCurrentUser:', error)
+      return { user: null, profile: null, error: error.message }
+    }
+  },
+
+  // Déconnexion
+  async signOut() {
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+      return { error: null }
+    } catch (error) {
+      console.error('Erreur déconnexion:', error)
+      return { error: error.message }
+    }
+  },
+
+  // Changer le mot de passe initial
+  async changeInitialPassword(newPassword, userId) {
+    try {
+      let userIdToUse = userId;
+      
+      if (!userIdToUse) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           userIdToUse = user.id;
         }
-      } catch (error) {
-        console.warn('Impossible de récupérer l\'utilisateur, utilisation du fallback');
       }
-    }
-    
-    if (!userIdToUse) {
-      return { success: false, error: 'Impossible d\'identifier l\'utilisateur' };
-    }
+      
+      if (!userIdToUse) {
+        return { success: false, error: 'Utilisateur non identifié' }
+      }
 
-    const response = await fetch('/api/auth/change-initial-password', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        userId: userIdToUse,
-        newPassword 
+      const response = await fetch('/api/auth/change-initial-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: userIdToUse,
+          newPassword: newPassword
+        })
       })
-    });
 
-    const data = await response.json();
+      const data = await response.json()
 
-    if (!response.ok) {
-      return { success: false, error: data.error || 'Erreur lors du changement de mot de passe' };
-    }
-
-    return { success: true, error: null };
-  } catch (error) {
-    console.error('Erreur changeInitialPassword:', error);
-    return { success: false, error: error.message };
-  }
-},
-
-// Ajouter une méthode pour récupérer l'utilisateur avec retry
-async getCurrentUserWithRetry(maxRetries = 3) {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (user) return { user, error: null };
-      
-      if (error && i < maxRetries - 1) {
-        console.log(`Tentative ${i + 1} échouée, nouvelle tentative...`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      if (!response.ok) {
+        return { success: false, error: data.error || 'Erreur lors du changement de mot de passe' }
       }
+
+      return { success: true, message: data.message }
     } catch (error) {
-      if (i === maxRetries - 1) {
-        return { user: null, error: error.message };
-      }
-    }
-  }
-  return { user: null, error: 'Impossible de récupérer l\'utilisateur' };
-},
-  // Mettre à jour le mot de passe de l'utilisateur connecté
-  async updatePassword(newPassword) {
-    try {
-      const { data, error } = await supabase.auth.updateUser({
-        password: newPassword
-      })
-      
-      if (error) {
-        console.error('Erreur mise à jour mot de passe:', error)
-        return { success: false, error: error.message }
-      }
-      
-      return { success: true, user: data.user, error: null }
-    } catch (error) {
-      console.error('Erreur dans updatePassword:', error)
+      console.error('Erreur dans changeInitialPassword:', error)
       return { success: false, error: error.message }
     }
   },
 
-  // Marquer le changement de mot de passe comme terminé
+  // Marquer le changement de mot de passe comme effectué
   async markPasswordChangeComplete() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -146,36 +144,27 @@ async getCurrentUserWithRetry(maxRetries = 3) {
         return { success: false, error: 'Utilisateur non connecté' }
       }
 
-      // Utiliser la fonction SQL pour marquer le changement
-      const { error } = await supabase.rpc('mark_password_changed', {
-        user_id: user.id
-      })
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          force_password_change: false,
+          last_password_change: new Date().toISOString()
+        })
+        .eq('id', user.id)
 
       if (error) {
-        console.error('Erreur marquage changement mot de passe:', error)
-        // Fallback vers mise à jour directe
-        const { error: directError } = await supabase
-          .from('profiles')
-          .update({
-            force_password_change: false,
-            last_password_change: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', user.id)
-
-        if (directError) {
-          return { success: false, error: directError.message }
-        }
+        console.error('Erreur mise à jour profil:', error)
+        return { success: false, error: error.message }
       }
 
-      return { success: true, error: null }
+      return { success: true }
     } catch (error) {
       console.error('Erreur dans markPasswordChangeComplete:', error)
       return { success: false, error: error.message }
     }
   },
 
-  // Vérifier si l'utilisateur doit changer son mot de passe
+  // Vérifier si le changement de mot de passe est requis
   async checkPasswordChangeRequired() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -184,144 +173,36 @@ async getCurrentUserWithRetry(maxRetries = 3) {
         return { required: false, error: 'Utilisateur non connecté' }
       }
 
-      // Essayer d'abord avec la fonction SQL
-      try {
-        const { data, error } = await supabase.rpc('check_password_change_required', {
-          user_id: user.id
-        })
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('force_password_change, last_password_change')
+        .eq('id', user.id)
+        .single()
 
-        if (error) {
-          throw error
-        }
-
-        return { 
-          required: data || false, 
-          error: null 
-        }
-      } catch (rpcError) {
-        console.warn('RPC check_password_change_required échouée, fallback direct:', rpcError)
-        
-        // Fallback : requête directe
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('force_password_change, last_password_change, created_at')
-          .eq('id', user.id)
-          .single()
-
-        if (profileError) {
-          console.error('Erreur vérification changement mot de passe:', profileError)
-          return { required: false, error: profileError.message }
-        }
-
-        // Déterminer si le changement est requis
-        const isRequired = profile.force_password_change === true || 
-                          profile.last_password_change === null
-
-        return { 
-          required: isRequired, 
-          profile: profile,
-          error: null 
-        }
+      if (error) {
+        console.error('Erreur vérification changement mot de passe:', error)
+        return { required: false, error: error.message }
       }
+
+      const isRequired = profile.force_password_change === true || 
+                        profile.last_password_change === null
+
+      return { required: isRequired, error: null }
     } catch (error) {
       console.error('Erreur dans checkPasswordChangeRequired:', error)
       return { required: false, error: error.message }
     }
   },
 
-  // Vérifier pour un utilisateur spécifique (utilisé par userService)
-  async checkPasswordChangeRequiredForUser(userId) {
-    try {
-      // Essayer d'abord avec la fonction SQL
-      try {
-        const { data, error } = await supabase.rpc('check_password_change_required', {
-          user_id: userId
-        })
-
-        if (error) {
-          throw error
-        }
-
-        return { required: data || false, error: null }
-      } catch (rpcError) {
-        console.warn('RPC pour utilisateur spécifique échouée, fallback direct:', rpcError)
-        
-        // Fallback : requête directe
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('force_password_change, last_password_change')
-          .eq('id', userId)
-          .single()
-
-        if (profileError) {
-          return { required: false, error: profileError.message }
-        }
-
-        const isRequired = profile.force_password_change === true || 
-                          profile.last_password_change === null
-
-        return { required: isRequired, error: null }
-      }
-    } catch (error) {
-      console.error('Erreur dans checkPasswordChangeRequiredForUser:', error)
-      return { required: false, error: error.message }
-    }
-  },
-
-  // Déconnexion
-  async signOut() {
-    try {
-      const { error } = await supabase.auth.signOut()
-      return { error }
-    } catch (error) {
-      console.error('Erreur lors de la déconnexion:', error)
-      return { error: error.message }
-    }
-  },
-
-  // Obtenir l'utilisateur actuel
-  async getCurrentUser() {
-    try {
-      const { data: { user }, error } = await supabase.auth.getUser()
-      
-      if (error) {
-        console.error('Erreur getCurrentUser:', error)
-        return { user: null, profile: null, error: error.message }
-      }
-      
-      if (user) {
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single()
-        
-        if (profileError) {
-          console.error('Erreur profil getCurrentUser:', profileError)
-          return { user, profile: null, error: profileError.message }
-        }
-        
-        return { user, profile, error: null }
-      }
-      
-      return { user: null, profile: null, error: null }
-    } catch (error) {
-      console.error('Erreur dans getCurrentUser:', error)
-      return { user: null, profile: null, error: error.message }
-    }
-  },
-
   // Connexion avec vérification du changement de mot de passe
   async signInWithPasswordCheck(username, password) {
     try {
-      // Connexion normale
       const loginResult = await this.signInWithUsername(username, password)
       
       if (loginResult.error || !loginResult.profile) {
         return loginResult
       }
 
-      // Vérifier si le changement de mot de passe est requis
       const passwordCheckResult = await this.checkPasswordChangeRequired()
       
       return {
@@ -4693,6 +4574,7 @@ export const utils = {
 }
 
 export default supabase
+
 
 
 
