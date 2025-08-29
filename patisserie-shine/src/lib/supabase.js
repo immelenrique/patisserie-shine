@@ -166,6 +166,32 @@ export const authService = {
       return { user: null, error: 'Erreur de connexion. Réessayez plus tard.' }
     }
   },
+  async getCurrentUser() {
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser()
+      
+      if (error || !user) {
+        return { user: null, profile: null, error: error?.message || 'Pas d\'utilisateur connecté' }
+      }
+      
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+      
+      if (profileError) {
+        console.error('Erreur récupération profil:', profileError)
+        return { user, profile: null, error: null }
+      }
+      
+      return { user, profile, error: null }
+    } catch (error) {
+      console.error('Erreur getCurrentUser:', error)
+      return { user: null, profile: null, error: error.message }
+    }
+  },
+
   
   async signOut() {
     try {
@@ -2263,6 +2289,7 @@ export const backupService = {
 
 // Export par défaut
 export default supabase
+
 
 
 
