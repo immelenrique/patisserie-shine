@@ -84,7 +84,7 @@ export const utils = {
       maximumFractionDigits: decimals
     }).format(number || 0)
   }
-},
+,
   formatDateTime(date) {
     if (!date) return ''
     return new Date(date).toLocaleDateString('fr-FR', {
@@ -2834,6 +2834,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
