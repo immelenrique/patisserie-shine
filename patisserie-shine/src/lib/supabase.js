@@ -2814,8 +2814,10 @@ export const permissionService = {
       console.error('Erreur dans revokePermission:', error)
       return { success: false, error: error.message }
     }
-  },
+  }
+  
   export default supabase
+
 
 
 
