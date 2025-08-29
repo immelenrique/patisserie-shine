@@ -3,31 +3,39 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Login from '@/components/Login';
-import Dashboard from '@/components/Dashboard';
-import StockManager from '@/components/StockManager';
-import ReferentielProduits from '@/components/ReferentielProduits';
+
+// IMPORTS CORRIGÉS selon votre arborescence réelle
+// Si Dashboard est dans components/dashboard/Dashboard.js
+import Dashboard from '@/components/dashboard/Dashboard';
+
+// Si ces fichiers existent directement dans components/
+// Sinon, ajustez le chemin selon votre structure réelle
+import Login from '@/components/Login'; // ou '@/components/auth/Login' si dans un sous-dossier
+import StockManager from '@/components/StockManager'; // ou '@/components/stock/StockManager'
+import ReferentielProduits from '@/components/ReferentielProduits'; // ou '@/components/referentiel/ReferentielProduits'
 import StockAtelier from '@/components/production/StockAtelier';
 import StockBoutique from '@/components/boutique/StockBoutique';
-import RecettesManager from '@/components/RecettesManager';
-import DemandesManager from '@/components/DemandesManager';
+import RecettesManager from '@/components/RecettesManager'; // ou '@/components/recettes/RecettesManager'
+import DemandesManager from '@/components/DemandesManager'; // ou '@/components/demandes/DemandesManager'
 import ProductionManager from '@/components/production/ProductionManager';
-import Caisse from '@/components/Caisse';
-import Comptabilite from '@/components/Comptabilite';
-import UniteManager from '@/components/UniteManager';
+import Caisse from '@/components/Caisse'; // ou '@/components/caisse/Caisse'
+import Comptabilite from '@/components/Comptabilite'; // ou '@/components/comptabilite/Comptabilite'
+import UniteManager from '@/components/UniteManager'; // ou '@/components/unites/UniteManager'
 import TeamManager from '@/components/admin/TeamManager';
 import UserManagement from '@/components/admin/UserManagement';
 import PermissionsManager from '@/components/admin/PermissionsManager';
+import Modal from '@/components/Modal'; // ou '@/components/ui/Modal'
+
 import { authService } from '@/services/authService';
 import { statsService } from '@/services/statsService';
 import { permissionsService } from '@/services/permissionsService';
+
 import { 
   LogOut, User, KeyRound, LayoutDashboard, Package, 
   ShoppingBag, Factory, ChefHat, FileText, Database, 
   Calculator, Ruler, Users, UserCog, Shield, Store,
   BookOpen, CreditCard, Crown, AlertTriangle
 } from 'lucide-react';
-import Modal from '@/components/Modal';
 
 export default function Home() {
   const router = useRouter();
