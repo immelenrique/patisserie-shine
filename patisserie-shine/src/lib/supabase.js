@@ -2636,6 +2636,54 @@ export const uniteService = {
       return { success: false, error: error.message }
     }
   }
+   async createBasicUnitsIfEmpty() {
+    try {
+      // Vérifier s'il y a déjà des unités
+      const { data: existingUnites, error: checkError } = await supabase
+        .from('unites')
+        .select('id')
+        .limit(1)
+      
+      if (checkError) {
+        console.error('Erreur vérification unités:', checkError)
+        return { success: false, error: checkError.message }
+      }
+      
+      // Si des unités existent déjà, ne rien faire
+      if (existingUnites && existingUnites.length > 0) {
+        return { success: true, message: 'Unités déjà existantes' }
+      }
+      
+      // Créer les unités de base
+      const unitesDeBase = [
+        { value: 'kg', label: 'Kilogrammes' },
+        { value: 'g', label: 'Grammes' },
+        { value: 'L', label: 'Litres' },
+        { value: 'ml', label: 'Millilitres' },
+        { value: 'unite', label: 'Unité' },
+        { value: 'pcs', label: 'Pièces' },
+        { value: 'boite', label: 'Boîte' },
+        { value: 'sac', label: 'Sac' }
+      ]
+      
+      const { data, error } = await supabase
+        .from('unites')
+        .insert(unitesDeBase)
+        .select()
+      
+      if (error) {
+        console.error('Erreur création unités de base:', error)
+        return { success: false, error: error.message }
+      }
+      
+      console.log('Unités de base créées:', data?.length || 0)
+      return { success: true, unites: data }
+      
+    } catch (error) {
+      console.error('Erreur dans createBasicUnitsIfEmpty:', error)
+      return { success: false, error: error.message }
+    }
+     }
 }
 // ===================== SERVICES MOUVEMENTS STOCK =====================
 export const mouvementStockService = {
@@ -2853,6 +2901,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
