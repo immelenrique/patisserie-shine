@@ -1,24 +1,44 @@
 // src/services/permissionsService.js
-import { supabase } from '../lib/supabase'
+import { supabase } from '../lib/supabase';
 
 export const permissionsService = {
-  // Récupérer toutes les permissions
-  async getAllPermissions() {
+  // Récupérer tous les modules
+  async getModules() {
     try {
       const { data, error } = await supabase
-        .from('permissions')
+        .from('modules')
         .select('*')
-        .order('created_at', { ascending: false })
+        .order('ordre');
       
       if (error) {
-        console.error('Erreur récupération permissions:', error)
-        return { data: null, error: error.message }
+        console.error('Erreur getModules:', error);
+        return { modules: [], error: error.message };
       }
       
-      return { data, error: null }
-    } catch (err) {
-      console.error('Erreur dans getAllPermissions:', err)
-      return { data: null, error: err.message }
+      return { modules: data || [], error: null };
+    } catch (error) {
+      console.error('Erreur dans getModules:', error);
+      return { modules: [], error: error.message };
+    }
+  },
+
+  // Récupérer tous les rôles
+  async getRoles() {
+    try {
+      const { data, error } = await supabase
+        .from('roles_custom')
+        .select('*')
+        .order('nom');
+      
+      if (error) {
+        console.error('Erreur getRoles:', error);
+        return { roles: [], error: error.message };
+      }
+      
+      return { roles: data || [], error: null };
+    } catch (error) {
+      console.error('Erreur dans getRoles:', error);
+      return { roles: [], error: error.message };
     }
   },
 
@@ -27,156 +47,92 @@ export const permissionsService = {
     try {
       const { data, error } = await supabase
         .from('user_permissions')
-        .select('*, permissions(*)')
-        .eq('user_id', userId)
+        .select(`
+          *,
+          permissions(*)
+        `)
+        .eq('user_id', userId);
       
       if (error) {
-        console.error('Erreur récupération permissions utilisateur:', error)
-        return { data: null, error: error.message }
+        console.error('Erreur getUserPermissions:', error);
+        return { data: [], error: error.message };
       }
       
-      return { data, error: null }
-    } catch (err) {
-      console.error('Erreur dans getUserPermissions:', err)
-      return { data: null, error: err.message }
+      return { data: data || [], error: null };
+    } catch (error) {
+      console.error('Erreur dans getUserPermissions:', error);
+      return { data: [], error: error.message };
     }
   },
 
-  // Ajouter une permission à un utilisateur
-  async addUserPermission(userId, permissionId) {
+  // Récupérer toutes les permissions
+  async getPermissions() {
+    try {
+      const { data, error } = await supabase
+        .from('permissions')
+        .select(`
+          *,
+          modules(*)
+        `)
+        .order('nom');
+      
+      if (error) {
+        console.error('Erreur getPermissions:', error);
+        return { permissions: [], error: error.message };
+      }
+      
+      return { permissions: data || [], error: null };
+    } catch (error) {
+      console.error('Erreur dans getPermissions:', error);
+      return { permissions: [], error: error.message };
+    }
+  },
+
+  // Créer un nouveau rôle
+  async createRole(roleData) {
+    try {
+      const { data, error } = await supabase
+        .from('roles_custom')
+        .insert(roleData)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('Erreur createRole:', error);
+        return { role: null, error: error.message };
+      }
+      
+      return { role: data, error: null };
+    } catch (error) {
+      console.error('Erreur dans createRole:', error);
+      return { role: null, error: error.message };
+    }
+  },
+
+  // Assigner une permission à un utilisateur
+  async assignPermission(userId, permissionId) {
     try {
       const { data, error } = await supabase
         .from('user_permissions')
-        .insert({ 
-          user_id: userId, 
-          permission_id: permissionId 
+        .insert({
+          user_id: userId,
+          permission_id: permissionId,
+          granted: true
         })
         .select()
+        .single();
       
       if (error) {
-        console.error('Erreur ajout permission:', error)
-        return { data: null, error: error.message }
+        console.error('Erreur assignPermission:', error);
+        return { success: false, error: error.message };
       }
       
-      return { data, error: null }
-    } catch (err) {
-      console.error('Erreur dans addUserPermission:', err)
-      return { data: null, error: err.message }
-    }
-  },
-
-  // Supprimer une permission d'un utilisateur
-  async removeUserPermission(userId, permissionId) {
-    try {
-      const { error } = await supabase
-        .from('user_permissions')
-        .delete()
-        .eq('user_id', userId)
-        .eq('permission_id', permissionId)
-      
-      if (error) {
-        console.error('Erreur suppression permission:', error)
-        return { success: false, error: error.message }
-      }
-      
-      return { success: true, error: null }
-    } catch (err) {
-      console.error('Erreur dans removeUserPermission:', err)
-      return { success: false, error: err.message }
-    }
-  },
-
-  // Créer une nouvelle permission
-  async createPermission(permission) {
-    try {
-      const { data, error } = await supabase
-        .from('permissions')
-        .insert(permission)
-        .select()
-      
-      if (error) {
-        console.error('Erreur création permission:', error)
-        return { data: null, error: error.message }
-      }
-      
-      return { data, error: null }
-    } catch (err) {
-      console.error('Erreur dans createPermission:', err)
-      return { data: null, error: err.message }
-    }
-  },
-
-  // Mettre à jour une permission
-  async updatePermission(permissionId, updates) {
-    try {
-      const { data, error } = await supabase
-        .from('permissions')
-        .update(updates)
-        .eq('id', permissionId)
-        .select()
-      
-      if (error) {
-        console.error('Erreur mise à jour permission:', error)
-        return { data: null, error: error.message }
-      }
-      
-      return { data, error: null }
-    } catch (err) {
-      console.error('Erreur dans updatePermission:', err)
-      return { data: null, error: err.message }
-    }
-  },
-
-  // Supprimer une permission
-  async deletePermission(permissionId) {
-    try {
-      const { error } = await supabase
-        .from('permissions')
-        .delete()
-        .eq('id', permissionId)
-      
-      if (error) {
-        console.error('Erreur suppression permission:', error)
-        return { success: false, error: error.message }
-      }
-      
-      return { success: true, error: null }
-    } catch (err) {
-      console.error('Erreur dans deletePermission:', err)
-      return { success: false, error: err.message }
-    }
-  },
-
-  // Vérifier si un utilisateur a une permission spécifique
-  async userHasPermission(userId, permissionName) {
-    try {
-      const { data, error } = await supabase
-        .from('user_permissions')
-        .select(`
-          permissions!inner(
-            name,
-            code
-          )
-        `)
-        .eq('user_id', userId)
-        .eq('permissions.name', permissionName)
-        .single()
-      
-      if (error) {
-        // Si erreur PGRST116, c'est que la permission n'existe pas
-        if (error.code === 'PGRST116') {
-          return { hasPermission: false, error: null }
-        }
-        console.error('Erreur vérification permission:', error)
-        return { hasPermission: false, error: error.message }
-      }
-      
-      return { hasPermission: !!data, error: null }
-    } catch (err) {
-      console.error('Erreur dans userHasPermission:', err)
-      return { hasPermission: false, error: err.message }
+      return { success: true, data, error: null };
+    } catch (error) {
+      console.error('Erreur dans assignPermission:', error);
+      return { success: false, error: error.message };
     }
   }
-}
+};
 
-export default permissionsService
+export default permissionsService;
