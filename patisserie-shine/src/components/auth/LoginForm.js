@@ -11,29 +11,101 @@ export default function LoginForm({ onLogin }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = async (e) => {
-  e.preventDefault();
-  setIsLoading(true);
-  setError('');
-
+  const loadUserProfile = async (userId) => {
   try {
-    const { user, error } = await authService.signInWithUsername(username, password);
-
-    if (error) {
-      setError(error.message || error);
-    } else if (user) {
-      onLogin(user); // 🔑 envoie l'user brut à Home
-    } else {
-      setError('Utilisateur introuvable');
+    // MÉTHODE 1 : Utiliser la fonction RPC sécurisée (recommandé)
+    const { data: profileData, error: rpcError } = await supabase
+      .rpc('get_user_profile_safe', { user_id: userId });
+    
+    if (!rpcError && profileData && profileData.length > 0) {
+      return { profile: profileData[0], error: null };
     }
-  } catch (err) {
-    setError('Erreur de connexion');
-    console.error('Erreur de connexion:', err);
-  } finally {
-    setIsLoading(false);
+    
+    // MÉTHODE 2 : Si RPC échoue, essayer une requête directe simplifiée
+    if (rpcError) {
+      console.log('RPC échoué, tentative directe...');
+      
+      // NE PAS utiliser select('*') qui peut causer la récursion
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, username, nom, telephone, role, actif, force_password_change, is_super_admin, permissions_onglets')
+        .eq('id', userId)
+        .maybeSingle();
+      
+      if (!error && data) {
+        return { profile: data, error: null };
+      }
+    }
+    
+    // Si les deux méthodes échouent, retourner une erreur
+    return { 
+      profile: null, 
+      error: rpcError?.message || 'Impossible de charger le profil' 
+    };
+    
+  } catch (error) {
+    console.error('Erreur chargement profil:', error);
+    return { 
+      profile: null, 
+      error: error.message 
+    };
   }
 };
 
+// Dans votre fonction d'authentification
+const signInWithUsername = async (username, password) => {
+  try {
+    setSessionError(null);
+    
+    // 1. Connexion basique
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: `${username}@patisserie-shine.com`,
+      password: password,
+    });
+
+    if (authError) {
+      setSessionError(authError.message);
+      return { user: null, error: authError };
+    }
+
+    // 2. Charger le profil de manière sécurisée
+    const { profile, error: profileError } = await loadUserProfile(authData.user.id);
+    
+    if (profileError || !profile) {
+      console.error('Erreur profil:', profileError);
+      setSessionError('Impossible de charger le profil utilisateur. Contactez l\'administrateur.');
+      // Déconnecter l'utilisateur si le profil ne peut pas être chargé
+      await supabase.auth.signOut();
+      return { user: null, error: profileError || 'Profil non trouvé' };
+    }
+
+    // 3. Combiner les données
+    const userData = {
+      ...authData.user,
+      ...profile,
+    };
+
+    setCurrentUser(userData);
+    
+    // 4. Vérifier si changement de mot de passe requis
+    if (profile?.force_password_change) {
+      setPasswordChangeRequired(true);
+      setShowPasswordModal(true);
+    }
+
+    // 5. Charger les stats du dashboard
+    if (!profile?.force_password_change) {
+      loadDashboardStats();
+    }
+
+    return { user: userData, error: null };
+    
+  } catch (error) {
+    console.error('Erreur connexion:', error);
+    setSessionError(error.message);
+    return { user: null, error };
+  }
+};
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full">
