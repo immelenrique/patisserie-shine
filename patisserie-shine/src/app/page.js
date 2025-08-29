@@ -4,14 +4,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-// IMPORTS CORRIGÉS selon votre arborescence réelle
-// Si Dashboard est dans components/dashboard/Dashboard.js
+// IMPORTS CORRIGÉS avec les bons noms
 import Dashboard from '../components/dashboard/Dashboard';
-
-// Si ces fichiers existent directement dans components/
-// Sinon, ajustez le chemin selon votre structure réelle
-import LoginForm from '../components/auth/LoginForm'
-import StockManager from  '../components/stock/StockManager';
+import LoginForm from '../components/auth/LoginForm';
+import StockManager from '../components/stock/StockManager';
 import ReferentielManager from '../components/referentiel/ReferentielManager';
 import StockAtelierManager from '../components/stock/StockAtelierManager';
 import StockBoutiqueManager from '../components/stock/StockBoutiqueManager';
@@ -20,14 +16,13 @@ import DemandesManager from '../components/demandes/DemandesManager';
 import ProductionManager from '../components/production/ProductionManager';
 import CaisseManager from '../components/caisse/CaisseManager';
 import ComptabiliteManager from '../components/comptabilite/ComptabiliteManager';
-import UnitesManager from '../components/admin/UnitesManager'
+import UnitesManager from '../components/admin/UnitesManager';
 import TeamManager from '../components/admin/TeamManager';
 import UserManagement from '../components/admin/UserManagement';
 import PermissionsManager from '../components/admin/PermissionsManager';
 import Modal from '../components/ui/Modal';
 
 import { authService, statsService } from '../lib/supabase';
-
 import { permissionsService } from '../services/permissionsService';
 
 import { 
@@ -87,24 +82,17 @@ export default function Home() {
         setCurrentUser(profile);
         
         // Vérifier si le changement de mot de passe est requis
-        try {
-          const passwordCheck = await authService.checkPasswordChangeRequired();
-          if (passwordCheck.required) {
-            console.log('🔒 Changement de mot de passe requis pour:', profile.username);
-            setPasswordChangeRequired(true);
-            setShowPasswordModal(true);
-          } else {
-            console.log('✅ Mot de passe à jour pour:', profile.username);
-            loadDashboardStats();
-          }
-        } catch (passwordError) {
-          console.warn('⚠️ Erreur vérification mot de passe (non bloquant):', passwordError);
-          // Ne pas bloquer si la vérification échoue
+        const { required } = await authService.checkPasswordChangeRequired(profile.id);
+        if (required) {
+          setPasswordChangeRequired(true);
+          setShowPasswordModal(true);
+        } else {
+          // Charger les stats du dashboard
           loadDashboardStats();
         }
       }
     } catch (err) {
-      console.error('Erreur authentification:', err);
+      console.error('Erreur auth:', err);
     } finally {
       setLoading(false);
     }
@@ -120,9 +108,8 @@ export default function Home() {
       if (!error && data) {
         setUserPermissions(data);
       }
-    } catch (error) {
-      console.error('Erreur chargement permissions:', error);
-      // En cas d'erreur, on continue avec le système de rôles classique
+    } catch (err) {
+      console.error('Erreur chargement permissions:', err);
     } finally {
       setPermissionsLoading(false);
     }
@@ -130,10 +117,9 @@ export default function Home() {
 
   // Vérifier si l'utilisateur a une permission
   const hasPermission = (permissionCode) => {
-    // Si super admin, toutes les permissions
-    if (currentUser?.is_super_admin) return true;
-    
-    // Sinon vérifier dans la liste des permissions
+    if (currentUser?.role === 'admin' || currentUser?.username === 'proprietaire') {
+      return true;
+    }
     return userPermissions.some(p => p.permission_code === permissionCode);
   };
 
@@ -191,261 +177,100 @@ export default function Home() {
       if (result.error) {
         setPasswordError(result.error);
       } else {
-        // Marquer le changement comme terminé
         await authService.markPasswordChangeComplete();
-        
         alert('Mot de passe modifié avec succès !');
         setShowPasswordModal(false);
         setPasswordChangeRequired(false);
         setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
-        
-        // Recharger les stats après changement
         loadDashboardStats();
       }
-    } catch (error) {
-      console.error('Erreur changement mot de passe:', error);
-      setPasswordError('Une erreur est survenue');
+    } catch (err) {
+      setPasswordError('Erreur lors du changement de mot de passe');
     } finally {
       setChangingPassword(false);
     }
   };
 
-  // Ignorer temporairement le changement de mot de passe
-  const handleSkipPasswordChange = async () => {
-    try {
-      await authService.markPasswordChangeComplete();
-      setPasswordChangeRequired(false);
-      setShowPasswordModal(false);
-      loadDashboardStats();
-    } catch (error) {
-      console.error('Erreur marquage changement mot de passe:', error);
-      setPasswordChangeRequired(false);
-      setShowPasswordModal(false);
-    }
-  };
-
-  // Gérer la connexion
-  const handleLogin = async (profile) => {
-    setCurrentUser(profile);
-    
-    // Vérifier immédiatement le changement de mot de passe
-    try {
-      const passwordCheck = await authService.checkPasswordChangeRequired();
-      if (passwordCheck.required) {
-        console.log('🔒 Changement de mot de passe requis à la connexion');
-        setPasswordChangeRequired(true);
-        setShowPasswordModal(true);
-      } else {
-        // Charger les stats seulement si pas de changement requis
-        loadDashboardStats();
-      }
-    } catch (passwordError) {
-      console.warn('⚠️ Erreur vérification mot de passe à la connexion:', passwordError);
-      // Continuer sans bloquer
-      loadDashboardStats();
-    }
-  };
-
-  // Définition des tabs avec permissions
+  // Configuration des onglets
   const tabs = [
-    { 
-      id: 'dashboard', 
-      label: 'Tableau de Bord',
-      icon: LayoutDashboard,
-      permission: 'dashboard_view',
-      alwaysVisible: true // Toujours visible pour tous
-    },
-    { 
-      id: 'stock', 
-      label: 'Stock Principal',
-      icon: Package,
-      permission: 'stock_view'
-    },
-    { 
-      id: 'referentiel', 
-      label: 'Référentiel Produits',
-      icon: Database,
-      permission: 'referentiel_view'
-    },
-    { 
-      id: 'stock-atelier', 
-      label: 'Stock Atelier',
-      icon: Factory,
-      permission: 'stock_atelier_view'
-    },
-    { 
-      id: 'stock-boutique', 
-      label: 'Stock Boutique',
-      icon: Store,
-      permission: 'stock_boutique_view'
-    },
-    { 
-      id: 'recettes', 
-      label: 'Recettes',
-      icon: BookOpen,
-      permission: 'recettes_view'
-    },
-    { 
-      id: 'demandes', 
-      label: 'Demandes',
-      icon: FileText,
-      permission: 'demandes_view'
-    },
-    { 
-      id: 'production', 
-      label: 'Production',
-      icon: ChefHat,
-      permission: 'production_view'
-    },
-    { 
-      id: 'caisse', 
-      label: 'Caisse',
-      icon: CreditCard,
-      permission: 'caisse_view'
-    },
-    { 
-      id: 'comptabilite', 
-      label: 'Comptabilité',
-      icon: Calculator,
-      permission: 'comptabilite_view'
-    },
-    { 
-      id: 'unites', 
-      label: 'Unités',
-      icon: Ruler,
-      permission: 'unites_view'
-    },
-    { 
-      id: 'equipe', 
-      label: 'Équipe',
-      icon: Users,
-      permission: 'equipe_view'
-    },
-    { 
-      id: 'users', 
-      label: 'Utilisateurs',
-      icon: UserCog,
-      permission: 'users_view'
-    },
-    { 
-      id: 'permissions', 
-      label: 'Permissions',
-      icon: Shield,
-      permission: 'permissions_manage_all',
-      superAdminOnly: true // Réservé aux super admins
-    }
+    { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, permission: 'view_dashboard' },
+    { id: 'stock', label: 'Stock Principal', icon: Package, permission: 'view_stock' },
+    { id: 'referentiel', label: 'Référentiel Produits', icon: Database, permission: 'view_referentiel' },
+    { id: 'stock-atelier', label: 'Stock Atelier', icon: Factory, permission: 'view_stock_atelier' },
+    { id: 'stock-boutique', label: 'Stock Boutique', icon: Store, permission: 'view_stock_boutique' },
+    { id: 'recettes', label: 'Recettes', icon: BookOpen, permission: 'view_recettes' },
+    { id: 'demandes', label: 'Demandes', icon: FileText, permission: 'view_demandes' },
+    { id: 'production', label: 'Production', icon: ChefHat, permission: 'view_production' },
+    { id: 'caisse', label: 'Caisse', icon: CreditCard, permission: 'view_caisse' },
+    { id: 'comptabilite', label: 'Comptabilité', icon: Calculator, permission: 'view_comptabilite' },
+    { id: 'unites', label: 'Unités', icon: Ruler, permission: 'manage_units', adminOnly: true },
+    { id: 'equipe', label: 'Équipe', icon: Users, permission: 'manage_team', adminOnly: true },
+    { id: 'users', label: 'Utilisateurs', icon: UserCog, permission: 'manage_users', adminOnly: true },
+    { id: 'permissions', label: 'Permissions', icon: Shield, permission: 'manage_permissions', superAdminOnly: true }
   ];
 
-  // Filtrer les tabs selon les permissions
-  const getVisibleTabs = () => {
-    // Si les permissions sont encore en chargement, afficher seulement le dashboard
-    if (permissionsLoading) {
-      return tabs.filter(tab => tab.id === 'dashboard');
+  // Filtrer les onglets selon les permissions
+  const availableTabs = tabs.filter(tab => {
+    if (tab.superAdminOnly) {
+      return currentUser?.username === 'proprietaire';
     }
-
-    // Filtrer selon les permissions
-    return tabs.filter(tab => {
-      // Toujours afficher les tabs marqués comme alwaysVisible
-      if (tab.alwaysVisible) return true;
-      
-      // Vérifier si c'est réservé aux super admins
-      if (tab.superAdminOnly) {
-        return currentUser?.is_super_admin === true;
-      }
-      
-      // Pour la rétrocompatibilité avec l'ancien système de rôles
-      // Si pas de système de permissions, utiliser l'ancien système
-      if (userPermissions.length === 0 && !permissionsLoading) {
-        // Ancien système basé sur les rôles
-        if (currentUser?.role === 'admin' || currentUser?.username === 'proprietaire') {
-          return true;
-        }
-        if (currentUser?.role === 'employe_production') {
-          return ['dashboard', 'stock', 'stock-atelier', 'recettes', 'demandes', 'production'].includes(tab.id);
-        }
-        if (currentUser?.role === 'employe_boutique') {
-          return ['dashboard', 'stock-boutique', 'demandes', 'caisse'].includes(tab.id);
-        }
-        return false;
-      }
-      
-      // Nouveau système : vérifier la permission
-      return hasPermission(tab.permission);
-    });
-  };
-
-  const visibleTabs = getVisibleTabs();
-
-  // Vérifier si l'onglet actif est toujours visible
-  useEffect(() => {
-    if (currentUser && !permissionsLoading) {
-      const tabStillVisible = visibleTabs.some(tab => tab.id === activeTab);
-      if (!tabStillVisible) {
-        setActiveTab('dashboard');
-      }
+    if (tab.adminOnly) {
+      return currentUser?.role === 'admin' || currentUser?.username === 'proprietaire';
     }
-  }, [visibleTabs, activeTab, currentUser, permissionsLoading]);
+    return hasPermission(tab.permission);
+  });
 
-  // Écran de chargement
+  // Si chargement
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-red-50">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-orange-100">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-600 mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mx-auto"></div>
           <p className="mt-4 text-gray-600">Chargement...</p>
         </div>
       </div>
     );
   }
 
-  // Écran de connexion
+  // Si non connecté
   if (!currentUser) {
-    return <Login onLogin={handleLogin} />;
+    return <LoginForm onLogin={(user) => {
+      setCurrentUser(user);
+      checkAuth();
+    }} />;
   }
 
   // Interface principale
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-orange-100">
       {/* Header */}
-      <header className="bg-white shadow-md">
+      <header className="bg-white shadow-sm border-b border-orange-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-orange-600">
-                🍰 Pâtisserie Shine
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-orange-400 bg-clip-text text-transparent">
+                Pâtisserie Shine
               </h1>
-              {/* Indicateur Super Admin */}
-              {currentUser?.is_super_admin && (
-                <span className="ml-3 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full flex items-center">
-                  <Crown className="w-3 h-3 mr-1" />
-                  Super Admin
-                </span>
+              {currentUser?.username === 'proprietaire' && (
+                <Crown className="w-5 h-5 text-yellow-500 ml-2" />
               )}
             </div>
             
             <div className="flex items-center space-x-4">
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-900">
-                  {currentUser.nom || currentUser.username}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {currentUser.is_super_admin ? '⚡ Super Admin' :
-                   currentUser.role === 'admin' ? '👑 Administrateur' :
-                   currentUser.role === 'employe_production' ? '👩‍🍳 Production' :
-                   currentUser.role === 'employe_boutique' ? '🛒 Boutique' :
-                   '👤 Utilisateur'}
-                </p>
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <User className="w-4 h-4" />
+                <span>{currentUser.nom || currentUser.username}</span>
+                <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs">
+                  {currentUser.role}
+                </span>
               </div>
               
               <button
-                onClick={() => {
-                  setShowPasswordModal(true);
-                  setPasswordChangeRequired(false);
-                }}
+                onClick={() => setShowPasswordModal(true)}
                 className="p-2 text-gray-500 hover:text-orange-600 transition-colors"
                 title="Changer le mot de passe"
               >
-                <KeyRound className="h-5 w-5" />
+                <KeyRound className="w-5 h-5" />
               </button>
               
               <button
@@ -453,7 +278,7 @@ export default function Home() {
                 className="p-2 text-gray-500 hover:text-red-600 transition-colors"
                 title="Déconnexion"
               >
-                <LogOut className="h-5 w-5" />
+                <LogOut className="w-5 h-5" />
               </button>
             </div>
           </div>
@@ -461,16 +286,16 @@ export default function Home() {
       </header>
 
       {/* Navigation */}
-      <nav className="bg-white border-b">
+      <nav className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex space-x-1 overflow-x-auto py-2">
-            {visibleTabs.map(tab => {
+            {availableTabs.map(tab => {
               const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
+                  className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                     activeTab === tab.id
                       ? 'bg-orange-100 text-orange-700'
                       : 'text-gray-600 hover:bg-gray-100'
@@ -488,9 +313,8 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* Content */}
+      {/* Content - CORRIGÉ avec les bons noms de composants */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Indicateur de chargement des permissions */}
         {permissionsLoading && (
           <div className="mb-4 p-3 bg-blue-50 text-blue-700 rounded-lg text-sm flex items-center">
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-700 mr-2"></div>
@@ -498,7 +322,6 @@ export default function Home() {
           </div>
         )}
         
-        {/* Rendu conditionnel des composants selon l'onglet actif */}
         {activeTab === 'dashboard' && (
           <Dashboard 
             user={currentUser} 
@@ -508,15 +331,15 @@ export default function Home() {
           />
         )}
         {activeTab === 'stock' && <StockManager currentUser={currentUser} />}
-        {activeTab === 'referentiel' && <ReferentielProduits currentUser={currentUser} />}
-        {activeTab === 'stock-atelier' && <StockAtelier currentUser={currentUser} />}
-        {activeTab === 'stock-boutique' && <StockBoutique currentUser={currentUser} />}
+        {activeTab === 'referentiel' && <ReferentielManager currentUser={currentUser} />}
+        {activeTab === 'stock-atelier' && <StockAtelierManager currentUser={currentUser} />}
+        {activeTab === 'stock-boutique' && <StockBoutiqueManager currentUser={currentUser} />}
         {activeTab === 'recettes' && <RecettesManager currentUser={currentUser} />}
         {activeTab === 'demandes' && <DemandesManager currentUser={currentUser} />}
         {activeTab === 'production' && <ProductionManager currentUser={currentUser} />}
-        {activeTab === 'caisse' && <Caisse currentUser={currentUser} />}
-        {activeTab === 'comptabilite' && <Comptabilite currentUser={currentUser} />}
-        {activeTab === 'unites' && <UniteManager currentUser={currentUser} />}
+        {activeTab === 'caisse' && <CaisseManager currentUser={currentUser} />}
+        {activeTab === 'comptabilite' && <ComptabiliteManager currentUser={currentUser} />}
+        {activeTab === 'unites' && <UnitesManager currentUser={currentUser} />}
         {activeTab === 'equipe' && <TeamManager currentUser={currentUser} />}
         {activeTab === 'users' && <UserManagement currentUser={currentUser} />}
         {activeTab === 'permissions' && <PermissionsManager currentUser={currentUser} />}
@@ -532,18 +355,23 @@ export default function Home() {
             setPasswordError('');
           }
         }}
-        title={passwordChangeRequired ? "Changement de mot de passe obligatoire" : "Changer le mot de passe"}
+        title={passwordChangeRequired ? 
+          "Changement de mot de passe requis" : 
+          "Changer le mot de passe"
+        }
       >
-        <div className="space-y-4">
-          {passwordChangeRequired && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+        {passwordChangeRequired && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="flex items-start">
+              <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5 mr-2" />
               <p className="text-sm text-yellow-800">
-                <AlertTriangle className="inline w-4 h-4 mr-1" />
-                Pour des raisons de sécurité, vous devez changer votre mot de passe avant de continuer.
+                Vous devez changer votre mot de passe avant de pouvoir continuer.
               </p>
             </div>
-          )}
-          
+          </div>
+        )}
+
+        <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Mot de passe actuel
@@ -553,7 +381,7 @@ export default function Home() {
               value={passwordData.currentPassword}
               onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-              placeholder="Entrez votre mot de passe actuel"
+              disabled={changingPassword}
             />
           </div>
 
@@ -566,7 +394,7 @@ export default function Home() {
               value={passwordData.newPassword}
               onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-              placeholder="Minimum 6 caractères"
+              disabled={changingPassword}
             />
           </div>
 
@@ -579,17 +407,15 @@ export default function Home() {
               value={passwordData.confirmPassword}
               onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-              placeholder="Confirmez le nouveau mot de passe"
+              disabled={changingPassword}
             />
           </div>
 
           {passwordError && (
-            <div className="text-red-600 text-sm bg-red-50 p-2 rounded">
-              {passwordError}
-            </div>
+            <p className="text-sm text-red-600">{passwordError}</p>
           )}
 
-          <div className="flex justify-end space-x-3 pt-2">
+          <div className="flex justify-end space-x-3">
             {!passwordChangeRequired && (
               <button
                 onClick={() => {
@@ -597,34 +423,18 @@ export default function Home() {
                   setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
                   setPasswordError('');
                 }}
-                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                disabled={changingPassword}
               >
                 Annuler
               </button>
             )}
-            
-            {passwordChangeRequired && (
-              <button
-                onClick={handleSkipPasswordChange}
-                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
-              >
-                Plus tard
-              </button>
-            )}
-            
             <button
               onClick={handlePasswordChange}
               disabled={changingPassword || !passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword}
-              className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {changingPassword ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  Changement...
-                </>
-              ) : (
-                'Changer le mot de passe'
-              )}
+              {changingPassword ? 'Changement...' : 'Changer le mot de passe'}
             </button>
           </div>
         </div>
@@ -632,10 +442,3 @@ export default function Home() {
     </div>
   );
 }
-
-
-
-
-
-
-
