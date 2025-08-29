@@ -1,4 +1,4 @@
-// Correction du fichier src/components/caisse/CaisseManager.js
+
 
 "use client";
 
