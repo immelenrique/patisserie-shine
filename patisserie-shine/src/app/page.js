@@ -38,8 +38,6 @@ export default function Home() {
   // États utilisateur et authentification
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [sessionError, setSessionError] = useState(false);
   useEffect(() => {
   const initializeAuth = async () => {
@@ -496,5 +494,6 @@ export default function Home() {
     </div>
   );
 }
+
 
 
