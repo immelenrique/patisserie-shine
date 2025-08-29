@@ -285,36 +285,39 @@ export default function CaisseManager({ currentUser }) {
 
   return (
     <div className="space-y-6">
-    div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Gestion de la Caisse</h2>
-        <button
-          onClick={effectuerCloture}
-          className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center"
-        >
-          <Lock className="w-4 h-4 mr-2" />
-          Clôturer la Caisse
-        </button>
+  {/* Bouton de clôture en haut */}
+  <div className="flex justify-between items-center mb-6">
+    <h2 className="text-2xl font-bold">Gestion de la Caisse</h2>
+    <button
+      onClick={effectuerCloture}
+      className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center"
+    >
+      <Lock className="w-4 h-4 mr-2" />
+      Clôturer la Caisse
+    </button>
+  </div>
+
+  {/* En-tête existant */}
+  <div className="flex justify-between items-center">
+    <div>
+      <h1 className="text-2xl font-bold text-gray-900 flex items-center">
+        <CreditCard className="w-8 h-8 text-orange-600 mr-3" />
+        Caisse
+      </h1>
+      <p className="text-gray-600">Point de vente - Gestion des transactions</p>
+    </div>
+    <div className="flex items-center space-x-4">
+      <div className="text-right">
+        <p className="text-sm text-gray-500">Vendeur</p>
+        <p className="font-semibold">{currentUser.nom}</p>
       </div>
-      {/* En-tête */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-            <CreditCard className="w-8 h-8 text-orange-600 mr-3" />
-            Caisse
-          </h1>
-          <p className="text-gray-600">Point de vente - Gestion des transactions</p>
-        </div>
-        <div className="flex items-center space-x-4">
-          <div className="text-right">
-            <p className="text-sm text-gray-500">Vendeur</p>
-            <p className="font-semibold">{currentUser.nom}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-sm text-gray-500">Session</p>
-            <p className="font-semibold">{new Date().toLocaleDateString('fr-FR')}</p>
-          </div>
-        </div>
+      <div className="text-right">
+        <p className="text-sm text-gray-500">Session</p>
+        <p className="font-semibold">{new Date().toLocaleDateString('fr-FR')}</p>
       </div>
+    </div>
+  </div>
+
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
