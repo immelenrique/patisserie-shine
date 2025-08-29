@@ -1,129 +1,179 @@
-"use client";
+// src/app/page.js - VERSION MODIFIÉE AVEC SYSTÈME DE PERMISSIONS
+
+'use client';
 
 import { useState, useEffect } from 'react';
-import { authService, statsService } from '../lib/supabase';
+import { useRouter } from 'next/navigation';
+import Login from '@/components/Login';
+import Dashboard from '@/components/Dashboard';
+import StockManager from '@/components/StockManager';
+import ReferentielProduits from '@/components/ReferentielProduits';
+import StockAtelier from '@/components/production/StockAtelier';
+import StockBoutique from '@/components/boutique/StockBoutique';
+import RecettesManager from '@/components/RecettesManager';
+import DemandesManager from '@/components/DemandesManager';
+import ProductionManager from '@/components/production/ProductionManager';
+import Caisse from '@/components/Caisse';
+import Comptabilite from '@/components/Comptabilite';
+import UniteManager from '@/components/UniteManager';
+import TeamManager from '@/components/admin/TeamManager';
+import UserManagement from '@/components/admin/UserManagement';
+// NOUVEAU : Import du composant PermissionsManager
+import PermissionsManager from '@/components/admin/PermissionsManager';
+import { authService } from '@/services/authService';
+import { statsService } from '@/services/statsService';
+// NOUVEAU : Import du service de permissions
+import { permissionsService } from '@/services/permissionsService';
+import { 
+  LogOut, User, KeyRound, LayoutDashboard, Package, 
+  ShoppingBag, Factory, ChefHat, FileText, Database, 
+  Calculator, Ruler, Users, UserCog, Shield, Store,
+  BookOpen, CreditCard, Crown
+} from 'lucide-react';
+import Modal from '@/components/Modal';
 
-// Import des composants
-import LoginForm from '../components/auth/LoginForm';
-import PasswordChangeModal from '../components/auth/PasswordChangeModal';
-import { Header, Navigation, Footer } from '../components/layout';
-import Dashboard from '../components/dashboard/Dashboard';
-
-// Import des gestionnaires
-import StockManager from '../components/stock/StockManager';
-import StockAtelierManager from '../components/stock/StockAtelierManager';
-import StockBoutiqueManager from '../components/stock/StockBoutiqueManager';
-import DemandesManager from '../components/demandes/DemandesManager';
-import ProductionManager from '../components/production/ProductionManager';
-import RecettesManager from '../components/production/RecettesManager';
-import CaisseManager from '../components/caisse/CaisseManager';
-import ComptabiliteManager from '../components/comptabilite/ComptabiliteManager';
-import UnitesManager from '../components/admin/UnitesManager';
-import TeamManager from '../components/admin/TeamManager';
-import UserManagement from '../components/admin/UserManagement';
-import ReferentielManager from '../components/referentiel/ReferentielManager';
-
-export default function PatisserieApp() {
+export default function Home() {
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordData, setPasswordData] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
+  const [dashboardStats, setDashboardStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  
+  // NOUVEAU : État pour stocker les permissions de l'utilisateur
+  const [userPermissions, setUserPermissions] = useState([]);
+  const [permissionsLoading, setPermissionsLoading] = useState(true);
 
   useEffect(() => {
     checkAuth();
   }, []);
 
+  // NOUVEAU : Charger les permissions quand l'utilisateur se connecte
   useEffect(() => {
-    if (currentUser && !passwordChangeRequired) {
-      loadDashboardStats();
+    if (currentUser) {
+      loadUserPermissions();
     }
-  }, [currentUser, passwordChangeRequired]);
-
-  // Filtrer les onglets selon permissions personnalisées
-const getVisibleTabs = (user) => {
-  if (user.username === 'proprietaire') return tabs; // Accès total
-  
-  const customPermissions = user.permissions_onglets || {};
-  return tabs.filter(tab => {
-    // Vérifier d'abord les permissions personnalisées
-    if (customPermissions.hasOwnProperty(tab.id)) {
-      return customPermissions[tab.id];
-    }
-    // Sinon utiliser les permissions par rôle par défaut
-    return !tab.adminOnly || user.role === 'admin';
-  });
-};
+  }, [currentUser]);
 
   const checkAuth = async () => {
+    setLoading(true);
     try {
-      const { user, profile } = await authService.getCurrentUser();
-      
-      if (profile) {
-        setCurrentUser(profile);
-        
-        // Vérifier si le changement de mot de passe est requis
-        try {
-          const passwordCheck = await authService.checkPasswordChangeRequired();
-          if (passwordCheck.required) {
-            console.log('🔒 Changement de mot de passe requis pour:', profile.username);
-            setPasswordChangeRequired(true);
-            setShowPasswordModal(true);
-          } else {
-            console.log('✅ Mot de passe à jour pour:', profile.username);
-          }
-        } catch (passwordError) {
-          console.warn('⚠️ Erreur vérification mot de passe (non bloquant):', passwordError);
-          // Ne pas bloquer si la vérification échoue
+      const user = await authService.getCurrentUser();
+      if (user) {
+        setCurrentUser(user);
+        const passwordCheck = await authService.checkPasswordChangeRequired();
+        if (passwordCheck.required) {
+          setPasswordChangeRequired(true);
+          setShowPasswordModal(true);
+        } else {
+          loadDashboardStats();
         }
+      } else {
+        setCurrentUser(null);
       }
-    } catch (err) {
-      console.error('Erreur authentification:', err);
+    } catch (error) {
+      console.error('Erreur vérification auth:', error);
+      setCurrentUser(null);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadDashboardStats = async () => {
+  // NOUVEAU : Fonction pour charger les permissions de l'utilisateur
+  const loadUserPermissions = async () => {
+    if (!currentUser) return;
+    
+    setPermissionsLoading(true);
     try {
-      const { stats, error } = await statsService.getDashboardStats();
-      if (!error) {
-        setStats(stats);
+      const { data, error } = await permissionsService.getUserPermissions(currentUser.id);
+      if (!error && data) {
+        setUserPermissions(data);
       }
-    } catch (err) {
-      console.error('Erreur stats:', err);
+    } catch (error) {
+      console.error('Erreur chargement permissions:', error);
+    } finally {
+      setPermissionsLoading(false);
     }
   };
 
-  const logout = async () => {
+  // NOUVEAU : Fonction helper pour vérifier si l'utilisateur a une permission
+  const hasPermission = (permissionCode) => {
+    // Si l'utilisateur est super admin, il a toutes les permissions
+    if (currentUser?.is_super_admin) return true;
+    
+    // Sinon, vérifier dans la liste des permissions
+    return userPermissions.some(p => p.permission_code === permissionCode);
+  };
+
+  const loadDashboardStats = async () => {
+    setStatsLoading(true);
     try {
-      await authService.signOut();
-      setCurrentUser(null);
-      setActiveTab('dashboard');
-      setStats(null);
-      setPasswordChangeRequired(false);
-      setShowPasswordModal(false);
-    } catch (err) {
-      console.error('Erreur déconnexion:', err);
+      const stats = await statsService.getDashboardStats();
+      setDashboardStats(stats);
+    } catch (error) {
+      console.error('Erreur chargement stats:', error);
+    } finally {
+      setStatsLoading(false);
     }
   };
 
-  const handlePasswordChanged = async () => {
+  const handleLogout = async () => {
+    await authService.signOut();
+    setCurrentUser(null);
+    setActiveTab('dashboard');
+    router.push('/');
+  };
+
+  const handlePasswordChange = async () => {
+    setPasswordError('');
+    
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordError('Les mots de passe ne correspondent pas');
+      return;
+    }
+
+    if (passwordData.newPassword.length < 6) {
+      setPasswordError('Le mot de passe doit contenir au moins 6 caractères');
+      return;
+    }
+
+    setChangingPassword(true);
     try {
-      // Marquer le changement comme terminé
-      await authService.markPasswordChangeComplete();
-      
+      const result = await authService.changePassword(
+        passwordData.currentPassword,
+        passwordData.newPassword
+      );
+
+      if (result.error) {
+        setPasswordError(result.error);
+      } else {
+        await authService.markPasswordAsChanged();
+        alert('Mot de passe modifié avec succès !');
+        setShowPasswordModal(false);
+        setPasswordChangeRequired(false);
+        setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        loadDashboardStats();
+      }
+    } catch (error) {
+      console.error('Erreur changement mot de passe:', error);
+      setPasswordError('Une erreur est survenue');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const handleForcePasswordChange = async () => {
+    try {
+      await authService.markPasswordAsChanged();
       setPasswordChangeRequired(false);
       setShowPasswordModal(false);
-      
-      // Recharger les stats après changement de mot de passe
-      loadDashboardStats();
-      
-      console.log('✅ Mot de passe changé avec succès');
     } catch (error) {
       console.error('Erreur marquage changement mot de passe:', error);
-      // Continuer quand même
       setPasswordChangeRequired(false);
       setShowPasswordModal(false);
     }
@@ -132,205 +182,385 @@ const getVisibleTabs = (user) => {
   const handleLogin = async (profile) => {
     setCurrentUser(profile);
     
-    // Vérifier immédiatement le changement de mot de passe
     try {
       const passwordCheck = await authService.checkPasswordChangeRequired();
       if (passwordCheck.required) {
-        console.log('🔒 Changement de mot de passe requis à la connexion');
         setPasswordChangeRequired(true);
         setShowPasswordModal(true);
       } else {
-        // Charger les stats seulement si pas de changement requis
         loadDashboardStats();
       }
     } catch (passwordError) {
-      console.warn('⚠️ Erreur vérification mot de passe à la connexion:', passwordError);
-      // Continuer sans bloquer
+      console.warn('Erreur vérification mot de passe à la connexion:', passwordError);
       loadDashboardStats();
     }
   };
 
-  // Navigation tabs avec vérification des permissions
+  // MODIFICATION : Nouvelle structure des tabs avec permissions
   const tabs = [
-    { id: 'dashboard', label: 'Tableau de Bord', adminOnly: false },
-    { id: 'stock', label: 'Stock Principal', adminOnly: false },
-    { id: 'referentiel', label: 'Référentiel Produits', adminOnly: true }, 
-    { id: 'stock-atelier', label: 'Stock Atelier', adminOnly: true },
-    { id: 'stock-boutique', label: 'Stock Boutique', adminOnly: false },
-    { id: 'recettes', label: 'Recettes', adminOnly: true },
-    { id: 'demandes', label: 'Demandes', adminOnly: false },
-    { id: 'production', label: 'Production', adminOnly: false },
-    { id: 'caisse', label: 'Caisse', adminOnly: false },
-    { id: 'comptabilite', label: 'Comptabilité', adminOnly: true },
-    { id: 'unites', label: 'Unités', adminOnly: true },
-    { id: 'equipe', label: 'Équipe', adminOnly: true },
+    { 
+      id: 'dashboard', 
+      label: 'Tableau de Bord',
+      icon: LayoutDashboard,
+      permission: 'dashboard_view', // Permission requise
+      alwaysVisible: true // Toujours visible pour tous
+    },
+    { 
+      id: 'stock', 
+      label: 'Stock Principal',
+      icon: Package,
+      permission: 'stock_view'
+    },
+    { 
+      id: 'referentiel', 
+      label: 'Référentiel Produits',
+      icon: Database,
+      permission: 'referentiel_view'
+    },
+    { 
+      id: 'stock-atelier', 
+      label: 'Stock Atelier',
+      icon: Factory,
+      permission: 'stock_atelier_view'
+    },
+    { 
+      id: 'stock-boutique', 
+      label: 'Stock Boutique',
+      icon: Store,
+      permission: 'stock_boutique_view'
+    },
+    { 
+      id: 'recettes', 
+      label: 'Recettes',
+      icon: BookOpen,
+      permission: 'recettes_view'
+    },
+    { 
+      id: 'demandes', 
+      label: 'Demandes',
+      icon: FileText,
+      permission: 'demandes_view'
+    },
+    { 
+      id: 'production', 
+      label: 'Production',
+      icon: ChefHat,
+      permission: 'production_view'
+    },
+    { 
+      id: 'caisse', 
+      label: 'Caisse',
+      icon: CreditCard,
+      permission: 'caisse_view'
+    },
+    { 
+      id: 'comptabilite', 
+      label: 'Comptabilité',
+      icon: Calculator,
+      permission: 'comptabilite_view'
+    },
+    { 
+      id: 'unites', 
+      label: 'Unités',
+      icon: Ruler,
+      permission: 'unites_view'
+    },
+    { 
+      id: 'equipe', 
+      label: 'Équipe',
+      icon: Users,
+      permission: 'equipe_view'
+    },
     { 
       id: 'users', 
-      label: 'Utilisateurs', 
-      adminOnly: true, 
-      proprietaireOnly: true
+      label: 'Utilisateurs',
+      icon: UserCog,
+      permission: 'users_view'
+    },
+    // NOUVEAU : Ajout de l'onglet Permissions
+    { 
+      id: 'permissions', 
+      label: 'Permissions',
+      icon: Shield,
+      permission: 'permissions_manage_all',
+      superAdminOnly: true // Réservé aux super admins
     }
   ];
 
-  // Filtrer les onglets selon les permissions
-  const visibleTabs = tabs.filter(tab => {
-    if (!currentUser) return false;
-    
-    if (tab.proprietaireOnly) {
-      return currentUser.role === 'admin' || currentUser.username === 'proprietaire';
+  // MODIFICATION : Filtrer les tabs selon les permissions
+  const getVisibleTabs = () => {
+    // Si les permissions sont encore en chargement, afficher seulement le dashboard
+    if (permissionsLoading) {
+      return tabs.filter(tab => tab.id === 'dashboard');
     }
-    return !tab.adminOnly || currentUser.role === 'admin';
-  });
+
+    // Filtrer selon les permissions
+    return tabs.filter(tab => {
+      // Toujours afficher les tabs marqués comme alwaysVisible
+      if (tab.alwaysVisible) return true;
+      
+      // Vérifier si c'est réservé aux super admins
+      if (tab.superAdminOnly) {
+        return currentUser?.is_super_admin === true;
+      }
+      
+      // Pour la rétrocompatibilité avec l'ancien système de rôles
+      // Si pas de système de permissions, utiliser l'ancien système
+      if (userPermissions.length === 0 && !permissionsLoading) {
+        // Ancien système basé sur les rôles
+        if (currentUser?.role === 'admin') return true;
+        if (currentUser?.role === 'employe_production') {
+          return ['dashboard', 'stock', 'stock-atelier', 'recettes', 'demandes', 'production'].includes(tab.id);
+        }
+        if (currentUser?.role === 'employe_boutique') {
+          return ['dashboard', 'stock-boutique', 'demandes', 'caisse'].includes(tab.id);
+        }
+        return false;
+      }
+      
+      // Nouveau système : vérifier la permission
+      return hasPermission(tab.permission);
+    });
+  };
+
+  const visibleTabs = getVisibleTabs();
+
+  // Vérifier si l'onglet actif est toujours visible
+  useEffect(() => {
+    if (currentUser && !permissionsLoading) {
+      const tabStillVisible = visibleTabs.some(tab => tab.id === activeTab);
+      if (!tabStillVisible) {
+        setActiveTab('dashboard');
+      }
+    }
+  }, [visibleTabs, activeTab, currentUser, permissionsLoading]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-red-50">
         <div className="text-center">
-          <div className="animate-spin w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-          <div className="text-xl font-semibold text-gray-900">Chargement...</div>
-          <div className="text-sm text-gray-500 mt-2">Vérification de l'authentification...</div>
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-orange-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Chargement...</p>
         </div>
       </div>
     );
   }
 
-  // Si pas connecté, afficher le formulaire de connexion
   if (!currentUser) {
-    return <LoginForm onLogin={handleLogin} />;
+    return <Login onLogin={handleLogin} />;
   }
 
-  // Si changement de mot de passe requis, bloquer l'accès
-  if (passwordChangeRequired) {
-    return (
-      <>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="max-w-md w-full text-center p-8">
-            <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
-              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Changement de mot de passe requis</h2>
-              <p className="text-gray-600 mb-6">
-                Pour des raisons de sécurité, vous devez changer votre mot de passe avant d'accéder à l'application.
-              </p>
-              <div className="bg-blue-50 p-4 rounded-lg mb-4">
-                <p className="text-sm text-blue-800">
-                  <strong>Connecté en tant que :</strong> {currentUser.nom || currentUser.username}
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50">
+      {/* Header */}
+      <header className="bg-white shadow-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-4">
+            <div className="flex items-center">
+              <h1 className="text-2xl font-bold text-orange-600">
+                🍰 Pâtisserie Shine
+              </h1>
+              {/* NOUVEAU : Indicateur Super Admin */}
+              {currentUser?.is_super_admin && (
+                <span className="ml-3 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full flex items-center">
+                  <Crown className="w-3 h-3 mr-1" />
+                  Super Admin
+                </span>
+              )}
+            </div>
+            
+            <div className="flex items-center space-x-4">
+              <div className="text-right">
+                <p className="text-sm font-medium text-gray-900">
+                  {currentUser.nom || currentUser.username}
                 </p>
-                <p className="text-sm text-blue-600">
-                  Rôle : {currentUser.role}
+                <p className="text-xs text-gray-500">
+                  {currentUser.role === 'admin' ? '👑 Administrateur' :
+                   currentUser.role === 'employe_production' ? '👩‍🍳 Production' :
+                   currentUser.role === 'employe_boutique' ? '🛒 Boutique' :
+                   '👤 Utilisateur'}
                 </p>
               </div>
+              
               <button
                 onClick={() => setShowPasswordModal(true)}
-                className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-6 py-2 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200"
+                className="p-2 text-gray-500 hover:text-orange-600 transition-colors"
+                title="Changer le mot de passe"
               >
-                Changer maintenant
+                <KeyRound className="h-5 w-5" />
+              </button>
+              
+              <button
+                onClick={handleLogout}
+                className="p-2 text-gray-500 hover:text-red-600 transition-colors"
+                title="Déconnexion"
+              >
+                <LogOut className="h-5 w-5" />
               </button>
             </div>
           </div>
         </div>
-        
-        <PasswordChangeModal 
-          isOpen={showPasswordModal}
-          user={currentUser}
-          onPasswordChanged={handlePasswordChanged}
-          onLogout={logout}
-        />
-      </>
-    );
-  }
+      </header>
 
-  // Rendu du contenu selon l'onglet actif
-  const renderContent = () => {
-    try {
-      switch (activeTab) {
-        case 'dashboard':
-          return <Dashboard stats={stats} loading={!stats} />;
-        case 'stock':
-          return <StockManager currentUser={currentUser} />;
-        case 'stock-atelier':
-          return currentUser.role === 'admin' ? 
-            <StockAtelierManager currentUser={currentUser} /> : 
-            <Dashboard stats={stats} loading={!stats} />;
-        case 'referentiel':
-          return currentUser.role === 'admin' ? 
-            <ReferentielManager currentUser={currentUser} /> : 
-            <Dashboard stats={stats} loading={!stats} />;
-        case 'stock-boutique':
-          return <StockBoutiqueManager currentUser={currentUser} />;
-        case 'recettes':
-          return currentUser.role === 'admin' ? 
-            <RecettesManager currentUser={currentUser} /> : 
-            <Dashboard stats={stats} loading={!stats} />;
-        case 'demandes':
-          return <DemandesManager currentUser={currentUser} />;
-        case 'production':
-          return <ProductionManager currentUser={currentUser} />;
-        case 'caisse':
-          return <CaisseManager currentUser={currentUser} />;
-        case 'comptabilite':
-          return currentUser.role === 'admin' ? 
-            <ComptabiliteManager currentUser={currentUser} /> : 
-            <Dashboard stats={stats} loading={!stats} />;
-        case 'unites':
-          return currentUser.role === 'admin' ? 
-            <UnitesManager currentUser={currentUser} /> : 
-            <Dashboard stats={stats} loading={!stats} />;
-        case 'equipe':
-          return currentUser.role === 'admin' ? 
-            <TeamManager currentUser={currentUser} /> : 
-            <Dashboard stats={stats} loading={!stats} />;
-        case 'users':
-          return (currentUser.role === 'admin' || currentUser.username === 'proprietaire') ? 
-            <UserManagement currentUser={currentUser} /> : 
-            <Dashboard stats={stats} loading={!stats} />;
-        default:
-          return <Dashboard stats={stats} loading={!stats} />;
-      }
-    } catch (error) {
-      console.error('Erreur lors du rendu du contenu:', error);
-      return (
-        <div className="p-8 text-center">
-          <div className="text-red-600 mb-4">
-            <h3 className="text-lg font-medium">Erreur de chargement</h3>
-            <p className="text-sm">Une erreur s'est produite lors du chargement de cette section.</p>
-            <p className="text-xs text-gray-500 mt-2">{error.message}</p>
+      {/* Navigation */}
+      <nav className="bg-white border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex space-x-1 overflow-x-auto py-2">
+            {visibleTabs.map(tab => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
+                    activeTab === tab.id
+                      ? 'bg-orange-100 text-orange-700'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 mr-2" />
+                  {tab.label}
+                  {/* NOUVEAU : Badge pour les onglets super admin */}
+                  {tab.superAdminOnly && (
+                    <Shield className="w-3 h-3 ml-1 text-yellow-500" />
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <button 
-            onClick={() => setActiveTab('dashboard')}
-            className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-2 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200"
-          >
-            Retour au tableau de bord
-          </button>
         </div>
-      );
-    }
-  };
+      </nav>
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <Header 
-        currentUser={currentUser} 
-        stats={stats} 
-        onLogout={logout} 
-      />
-      
-      <Navigation 
-        tabs={visibleTabs} 
-        activeTab={activeTab} 
-        onTabChange={setActiveTab}
-        stats={stats}
-      />
-      
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {renderContent()}
+      {/* Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* NOUVEAU : Indicateur de chargement des permissions */}
+        {permissionsLoading && (
+          <div className="mb-4 p-3 bg-blue-50 text-blue-700 rounded-lg text-sm">
+            Chargement des permissions...
+          </div>
+        )}
+        
+        {activeTab === 'dashboard' && (
+          <Dashboard 
+            user={currentUser} 
+            stats={dashboardStats}
+            loading={statsLoading}
+            onRefresh={loadDashboardStats}
+          />
+        )}
+        {activeTab === 'stock' && <StockManager currentUser={currentUser} />}
+        {activeTab === 'referentiel' && <ReferentielProduits currentUser={currentUser} />}
+        {activeTab === 'stock-atelier' && <StockAtelier currentUser={currentUser} />}
+        {activeTab === 'stock-boutique' && <StockBoutique currentUser={currentUser} />}
+        {activeTab === 'recettes' && <RecettesManager currentUser={currentUser} />}
+        {activeTab === 'demandes' && <DemandesManager currentUser={currentUser} />}
+        {activeTab === 'production' && <ProductionManager currentUser={currentUser} />}
+        {activeTab === 'caisse' && <Caisse currentUser={currentUser} />}
+        {activeTab === 'comptabilite' && <Comptabilite currentUser={currentUser} />}
+        {activeTab === 'unites' && <UniteManager currentUser={currentUser} />}
+        {activeTab === 'equipe' && <TeamManager currentUser={currentUser} />}
+        {activeTab === 'users' && <UserManagement currentUser={currentUser} />}
+        {/* NOUVEAU : Ajout du composant PermissionsManager */}
+        {activeTab === 'permissions' && <PermissionsManager currentUser={currentUser} />}
       </main>
-      
-      <Footer />
+
+      {/* Modal changement mot de passe */}
+      <Modal
+        isOpen={showPasswordModal}
+        onClose={() => {
+          if (!passwordChangeRequired) {
+            setShowPasswordModal(false);
+            setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+            setPasswordError('');
+          }
+        }}
+        title={passwordChangeRequired ? "Changement de mot de passe obligatoire" : "Changer le mot de passe"}
+      >
+        <div className="space-y-4">
+          {passwordChangeRequired && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+              <p className="text-sm text-yellow-800">
+                Pour des raisons de sécurité, vous devez changer votre mot de passe avant de continuer.
+              </p>
+            </div>
+          )}
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Mot de passe actuel
+            </label>
+            <input
+              type="password"
+              value={passwordData.currentPassword}
+              onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+              placeholder="Entrez votre mot de passe actuel"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Nouveau mot de passe
+            </label>
+            <input
+              type="password"
+              value={passwordData.newPassword}
+              onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+              placeholder="Minimum 6 caractères"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Confirmer le nouveau mot de passe
+            </label>
+            <input
+              type="password"
+              value={passwordData.confirmPassword}
+              onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+              placeholder="Confirmez le nouveau mot de passe"
+            />
+          </div>
+
+          {passwordError && (
+            <div className="text-red-600 text-sm">{passwordError}</div>
+          )}
+
+          <div className="flex justify-end space-x-3">
+            {!passwordChangeRequired && (
+              <button
+                onClick={() => {
+                  setShowPasswordModal(false);
+                  setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+                  setPasswordError('');
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300"
+              >
+                Annuler
+              </button>
+            )}
+            
+            {passwordChangeRequired && (
+              <button
+                onClick={handleForcePasswordChange}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300"
+              >
+                Ignorer pour l'instant
+              </button>
+            )}
+            
+            <button
+              onClick={handlePasswordChange}
+              disabled={changingPassword || !passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword}
+              className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {changingPassword ? 'Changement...' : 'Changer le mot de passe'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
-
