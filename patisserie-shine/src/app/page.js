@@ -146,20 +146,23 @@ export default function Home() {
 
   // Charger les permissions de l'utilisateur
   const loadUserPermissions = async () => {
-    if (!currentUser) return;
-    
-    setPermissionsLoading(true);
-    try {
-      const { data, error } = await permissionsService.getUserPermissions(currentUser.id);
-      if (!error && data) {
-        setUserPermissions(data);
-      }
-    } catch (err) {
-      console.error('Erreur chargement permissions:', err);
-    } finally {
-      setPermissionsLoading(false);
+  if (!currentUser?.id) return;
+  
+  // Empêcher les appels multiples
+  if (permissionsLoading) return;
+  
+  setPermissionsLoading(true);
+  try {
+    const { data, error } = await permissionsService.getUserPermissions(currentUser.id);
+    if (!error && data) {
+      setUserPermissions(data);
     }
-  };
+  } catch (err) {
+    console.error('Erreur chargement permissions:', err);
+  } finally {
+    setPermissionsLoading(false);
+  }
+};
 
   // Vérifier si l'utilisateur a une permission
   const hasPermission = (permissionCode) => {
@@ -366,12 +369,6 @@ export default function Home() {
 
       {/* Content - CORRIGÉ avec les bons noms de composants */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {permissionsLoading && (
-          <div className="mb-4 p-3 bg-blue-50 text-blue-700 rounded-lg text-sm flex items-center">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-700 mr-2"></div>
-            Chargement des permissions...
-          </div>
-        )}
         
         {activeTab === 'dashboard' && (
           <Dashboard 
@@ -493,6 +490,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
