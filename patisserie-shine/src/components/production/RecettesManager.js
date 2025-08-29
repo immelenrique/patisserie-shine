@@ -45,7 +45,7 @@ export default function RecettesManager({ currentUser }) {
       if (productsResult.error) {
         console.error('Erreur produits:', productsResult.error);
       } else {
-        setProducts(productsResult.products);
+        setProducts(productsResult.produits);
       }
     } catch (err) {
       console.error('Erreur:', err);
@@ -264,7 +264,7 @@ export default function RecettesManager({ currentUser }) {
 const handleCalculBesoins = async (e) => {
   e.preventDefault();
   try {
-    const { besoins, error } = await recetteService.calculerStockNecessaire(
+    const { besoins, error } = await recetteService.calculerBesoins(
       calculData.nom_produit,
       parseFloat(calculData.quantite)
     );
