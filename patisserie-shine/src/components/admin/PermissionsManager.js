@@ -11,53 +11,20 @@ export default function PermissionsManager({ currentUser }) {
   const [modules, setModules] = useState([]);
   const [roles, setRoles] = useState([]);
   const [permissions, setPermissions] = useState([]);
-
-  useEffect(() => {
-    loadData();
-  }, []);
-    // Ajouter dans PermissionsManager.js après la ligne 16
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userPermissions, setUserPermissions] = useState([]);
-  
-  // Ajouter cette fonction pour charger les utilisateurs
+
   const loadUsers = async () => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('nom');
-    
-    if (!error) {
-      setUsers(data || []);
-    }
-  };
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .order('nom');
   
-  // Ajouter cette fonction pour gérer les permissions d'un utilisateur
-  const togglePermission = async (userId, permissionId, granted) => {
-    if (granted) {
-      // Retirer la permission
-      await supabase
-        .from('user_permissions')
-        .delete()
-        .eq('user_id', userId)
-        .eq('permission_id', permissionId);
-    } else {
-      // Ajouter la permission
-      await supabase
-        .from('user_permissions')
-        .insert({
-          user_id: userId,
-          permission_id: permissionId,
-          granted: true,
-          accorded_by: currentUser.id
-        });
-    }
-    
-    // Recharger les permissions de l'utilisateur
-    loadUserPermissions(userId);
-  };
-  
-  // Ajouter cette fonction pour charger les permissions d'un utilisateur
+  if (!error) {
+    setUsers(data || []);
+  }
+};
   const loadUserPermissions = async (userId) => {
     const { data } = await supabase
       .from('user_permissions')
@@ -67,13 +34,31 @@ export default function PermissionsManager({ currentUser }) {
     setUserPermissions(data?.map(p => p.permission_id) || []);
     setSelectedUser(userId);
   };
-  
-  // Modifier useEffect pour charger aussi les utilisateurs
+  const togglePermission = async (userId, permissionId, granted) => {
+    if (granted) {
+      await supabase
+        .from('user_permissions')
+        .delete()
+        .eq('user_id', userId)
+        .eq('permission_id', permissionId);
+    } else {
+      await supabase
+        .from('user_permissions')
+        .insert({
+          user_id: userId,
+          permission_id: permissionId,
+          granted: true,
+          accorded_by: currentUser.id
+        });
+    }
+    loadUserPermissions(userId);
+  };
   useEffect(() => {
     loadData();
     loadUsers();
+    
   }, []);
-
+  
   const loadData = async () => {
     try {
       setLoading(true);
@@ -162,7 +147,15 @@ export default function PermissionsManager({ currentUser }) {
           <Lock className="inline-block w-4 h-4 mr-2" />
           Permissions ({permissions.length})
         </button>
-      </div>
+           {/* 🔴 AJOUT 4 : Nouveau bouton */}
+    <button
+      onClick={() => setActiveTab('attribution')}
+      className={`pb-2 px-4 ${activeTab === 'attribution' ? 'border-b-2 border-orange-600 text-orange-600' : 'text-gray-600'}`}
+    >
+      Attribution
+    </button>
+  </div>
+      
 
       <div className="bg-white rounded-lg shadow-sm p-6">
         {activeTab === 'modules' && (
@@ -220,6 +213,57 @@ export default function PermissionsManager({ currentUser }) {
             )}
           </div>
         )}
+        {activeTab === 'attribution' && (
+      <div>
+        <h2 className="text-xl font-semibold mb-4">Attribution des Permissions</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div>
+            <h3 className="font-medium mb-3">Sélectionner un utilisateur</h3>
+            <div className="space-y-2">
+              {users.map(user => (
+                <button
+                  key={user.id}
+                  onClick={() => loadUserPermissions(user.id)}
+                  className={`w-full text-left p-3 rounded border ${
+                    selectedUser === user.id ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="font-medium">{user.nom || user.username}</div>
+                  <div className="text-sm text-gray-500">{user.role}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          {selectedUser && (
+            <div>
+              <h3 className="font-medium mb-3">Permissions</h3>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {permissions.map(perm => {
+                  const hasPermission = userPermissions.includes(perm.id);
+                  return (
+                    <label key={perm.id} className="flex items-center p-2 hover:bg-gray-50 rounded">
+                      <input
+                        type="checkbox"
+                        checked={hasPermission}
+                        onChange={() => togglePermission(selectedUser, perm.id, hasPermission)}
+                        className="mr-3"
+                      />
+                      <div>
+                        <div className="font-medium">{perm.nom}</div>
+                        <div className="text-xs text-gray-500">{perm.description}</div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
+  </div>
+}  
       </div>
     </div>
   );
