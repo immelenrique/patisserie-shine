@@ -108,17 +108,14 @@ export default function Home() {
     };
   }, []);
 
-  // Vérification initiale de l'authentification
-  useEffect(() => {
-    checkAuth();
-  }, []);
+ 
 
   // Chargement des permissions quand l'utilisateur se connecte
   useEffect(() => {
-    if (currentUser) {
-      loadUserPermissions();
-    }
-  }, [currentUser]);
+  if (currentUser?.id && !permissionsLoading) {
+    loadUserPermissions();
+  }
+}, [currentUser?.id]);
 
 
   // Vérifier l'authentification
@@ -127,7 +124,8 @@ export default function Home() {
       const { user, profile } = await authService.getCurrentUser();
       
       if (profile) {
-        setCurrentUser(profile);
+       setCurrentUser(prev => ({ ...prev, ...profile }));
+
         
         // Vérifier si le changement de mot de passe est requis
         const { required } = await authService.checkPasswordChangeRequired(profile.id);
@@ -495,6 +493,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
