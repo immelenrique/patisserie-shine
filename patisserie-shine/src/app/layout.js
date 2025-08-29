@@ -19,11 +19,7 @@ export const metadata = {
     address: false,
     telephone: false,
   },
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-  },
+  
   robots: {
     index: false,
     follow: false,
@@ -47,3 +43,4 @@ export default function RootLayout({ children }) {
     </html>
   )
 }
+
