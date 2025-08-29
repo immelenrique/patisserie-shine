@@ -253,17 +253,16 @@ export default function PermissionsManager({ currentUser }) {
                         <div className="font-medium">{perm.nom}</div>
                         <div className="text-xs text-gray-500">{perm.description}</div>
                       </div>
-                    </label>
-                  );
-                })}
-              </div>
+                     </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
-    )}
-  </div>
-</div>
     </div>
   );
 }
