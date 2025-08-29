@@ -42,13 +42,14 @@ export default function PasswordChangeModal({ isOpen, user, onPasswordChanged, o
 
     try {
       // Changer le mot de passe via l'API
-      const result = await authService.updatePassword(passwords.newPassword);
+      const result = await authService.changeInitialPassword(passwords.newPassword);
       
       if (result.error) {
         setError(result.error);
       } else {
         setSuccess(true);
-        
+        await supabase.auth.refreshSession();
+
         // Marquer que le changement de mot de passe n'est plus requis
         await authService.markPasswordChangeComplete();
         
