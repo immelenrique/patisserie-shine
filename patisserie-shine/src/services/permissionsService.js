@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase-client';
+import { supabase } from '@/lib/supabase';
 
 export const permissionsService = {
   // Récupérer tous les modules
