@@ -203,42 +203,47 @@ export default function Home() {
 
   // Gérer le changement de mot de passe
   const handlePasswordChange = async () => {
-    setPasswordError('');
-    
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      setPasswordError('Les mots de passe ne correspondent pas');
-      return;
-    }
+  setPasswordError('');
+  
+  if (passwordData.newPassword !== passwordData.confirmPassword) {
+    setPasswordError('Les mots de passe ne correspondent pas');
+    return;
+  }
 
-    if (passwordData.newPassword.length < 6) {
-      setPasswordError('Le mot de passe doit contenir au moins 6 caractères');
-      return;
-    }
+  if (passwordData.newPassword.length < 6) {
+    setPasswordError('Le mot de passe doit contenir au moins 6 caractères');
+    return;
+  }
 
-    setChangingPassword(true);
-    try {
-      const result = await authService.changePassword(
-        passwordData.currentPassword,
-        passwordData.newPassword
+  setChangingPassword(true);
+  try {
+    // Pour le changement initial, utiliser changeInitialPassword
+    if (passwordChangeRequired) {
+      const result = await authService.changeInitialPassword(
+        passwordData.newPassword,
+        currentUser?.id
       );
-
+      
       if (result.error) {
         setPasswordError(result.error);
       } else {
-        await authService.markPasswordChangeComplete();
         alert('Mot de passe modifié avec succès !');
         setShowPasswordModal(false);
         setPasswordChangeRequired(false);
         setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
         loadDashboardStats();
       }
-    } catch (err) {
-      setPasswordError('Erreur lors du changement de mot de passe');
-    } finally {
-      setChangingPassword(false);
+    } else {
+      // Pour un changement normal (pas implémenté pour l'instant)
+      setPasswordError('Changement de mot de passe normal non disponible');
     }
-  };
-
+  } catch (err) {
+    setPasswordError('Erreur lors du changement de mot de passe');
+    console.error('Erreur:', err);
+  } finally {
+    setChangingPassword(false);
+  }
+};
   // Configuration des onglets
   const tabs = [
     { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, permission: 'view_dashboard' },
@@ -490,6 +495,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
