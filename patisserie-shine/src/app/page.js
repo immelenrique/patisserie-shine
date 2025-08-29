@@ -64,16 +64,17 @@ export default function Home() {
 
 useEffect(() => {
   let mounted = true;
-  
+
   const initializeAuth = async () => {
     try {
-      // Récupérer juste la session sans appeler getCurrentUser
+      // ✅ vérifier qu’on est bien dans le navigateur
+      if (typeof window === "undefined") return;
+
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!mounted) return;
-      
+
       if (session?.user) {
-        // Récupérer le profil directement
         const { data: profile } = await supabase
           .from('profiles')
           .select('*')
@@ -84,20 +85,18 @@ useEffect(() => {
           setCurrentUser({ ...session.user, profile });
         }
       }
-      
     } catch (error) {
       console.error('Erreur init:', error);
     } finally {
       if (mounted) {
-        setLoading(false);
+        setLoading(false); // 🔑 sortir du "chargement infini"
       }
     }
   };
-  
-  // Appeler immédiatement
+
   initializeAuth();
-  
-  // Listener pour les changements
+
+  // Listener auth
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
@@ -106,7 +105,7 @@ useEffect(() => {
           .select('*')
           .eq('id', session.user.id)
           .single();
-        
+
         if (profile) {
           setCurrentUser({ ...session.user, profile });
         }
@@ -115,12 +114,13 @@ useEffect(() => {
       }
     }
   );
-  
+
   return () => {
     mounted = false;
     subscription?.unsubscribe();
   };
 }, []);
+
 
  
 
@@ -517,6 +517,7 @@ useEffect(() => {
     </div>
   );
 }
+
 
 
 
