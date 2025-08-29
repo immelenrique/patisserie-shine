@@ -191,6 +191,53 @@ export default function CaisseManager({ currentUser }) {
     
     fenetreImpression.document.close();
   };
+  const effectuerCloture = async () => {
+  try {
+    // Calculer le total des ventes du jour
+    const aujourdhui = new Date().toISOString().split('T')[0];
+    
+    const { data: ventes, error } = await supabase
+      .from('ventes')
+      .select('*')
+      .gte('created_at', aujourdhui + 'T00:00:00')
+      .lte('created_at', aujourdhui + 'T23:59:59')
+      .eq('vendeur_id', currentUser.id);
+    
+    if (error) throw error;
+    
+    const montantTotal = ventes.reduce((sum, v) => sum + (v.total || 0), 0);
+    const nombreVentes = ventes.length;
+    
+    // Demander le montant en caisse
+    const montantDeclare = prompt(`Montant théorique: ${montantTotal} FCFA\nEntrez le montant réel en caisse:`);
+    
+    if (!montantDeclare) return;
+    
+    const ecart = parseFloat(montantDeclare) - montantTotal;
+    
+    // Enregistrer la clôture
+    const { error: clotureError } = await supabase
+      .from('arrets_caisse')
+      .insert({
+        vendeur_id: currentUser.id,
+        date_arret: aujourdhui,
+        montant_theorique: montantTotal,
+        montant_declare: parseFloat(montantDeclare),
+        ecart: ecart,
+        nombre_ventes: nombreVentes,
+        details_ventes: { ventes: ventes.map(v => v.id) },
+        statut: 'termine'
+      });
+    
+    if (clotureError) throw clotureError;
+    
+    alert(`Clôture effectuée!\nÉcart: ${ecart} FCFA ${ecart === 0 ? '✓' : ecart > 0 ? '(excédent)' : '(manque)'}`);
+    
+  } catch (error) {
+    console.error('Erreur clôture:', error);
+    alert('Erreur lors de la clôture');
+  }
+};
 
   const genererContenuRecu = (recu) => {
     return `
@@ -238,6 +285,16 @@ export default function CaisseManager({ currentUser }) {
 
   return (
     <div className="space-y-6">
+    div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold">Gestion de la Caisse</h2>
+        <button
+          onClick={effectuerCloture}
+          className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center"
+        >
+          <Lock className="w-4 h-4 mr-2" />
+          Clôturer la Caisse
+        </button>
+      </div>
       {/* En-tête */}
       <div className="flex justify-between items-center">
         <div>
