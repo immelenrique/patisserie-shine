@@ -1,195 +1,182 @@
-import { supabase } from '@/lib/supabase-client';
+// src/services/permissionsService.js
+import { supabase } from '@/lib/supabase'
 
 export const permissionsService = {
-  // Récupérer tous les modules
-  async getModules() {
-    const { data, error } = await supabase
-      .from('modules')
-      .select('*')
-      .order('ordre');
-    
-    return { data, error };
-  },
-
-  // Récupérer toutes les permissions d'un module
-  async getModulePermissions(moduleId) {
-    const { data, error } = await supabase
-      .from('permissions')
-      .select('*')
-      .eq('module_id', moduleId)
-      .order('type');
-    
-    return { data, error };
-  },
-
-  // Récupérer tous les rôles
-  async getRoles() {
-    const { data, error } = await supabase
-      .from('roles_custom')
-      .select(`
-        *,
-        role_permissions (
-          permission_id,
-          permissions (
-            id,
-            code,
-            nom,
-            type,
-            module_id
-          )
-        )
-      `)
-      .order('is_system', { ascending: false })
-      .order('nom');
-    
-    return { data, error };
-  },
-
-  // Créer un nouveau rôle
-  async createRole(roleData) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', (await supabase.auth.getUser()).data.user.id)
-      .single();
-
-    const { data, error } = await supabase
-      .from('roles_custom')
-      .insert({
-        nom: roleData.nom,
-        description: roleData.description,
-        created_by: profile.id
-      })
-      .select()
-      .single();
-    
-    return { data, error };
-  },
-
-  // Assigner des permissions à un rôle
-  async assignPermissionsToRole(roleId, permissionIds) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', (await supabase.auth.getUser()).data.user.id)
-      .single();
-
-    const assignments = permissionIds.map(permissionId => ({
-      role_id: roleId,
-      permission_id: permissionId,
-      accorded_by: profile.id
-    }));
-
-    const { data, error } = await supabase
-      .from('role_permissions')
-      .insert(assignments);
-    
-    return { data, error };
-  },
-
-  // Révoquer des permissions d'un rôle
-  async revokePermissionsFromRole(roleId, permissionIds) {
-    const { error } = await supabase
-      .from('role_permissions')
-      .delete()
-      .eq('role_id', roleId)
-      .in('permission_id', permissionIds);
-    
-    return { error };
+  // Récupérer toutes les permissions
+  async getAllPermissions() {
+    try {
+      const { data, error } = await supabase
+        .from('permissions')
+        .select('*')
+        .order('created_at', { ascending: false })
+      
+      if (error) {
+        console.error('Erreur récupération permissions:', error)
+        return { data: null, error: error.message }
+      }
+      
+      return { data, error: null }
+    } catch (err) {
+      console.error('Erreur dans getAllPermissions:', err)
+      return { data: null, error: err.message }
+    }
   },
 
   // Récupérer les permissions d'un utilisateur
   async getUserPermissions(userId) {
-    const { data, error } = await supabase
-      .rpc('get_user_permissions', { p_user_id: userId });
-    
-    return { data, error };
+    try {
+      const { data, error } = await supabase
+        .from('user_permissions')
+        .select('*, permissions(*)')
+        .eq('user_id', userId)
+      
+      if (error) {
+        console.error('Erreur récupération permissions utilisateur:', error)
+        return { data: null, error: error.message }
+      }
+      
+      return { data, error: null }
+    } catch (err) {
+      console.error('Erreur dans getUserPermissions:', err)
+      return { data: null, error: err.message }
+    }
   },
 
-  // Accorder une permission directe à un utilisateur
-  async grantUserPermission(userId, permissionId, reason, expiresAt = null) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', (await supabase.auth.getUser()).data.user.id)
-      .single();
-
-    const { data, error } = await supabase
-      .from('user_permissions')
-      .upsert({
-        user_id: userId,
-        permission_id: permissionId,
-        granted: true,
-        accorded_by: profile.id,
-        reason: reason,
-        expires_at: expiresAt
-      });
-    
-    return { data, error };
+  // Ajouter une permission à un utilisateur
+  async addUserPermission(userId, permissionId) {
+    try {
+      const { data, error } = await supabase
+        .from('user_permissions')
+        .insert({ 
+          user_id: userId, 
+          permission_id: permissionId 
+        })
+        .select()
+      
+      if (error) {
+        console.error('Erreur ajout permission:', error)
+        return { data: null, error: error.message }
+      }
+      
+      return { data, error: null }
+    } catch (err) {
+      console.error('Erreur dans addUserPermission:', err)
+      return { data: null, error: err.message }
+    }
   },
 
-  // Révoquer une permission d'un utilisateur
-  async revokeUserPermission(userId, permissionId, reason) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', (await supabase.auth.getUser()).data.user.id)
-      .single();
-
-    const { data, error } = await supabase
-      .from('user_permissions')
-      .upsert({
-        user_id: userId,
-        permission_id: permissionId,
-        granted: false,
-        accorded_by: profile.id,
-        reason: reason
-      });
-    
-    return { data, error };
+  // Supprimer une permission d'un utilisateur
+  async removeUserPermission(userId, permissionId) {
+    try {
+      const { error } = await supabase
+        .from('user_permissions')
+        .delete()
+        .eq('user_id', userId)
+        .eq('permission_id', permissionId)
+      
+      if (error) {
+        console.error('Erreur suppression permission:', error)
+        return { success: false, error: error.message }
+      }
+      
+      return { success: true, error: null }
+    } catch (err) {
+      console.error('Erreur dans removeUserPermission:', err)
+      return { success: false, error: err.message }
+    }
   },
 
-  // Vérifier si un utilisateur a une permission
-  async checkPermission(permissionCode) {
-    const { data: user } = await supabase.auth.getUser();
-    if (!user) return false;
-
-    const { data, error } = await supabase
-      .rpc('check_user_permission', {
-        p_user_id: user.user.id,
-        p_permission_code: permissionCode
-      });
-    
-    return data === true;
+  // Créer une nouvelle permission
+  async createPermission(permission) {
+    try {
+      const { data, error } = await supabase
+        .from('permissions')
+        .insert(permission)
+        .select()
+      
+      if (error) {
+        console.error('Erreur création permission:', error)
+        return { data: null, error: error.message }
+      }
+      
+      return { data, error: null }
+    } catch (err) {
+      console.error('Erreur dans createPermission:', err)
+      return { data: null, error: err.message }
+    }
   },
 
-  // Assigner un rôle à un utilisateur
-  async assignRoleToUser(userId, roleId) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ custom_role_id: roleId })
-      .eq('id', userId);
-    
-    return { data, error };
+  // Mettre à jour une permission
+  async updatePermission(permissionId, updates) {
+    try {
+      const { data, error } = await supabase
+        .from('permissions')
+        .update(updates)
+        .eq('id', permissionId)
+        .select()
+      
+      if (error) {
+        console.error('Erreur mise à jour permission:', error)
+        return { data: null, error: error.message }
+      }
+      
+      return { data, error: null }
+    } catch (err) {
+      console.error('Erreur dans updatePermission:', err)
+      return { data: null, error: err.message }
+    }
   },
 
-  // Promouvoir un utilisateur en super admin
-  async promoteToSuperAdmin(userId) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ is_super_admin: true })
-      .eq('id', userId);
-    
-    return { data, error };
+  // Supprimer une permission
+  async deletePermission(permissionId) {
+    try {
+      const { error } = await supabase
+        .from('permissions')
+        .delete()
+        .eq('id', permissionId)
+      
+      if (error) {
+        console.error('Erreur suppression permission:', error)
+        return { success: false, error: error.message }
+      }
+      
+      return { success: true, error: null }
+    } catch (err) {
+      console.error('Erreur dans deletePermission:', err)
+      return { success: false, error: err.message }
+    }
   },
 
-  // Rétrograder un super admin
-  async demoteFromSuperAdmin(userId) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({ is_super_admin: false })
-      .eq('id', userId);
-    
-    return { data, error };
+  // Vérifier si un utilisateur a une permission spécifique
+  async userHasPermission(userId, permissionName) {
+    try {
+      const { data, error } = await supabase
+        .from('user_permissions')
+        .select(`
+          permissions!inner(
+            name,
+            code
+          )
+        `)
+        .eq('user_id', userId)
+        .eq('permissions.name', permissionName)
+        .single()
+      
+      if (error) {
+        // Si erreur PGRST116, c'est que la permission n'existe pas
+        if (error.code === 'PGRST116') {
+          return { hasPermission: false, error: null }
+        }
+        console.error('Erreur vérification permission:', error)
+        return { hasPermission: false, error: error.message }
+      }
+      
+      return { hasPermission: !!data, error: null }
+    } catch (err) {
+      console.error('Erreur dans userHasPermission:', err)
+      return { hasPermission: false, error: err.message }
+    }
   }
-};
+}
+
+export default permissionsService
