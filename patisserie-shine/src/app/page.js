@@ -26,9 +26,9 @@ import UserManagement from '../components/admin/UserManagement';
 import PermissionsManager from '../components/admin/PermissionsManager';
 import Modal from '../components/ui/Modal';
 
-import { authService } from '@/services/authService';
-import { statsService } from '@/services/statsService';
-import { permissionsService } from '@/services/permissionsService';
+import { authService, statsService } from '../lib/supabase';
+
+import { permissionsService } from '../services/permissionsService';
 
 import { 
   LogOut, User, KeyRound, LayoutDashboard, Package, 
@@ -632,6 +632,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
