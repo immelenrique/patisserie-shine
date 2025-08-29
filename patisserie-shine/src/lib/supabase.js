@@ -1332,41 +1332,9 @@ export const stockBoutiqueService = {
       return { produits: [], error: error.message };
     }
   }
-})
-
-// ===================== UTILS =====================
-export const utils = {
-  formatCFA(montant) {
-    if (montant === null || montant === undefined) return '0 CFA'
-    const nombre = parseFloat(montant)
-    if (isNaN(nombre)) return '0 CFA'
-    return new Intl.NumberFormat('fr-FR').format(Math.round(nombre)) + ' CFA'
-  },
-
-  formatDate(date) {
-    if (!date) return ''
-    return new Date(date).toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    })
-  },
-  formatNumber(value) {
-    if (value === null || value === undefined) return '0'
-    return new Intl.NumberFormat('fr-FR').format(value)
-  },
-
-  formatDateTime(date) {
-    if (!date) return ''
-    return new Date(date).toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
 }
+
+
 // ===================== SERVICES PRIX =====================
 export const prixService = {
   async getPrixVente() {
@@ -2847,6 +2815,7 @@ export const permissionService = {
       return { success: false, error: error.message }
     }
   }
+
 
 
 
