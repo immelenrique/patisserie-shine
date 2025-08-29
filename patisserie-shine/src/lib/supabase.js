@@ -1783,7 +1783,7 @@ export const caisseService = {
     }
   }
 } 
-}
+
 
 
 // ===================== SERVICES COMPTABILITÉ (VERSION CORRIGÉE - UNE SEULE DÉFINITION) =====================
@@ -2848,6 +2848,7 @@ export const permissionService = {
     }
   }
 export default supabase
+
 
 
 
