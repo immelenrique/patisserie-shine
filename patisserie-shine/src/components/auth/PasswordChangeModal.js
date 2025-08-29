@@ -19,52 +19,65 @@ export default function PasswordChangeModal({ isOpen, user, onPasswordChanged, o
   const [success, setSuccess] = useState(false);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
+  e.preventDefault();
+  setError('');
+  
+  // Validations
+  if (passwords.newPassword.length < 6) {
+    setError('Le mot de passe doit contenir au moins 6 caractères');
+    return;
+  }
+
+  if (passwords.newPassword !== passwords.confirmPassword) {
+    setError('Les mots de passe ne correspondent pas');
+    return;
+  }
+
+  setChanging(true);
+
+  try {
+    // Passer l'ID de l'utilisateur si disponible
+    const userId = user?.id;
     
-    // Validations
-    if (passwords.newPassword.length < 6) {
-      setError('Le mot de passe doit contenir au moins 6 caractères');
-      return;
-    }
-
-    if (passwords.newPassword !== passwords.confirmPassword) {
-      setError('Les mots de passe ne correspondent pas');
-      return;
-    }
-
-    if (passwords.newPassword === passwords.confirmPassword && passwords.newPassword.length < 8) {
-      setError('Pour votre sécurité, utilisez un mot de passe d\'au moins 8 caractères');
-      return;
-    }
-
-    setChanging(true);
-
-    try {
-      // Changer le mot de passe via l'API
-      const result = await authService.changeInitialPassword(passwords.newPassword);
+    const result = await authService.changeInitialPassword(
+      passwords.newPassword, 
+      userId
+    );
+    
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setSuccess(true);
       
-      if (result.error) {
-        setError(result.error);
-      } else {
-        setSuccess(true);
-        await supabase.auth.refreshSession();
-
-        // Marquer que le changement de mot de passe n'est plus requis
-        await authService.markPasswordChangeComplete();
-        
-        setTimeout(() => {
+      // Après le changement de mot de passe, se reconnecter
+      // avec les nouvelles credentials
+      setTimeout(async () => {
+        try {
+          // Se reconnecter avec le nouveau mot de passe
+          const { error: signInError } = await authService.signInWithUsername(
+            user.username,
+            passwords.newPassword
+          );
+          
+          if (!signInError) {
+            onPasswordChanged();
+          } else {
+            // Si la reconnexion échoue, rediriger quand même
+            onPasswordChanged();
+          }
+        } catch (err) {
+          console.error('Erreur reconnexion:', err);
           onPasswordChanged();
-        }, 2000);
-      }
-    } catch (err) {
-      setError('Erreur lors du changement de mot de passe');
-      console.error('Erreur changement mot de passe:', err);
-    } finally {
-      setChanging(false);
+        }
+      }, 2000);
     }
-  };
-
+  } catch (err) {
+    setError('Erreur lors du changement de mot de passe. Veuillez réessayer.');
+    console.error('Erreur changement mot de passe:', err);
+  } finally {
+    setChanging(false);
+  }
+};
   const getPasswordStrength = (password) => {
     let strength = 0;
     if (password.length >= 6) strength++;
