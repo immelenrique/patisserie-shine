@@ -81,7 +81,7 @@ export const utils = {
 export const authService = {
   async signInWithUsername(username, password) {
     try {
-      const email = `${username}@patisserie-shine.com`
+      const email = `${username}@@shine.local`
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -315,7 +315,7 @@ export const userService = {
 
   async createUser(userData) {
     try {
-      const email = `${userData.username}@patisserie-shine.com`
+      const email = `${userData.username}@@shine.local`
       
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
@@ -2248,3 +2248,4 @@ export const backupService = {
 
 // Export par défaut
 export default supabase
+
