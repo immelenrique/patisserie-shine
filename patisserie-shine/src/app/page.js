@@ -39,77 +39,6 @@ export default function Home() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sessionError, setSessionError] = useState(false);
-  useEffect(() => {
-useEffect(() => {
-  const initializeAuth = async () => {
-    try {
-      // Utiliser getCurrentUser (sans WithRetry qui n'existe pas)
-      const { user, profile, error } = await authService.getCurrentUser();
-      
-      if (user && profile) {
-        setCurrentUser({ ...user, profile });
-      } else {
-        setSessionError(true);
-      }
-    } catch (error) {
-      console.error('Erreur initialisation auth:', error);
-      setSessionError(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  initializeAuth();
-  
-  // Écouter les changements d'état d'authentification
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    async (event, session) => {
-      console.log('Auth state change:', event);
-      
-      if (event === 'SIGNED_IN' && session) {
-        // Récupérer le profil après connexion
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        
-        setCurrentUser({ ...session.user, profile });
-        setSessionError(false);
-      } else if (event === 'SIGNED_OUT') {
-        setCurrentUser(null);
-      }
-    }
-  );
-
-  return () => subscription?.unsubscribe();
-}, []);
-  initializeAuth();
-  
-  // Écouter les changements d'état d'authentification
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    async (event, session) => {
-      console.log('Auth state change:', event);
-      
-      if (event === 'SIGNED_IN' && session) {
-        // Récupérer le profil après connexion
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        
-        setCurrentUser({ ...session.user, profile });
-
-        setSessionError(false);
-      } else if (event === 'SIGNED_OUT') {
-        setCurrentUser(null);
-      }
-    }
-  );
-
-  return () => subscription?.unsubscribe();
-}, []);
   
   // État navigation
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -133,6 +62,52 @@ useEffect(() => {
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
+  // useEffect DOIT être APRÈS tous les useState
+  useEffect(() => {
+    const initializeAuth = async () => {
+      try {
+        const { user, profile, error } = await authService.getCurrentUser();
+        
+        if (user && profile) {
+          setCurrentUser({ ...user, profile });
+        } else {
+          setSessionError(true);
+        }
+      } catch (error) {
+        console.error('Erreur initialisation auth:', error);
+        setSessionError(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initializeAuth();
+    
+    // Écouter les changements d'état d'authentification
+    const authListener = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state change:', event);
+        
+        if (event === 'SIGNED_IN' && session) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          setCurrentUser({ ...session.user, profile });
+          setSessionError(false);
+        } else if (event === 'SIGNED_OUT') {
+          setCurrentUser(null);
+        }
+      }
+    );
+
+    return () => {
+      authListener.data.subscription?.unsubscribe();
+    };
+  }, []);
+
   // Vérification initiale de l'authentification
   useEffect(() => {
     checkAuth();
@@ -144,6 +119,7 @@ useEffect(() => {
       loadUserPermissions();
     }
   }, [currentUser]);
+
 
   // Vérifier l'authentification
   const checkAuth = async () => {
@@ -514,6 +490,7 @@ useEffect(() => {
     </div>
   );
 }
+
 
 
 
