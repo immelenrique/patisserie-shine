@@ -38,6 +38,60 @@ export default function Home() {
   // États utilisateur et authentification
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [sessionError, setSessionError] = useState(false);
+  useEffect(() => {
+  const initializeAuth = async () => {
+    try {
+      // Essayer plusieurs fois de récupérer la session
+      const { user: currentUser, error } = await authService.getCurrentUserWithRetry();
+      
+      if (currentUser) {
+        // Récupérer le profil
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', currentUser.id)
+          .single();
+        
+        setUser({ ...currentUser, ...profile });
+      } else {
+        setSessionError(true);
+      }
+    } catch (error) {
+      console.error('Erreur initialisation auth:', error);
+      setSessionError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  initializeAuth();
+  
+  // Écouter les changements d'état d'authentification
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    async (event, session) => {
+      console.log('Auth state change:', event);
+      
+      if (event === 'SIGNED_IN' && session) {
+        // Récupérer le profil après connexion
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        setUser({ ...session.user, ...profile });
+        setSessionError(false);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+      }
+    }
+  );
+
+  return () => subscription?.unsubscribe();
+}, []);
   
   // État navigation
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -442,4 +496,5 @@ export default function Home() {
     </div>
   );
 }
+
 
