@@ -1785,43 +1785,7 @@ export const caisseService = {
 } 
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-    storage: {
-      getItem: (key) => {
-        try {
-          const item = localStorage.getItem(key);
-          if (item === 'undefined' || item === 'null' || item === '') {
-            localStorage.removeItem(key);
-            return null;
-          }
-          return item;
-        } catch {
-          return null;
-        }
-      },
-      setItem: (key, value) => {
-        try {
-          if (value !== 'undefined' && value !== 'null') {
-            localStorage.setItem(key, value);
-          }
-        } catch {
-          console.warn('localStorage non disponible');
-        }
-      },
-      removeItem: (key) => {
-        try {
-          localStorage.removeItem(key);
-        } catch {
-          console.warn('localStorage non disponible');
-        }
-      }
-    }
-  }
-}
+
 // ===================== SERVICES COMPTABILITÉ (VERSION CORRIGÉE - UNE SEULE DÉFINITION) =====================
 export const comptabiliteService = {
   // Calculer les vraies dépenses depuis la base de données
@@ -2884,5 +2848,6 @@ export const permissionService = {
     }
   }
 export default supabase
+
 
 
