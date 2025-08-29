@@ -64,49 +64,59 @@ export default function Home() {
 
   // useEffect DOIT être APRÈS tous les useState
   useEffect(() => {
-    const initializeAuth = async () => {
-      try {
-        const { user, profile, error } = await authService.getCurrentUser();
-        
-        if (user && profile) {
-          setCurrentUser({ ...user, profile });
-        } else {
-          setSessionError(true);
-        }
-      } catch (error) {
-        console.error('Erreur initialisation auth:', error);
+  let mounted = true;
+  
+  const initializeAuth = async () => {
+    try {
+      // AJOUT : Nettoyer les sessions corrompues
+      if (authService.cleanupSession) {
+        await authService.cleanupSession();
+      }
+      
+      if (!mounted) return;
+      
+      const { user, profile, error } = await authService.getCurrentUser();
+      
+      if (user && profile) {
+        setCurrentUser({ ...user, profile });
+      } else {
         setSessionError(true);
-      } finally {
-        setLoading(false);
       }
-    };
+    } catch (error) {
+      console.error('Erreur initialisation auth:', error);
+      setSessionError(true);
+    } finally {
+      if (mounted) setLoading(false);
+    }
+  };
 
-    initializeAuth();
-    
-    // Écouter les changements d'état d'authentification
-    const authListener = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state change:', event);
+  initializeAuth();
+  
+  // Écouter les changements d'état d'authentification
+  const authListener = supabase.auth.onAuthStateChange(
+    async (event, session) => {
+      console.log('Auth state change:', event);
+      
+      if (event === 'SIGNED_IN' && session) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
         
-        if (event === 'SIGNED_IN' && session) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          
-          setCurrentUser({ ...session.user, profile });
-          setSessionError(false);
-        } else if (event === 'SIGNED_OUT') {
-          setCurrentUser(null);
-        }
+        setCurrentUser({ ...session.user, profile });
+        setSessionError(false);
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
       }
-    );
+    }
+  );
 
-    return () => {
-      authListener.data.subscription?.unsubscribe();
-    };
-  }, []);
+  return () => {
+    mounted = false;
+    authListener.data.subscription?.unsubscribe();
+  };
+}, []);
 
  
 
@@ -490,6 +500,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
