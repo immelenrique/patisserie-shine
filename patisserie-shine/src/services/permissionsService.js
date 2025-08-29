@@ -1,5 +1,5 @@
 // src/services/permissionsService.js
-import { supabase } from '@/lib/supabase'
+import { supabase } from '../lib/supabase'
 
 export const permissionsService = {
   // Récupérer toutes les permissions
