@@ -1026,7 +1026,6 @@ export const stockAtelierService = {
 
 // ===================== SERVICES STOCK BOUTIQUE =====================
 export const stockBoutiqueService = {
-  export const stockBoutiqueService = {
   // Récupérer l'état du stock boutique (VERSION FINALE CORRIGÉE)
 async getStockBoutique() {
     try {
@@ -3395,6 +3394,7 @@ export const backupService = {
 
 // Export par défaut
 export default supabase
+
 
 
 
