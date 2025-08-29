@@ -22,7 +22,7 @@ import UserManagement from '../components/admin/UserManagement';
 import PermissionsManager from '../components/admin/PermissionsManager';
 import { Modal } from '../components/ui';
 
-import { authService, statsService } from '../lib/supabase';
+import { supabase, authService, userService } from '../lib/supabase';
 import { permissionsService } from '../services/permissionsService';
 
 import { 
@@ -494,6 +494,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
