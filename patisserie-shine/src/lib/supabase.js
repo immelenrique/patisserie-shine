@@ -2815,8 +2815,9 @@ export const permissionService = {
       return { success: false, error: error.message }
     }
   }
-  
+   }
   export default supabase
+
 
 
 
