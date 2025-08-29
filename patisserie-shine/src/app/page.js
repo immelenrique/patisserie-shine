@@ -67,12 +67,10 @@ useEffect(() => {
   let initCompleted = false;
   
   const initializeAuth = async () => {
-    // Empêcher les appels multiples
     if (initCompleted) return;
     initCompleted = true;
     
     try {
-      // Timeout de sécurité - si ça prend plus de 5 secondes, on abandonne
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Timeout')), 5000)
       );
@@ -98,20 +96,12 @@ useEffect(() => {
     }
   };
 
-  // Délai de 100ms pour éviter les conflits au chargement
   setTimeout(() => {
     if (mounted) initializeAuth();
   }, 100);
   
-  return () => {
-    mounted = false;
-  };
-}, []);
-
-  initializeAuth();
-  
-  // Écouter les changements d'état d'authentification
-  const authListener = supabase.auth.onAuthStateChange(
+  // CORRECTION: Structure correcte pour Supabase v2
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
       console.log('Auth state change:', event);
       
@@ -129,10 +119,10 @@ useEffect(() => {
       }
     }
   );
-
+  
   return () => {
     mounted = false;
-    authListener.data.subscription?.unsubscribe();
+    subscription?.unsubscribe(); // Correction ici
   };
 }, []);
 
@@ -531,6 +521,7 @@ useEffect(() => {
     </div>
   );
 }
+
 
 
 
