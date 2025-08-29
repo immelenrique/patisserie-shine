@@ -4,7 +4,8 @@ import {
   Check, X, ChevronRight, AlertTriangle, Crown,
   Eye, EyeOff, Lock, Unlock, Calendar, Save
 } from 'lucide-react';
-import { permissionsService } from '@/services/permissionsService';
+import { permissionsService } from '../services/permissionsService';
+
 
 export default function PermissionsManager({ currentUser }) {
   const [activeTab, setActiveTab] = useState('roles');
