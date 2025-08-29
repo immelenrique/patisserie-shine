@@ -64,6 +64,10 @@ export const utils = {
       year: 'numeric'
     })
   },
+  formatNumber(value) {
+    if (value === null || value === undefined) return '0'
+    return new Intl.NumberFormat('fr-FR').format(value)
+  },
 
   formatDateTime(date) {
     if (!date) return ''
@@ -2289,6 +2293,7 @@ export const backupService = {
 
 // Export par défaut
 export default supabase
+
 
 
 
