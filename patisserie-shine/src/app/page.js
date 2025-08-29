@@ -62,33 +62,51 @@ export default function Home() {
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
-  // useEffect DOIT être APRÈS tous les useState
-  useEffect(() => {
+useEffect(() => {
   let mounted = true;
+  let initCompleted = false;
   
   const initializeAuth = async () => {
+    // Empêcher les appels multiples
+    if (initCompleted) return;
+    initCompleted = true;
+    
     try {
-      // AJOUT : Nettoyer les sessions corrompues
-      if (authService.cleanupSession) {
-        await authService.cleanupSession();
-      }
+      // Timeout de sécurité - si ça prend plus de 5 secondes, on abandonne
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), 5000)
+      );
+      
+      const authPromise = authService.getCurrentUser();
+      
+      const result = await Promise.race([authPromise, timeoutPromise]);
       
       if (!mounted) return;
       
-      const { user, profile, error } = await authService.getCurrentUser();
+      if (result?.user && result?.profile) {
+        setCurrentUser({ ...result.user, profile: result.profile });
+      }
       
-      if (user && profile) {
-        setCurrentUser({ ...user, profile });
-      } else {
+      setLoading(false);
+      
+    } catch (error) {
+      console.error('Erreur init:', error);
+      if (mounted) {
+        setLoading(false);
         setSessionError(true);
       }
-    } catch (error) {
-      console.error('Erreur initialisation auth:', error);
-      setSessionError(true);
-    } finally {
-      if (mounted) setLoading(false);
     }
   };
+
+  // Délai de 100ms pour éviter les conflits au chargement
+  setTimeout(() => {
+    if (mounted) initializeAuth();
+  }, 100);
+  
+  return () => {
+    mounted = false;
+  };
+}, []);
 
   initializeAuth();
   
@@ -121,11 +139,24 @@ export default function Home() {
  
 
   // Chargement des permissions quand l'utilisateur se connecte
-  useEffect(() => {
+  // Chargement des permissions UNE SEULE FOIS après connexion
+useEffect(() => {
   if (currentUser?.id && !permissionsLoading) {
-    loadUserPermissions();
+    const loadPermissions = async () => {
+      setPermissionsLoading(true);
+      try {
+        const { data } = await permissionsService.getUserPermissions(currentUser.id);
+        if (data) setUserPermissions(data);
+      } catch (err) {
+        console.error('Erreur permissions:', err);
+      } finally {
+        setPermissionsLoading(false);
+      }
+    };
+    
+    loadPermissions();
   }
-}, [currentUser?.id]);
+}, [currentUser?.id]); // Seulement l'ID, pas l'objet entier
 
 
   // Vérifier l'authentification
@@ -500,6 +531,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
