@@ -10,21 +10,21 @@ import Dashboard from '../components/dashboard/Dashboard';
 
 // Si ces fichiers existent directement dans components/
 // Sinon, ajustez le chemin selon votre structure réelle
-import Login from '@/components/Login'; // ou '@/components/auth/Login' si dans un sous-dossier
-import StockManager from  '@/components/stock/StockManager';
-import ReferentielProduits from '@/components/referentiel/ReferentielProduits';
-import StockAtelier from '@/components/production/StockAtelier';
-import StockBoutique from '@/components/boutique/StockBoutique';
-import RecettesManager from '@/components/production/RecettesManager';
-import DemandesManager from '@/components/demandes/DemandesManager';
-import ProductionManager from '@/components/production/ProductionManager';
+import Login from '../components/auth/Login' si dans un sous-dossier
+import StockManager from  '../components/stock/StockManager';
+import ReferentielProduits from '../components/referentiel/ReferentielProduits';
+import StockAtelier from '../components/production/StockAtelier';
+import StockBoutique from '../components/boutique/StockBoutique';
+import RecettesManager from '../components/production/RecettesManager';
+import DemandesManager from '../components/demandes/DemandesManager';
+import ProductionManager from '../components/production/ProductionManager';
 import Caisse from '@/components/Caisse'; // ou '@/components/caisse/Caisse'
-import Comptabilite from  '@/components/comptabilite/ComptabiliteManager';
-import UniteManager from '@/components/admin/UniteManager';
-import TeamManager from '@/components/admin/TeamManager';
-import UserManagement from '@/components/admin/UserManagement';
-import PermissionsManager from '@/components/admin/PermissionsManager';
-import Modal from '@/components/ui/Modal';
+import Comptabilite from  '../components/comptabilite/ComptabiliteManager';
+import UniteManager from '../components/admin/UniteManager';
+import TeamManager from '../components/admin/TeamManager';
+import UserManagement from '../components/admin/UserManagement';
+import PermissionsManager from '../components/admin/PermissionsManager';
+import Modal from '../components/ui/Modal';
 
 import { authService } from '@/services/authService';
 import { statsService } from '@/services/statsService';
@@ -632,6 +632,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
