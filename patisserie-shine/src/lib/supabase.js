@@ -113,7 +113,7 @@ export const authService = {
           }
         }
         return { user: null, error: error.message }
-        
+       } 
      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -2263,6 +2263,7 @@ export const backupService = {
 
 // Export par défaut
 export default supabase
+
 
 
 
