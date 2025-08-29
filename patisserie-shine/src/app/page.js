@@ -20,7 +20,7 @@ import UnitesManager from '../components/admin/UnitesManager';
 import TeamManager from '../components/admin/TeamManager';
 import UserManagement from '../components/admin/UserManagement';
 import PermissionsManager from '../components/admin/PermissionsManager';
-import Modal from '../components/ui/Modal';
+import { Modal } from '../components/ui';
 
 import { authService, statsService } from '../lib/supabase';
 import { permissionsService } from '../services/permissionsService';
@@ -442,3 +442,4 @@ export default function Home() {
     </div>
   );
 }
+
