@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 
 // IMPORTS CORRIGÉS selon votre arborescence réelle
 // Si Dashboard est dans components/dashboard/Dashboard.js
-import Dashboard from '@app/components/dashboard/Dashboard';
+import Dashboard from '../components/dashboard/Dashboard';
 
 // Si ces fichiers existent directement dans components/
 // Sinon, ajustez le chemin selon votre structure réelle
@@ -632,5 +632,6 @@ export default function Home() {
     </div>
   );
 }
+
 
 
