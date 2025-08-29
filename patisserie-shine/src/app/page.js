@@ -1,38 +1,32 @@
-// src/app/page.js - VERSION MODIFIÉE AVEC SYSTÈME DE PERMISSIONS
-
-'use client';
+"use client";
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Login from '@/components/Login';
-import Dashboard from '@/components/Dashboard';
-import StockManager from '@/components/StockManager';
-import ReferentielProduits from '@/components/ReferentielProduits';
-import StockAtelier from '@/components/production/StockAtelier';
-import StockBoutique from '@/components/boutique/StockBoutique';
-import RecettesManager from '@/components/RecettesManager';
-import DemandesManager from '@/components/DemandesManager';
-import ProductionManager from '@/components/production/ProductionManager';
-import Caisse from '@/components/Caisse';
-import Comptabilite from '@/components/Comptabilite';
-import UniteManager from '@/components/UniteManager';
-import TeamManager from '@/components/admin/TeamManager';
-import UserManagement from '@/components/admin/UserManagement';
-// NOUVEAU : Import du composant PermissionsManager
-import PermissionsManager from '@/components/admin/PermissionsManager';
-import { authService } from '@/services/authService';
-import { statsService } from '@/services/statsService';
-// NOUVEAU : Import du service de permissions
-import { permissionsService } from '@/services/permissionsService';
-import { 
-  LogOut, User, KeyRound, LayoutDashboard, Package, 
-  ShoppingBag, Factory, ChefHat, FileText, Database, 
-  Calculator, Ruler, Users, UserCog, Shield, Store,
-  BookOpen, CreditCard, Crown
-} from 'lucide-react';
-import Modal from '@/components/Modal';
+import { authService, statsService } from '../lib/supabase';
 
-export default function Home() {
+// Import des composants
+import LoginForm from '../components/auth/LoginForm';
+import PasswordChangeModal from '../components/auth/PasswordChangeModal';
+import { Header, Navigation, Footer } from '../components/layout';
+import Dashboard from '../components/dashboard/Dashboard';
+
+// Import des gestionnaires
+import StockManager from '../components/stock/StockManager';
+import StockAtelierManager from '../components/stock/StockAtelierManager';
+import StockBoutiqueManager from '../components/stock/StockBoutiqueManager';
+import DemandesManager from '../components/demandes/DemandesManager';
+import ProductionManager from '../components/production/ProductionManager';
+import RecettesManager from '../components/production/RecettesManager';
+import CaisseManager from '../components/caisse/CaisseManager';
+import ComptabiliteManager from '../components/comptabilite/ComptabiliteManager';
+import UnitesManager from '../components/admin/UnitesManager';
+import TeamManager from '../components/admin/TeamManager';
+import UserManagement from '../components/admin/UserManagement';
+import ReferentielManager from '../components/referentiel/ReferentielManager';
+import PermissionsManager from '@/components/admin/PermissionsManager';
+import { permissionsService } from '@/services/permissionsService';
+import { Shield, Crown } from 'lucide-react';
+
+export default function PatisserieApp() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -52,128 +46,122 @@ export default function Home() {
   useEffect(() => {
     checkAuth();
   }, []);
-
-  // NOUVEAU : Charger les permissions quand l'utilisateur se connecte
   useEffect(() => {
-    if (currentUser) {
-      loadUserPermissions();
+  if (currentUser) {
+    loadUserPermissions();
+  }
+}, [currentUser]);
+  useEffect(() => {
+    if (currentUser && !passwordChangeRequired) {
+      loadDashboardStats();
     }
-  }, [currentUser]);
+  }, [currentUser, passwordChangeRequired]);
+
+  // Filtrer les onglets selon permissions personnalisées
+const getVisibleTabs = (user) => {
+  if (user.username === 'proprietaire') return tabs; // Accès total
+  
+  const customPermissions = user.permissions_onglets || {};
+  return tabs.filter(tab => {
+    // Vérifier d'abord les permissions personnalisées
+    if (customPermissions.hasOwnProperty(tab.id)) {
+      return customPermissions[tab.id];
+    }
+    // Sinon utiliser les permissions par rôle par défaut
+    return !tab.adminOnly || user.role === 'admin';
+  });
+};
 
   const checkAuth = async () => {
-    setLoading(true);
     try {
-      const user = await authService.getCurrentUser();
-      if (user) {
-        setCurrentUser(user);
-        const passwordCheck = await authService.checkPasswordChangeRequired();
-        if (passwordCheck.required) {
-          setPasswordChangeRequired(true);
-          setShowPasswordModal(true);
-        } else {
-          loadDashboardStats();
+      const { user, profile } = await authService.getCurrentUser();
+
+      if (profile) {
+        setCurrentUser(profile);
+
+        // Vérifier si le changement de mot de passe est requis
+        try {
+          const passwordCheck = await authService.checkPasswordChangeRequired();
+          if (passwordCheck.required) {
+            console.log('🔒 Changement de mot de passe requis pour:', profile.username);
+            setPasswordChangeRequired(true);
+            setShowPasswordModal(true);
+          } else {
+            console.log('✅ Mot de passe à jour pour:', profile.username);
+          }
+        } catch (passwordError) {
+          console.warn('⚠️ Erreur vérification mot de passe (non bloquant):', passwordError);
+          // Ne pas bloquer si la vérification échoue
         }
-      } else {
-        setCurrentUser(null);
       }
-    } catch (error) {
-      console.error('Erreur vérification auth:', error);
-      setCurrentUser(null);
+    } catch (err) {
+      console.error('Erreur authentification:', err);
     } finally {
       setLoading(false);
     }
   };
-
-  // NOUVEAU : Fonction pour charger les permissions de l'utilisateur
   const loadUserPermissions = async () => {
-    if (!currentUser) return;
-    
-    setPermissionsLoading(true);
-    try {
-      const { data, error } = await permissionsService.getUserPermissions(currentUser.id);
-      if (!error && data) {
-        setUserPermissions(data);
-      }
-    } catch (error) {
-      console.error('Erreur chargement permissions:', error);
-    } finally {
-      setPermissionsLoading(false);
+  if (!currentUser) return;
+  
+  setPermissionsLoading(true);
+  try {
+    const { data, error } = await permissionsService.getUserPermissions(currentUser.id);
+    if (!error && data) {
+      setUserPermissions(data);
     }
-  };
-
-  // NOUVEAU : Fonction helper pour vérifier si l'utilisateur a une permission
+  } catch (error) {
+    console.error('Erreur chargement permissions:', error);
+  } finally {
+    setPermissionsLoading(false);
+  }
+};
   const hasPermission = (permissionCode) => {
-    // Si l'utilisateur est super admin, il a toutes les permissions
-    if (currentUser?.is_super_admin) return true;
-    
-    // Sinon, vérifier dans la liste des permissions
-    return userPermissions.some(p => p.permission_code === permissionCode);
-  };
+  // Si super admin, toutes les permissions
+  if (currentUser?.is_super_admin) return true;
+  
+  // Sinon vérifier dans la liste
+  return userPermissions.some(p => p.permission_code === permissionCode);
+};
 
   const loadDashboardStats = async () => {
-    setStatsLoading(true);
     try {
-      const stats = await statsService.getDashboardStats();
-      setDashboardStats(stats);
-    } catch (error) {
-      console.error('Erreur chargement stats:', error);
-    } finally {
-      setStatsLoading(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    await authService.signOut();
-    setCurrentUser(null);
-    setActiveTab('dashboard');
-    router.push('/');
-  };
-
-  const handlePasswordChange = async () => {
-    setPasswordError('');
-    
-    if (passwordData.newPassword !== passwordData.confirmPassword) {
-      setPasswordError('Les mots de passe ne correspondent pas');
-      return;
-    }
-
-    if (passwordData.newPassword.length < 6) {
-      setPasswordError('Le mot de passe doit contenir au moins 6 caractères');
-      return;
-    }
-
-    setChangingPassword(true);
-    try {
-      const result = await authService.changePassword(
-        passwordData.currentPassword,
-        passwordData.newPassword
-      );
-
-      if (result.error) {
-        setPasswordError(result.error);
-      } else {
-        await authService.markPasswordAsChanged();
-        alert('Mot de passe modifié avec succès !');
-        setShowPasswordModal(false);
-        setPasswordChangeRequired(false);
-        setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
-        loadDashboardStats();
+      const { stats, error } = await statsService.getDashboardStats();
+      if (!error) {
+        setStats(stats);
       }
-    } catch (error) {
-      console.error('Erreur changement mot de passe:', error);
-      setPasswordError('Une erreur est survenue');
-    } finally {
-      setChangingPassword(false);
+    } catch (err) {
+      console.error('Erreur stats:', err);
     }
   };
 
-  const handleForcePasswordChange = async () => {
+  const logout = async () => {
     try {
-      await authService.markPasswordAsChanged();
+      await authService.signOut();
+      setCurrentUser(null);
+      setActiveTab('dashboard');
+      setStats(null);
       setPasswordChangeRequired(false);
       setShowPasswordModal(false);
+    } catch (err) {
+      console.error('Erreur déconnexion:', err);
+    }
+  };
+
+  const handlePasswordChanged = async () => {
+    try {
+      // Marquer le changement comme terminé
+      await authService.markPasswordChangeComplete();
+
+      setPasswordChangeRequired(false);
+      setShowPasswordModal(false);
+
+      // Recharger les stats après changement de mot de passe
+      loadDashboardStats();
+
+      console.log('✅ Mot de passe changé avec succès');
     } catch (error) {
       console.error('Erreur marquage changement mot de passe:', error);
+      // Continuer quand même
       setPasswordChangeRequired(false);
       setShowPasswordModal(false);
     }
@@ -181,23 +169,27 @@ export default function Home() {
 
   const handleLogin = async (profile) => {
     setCurrentUser(profile);
-    
+
+    // Vérifier immédiatement le changement de mot de passe
     try {
       const passwordCheck = await authService.checkPasswordChangeRequired();
       if (passwordCheck.required) {
+        console.log('🔒 Changement de mot de passe requis à la connexion');
         setPasswordChangeRequired(true);
         setShowPasswordModal(true);
       } else {
+        // Charger les stats seulement si pas de changement requis
         loadDashboardStats();
       }
     } catch (passwordError) {
-      console.warn('Erreur vérification mot de passe à la connexion:', passwordError);
+      console.warn('⚠️ Erreur vérification mot de passe à la connexion:', passwordError);
+      // Continuer sans bloquer
       loadDashboardStats();
     }
   };
 
-  // MODIFICATION : Nouvelle structure des tabs avec permissions
-  const tabs = [
+  // Navigation tabs avec vérification des permissions
+ const tabs = [
     { 
       id: 'dashboard', 
       label: 'Tableau de Bord',
@@ -287,45 +279,29 @@ export default function Home() {
     }
   ];
 
-  // MODIFICATION : Filtrer les tabs selon les permissions
-  const getVisibleTabs = () => {
-    // Si les permissions sont encore en chargement, afficher seulement le dashboard
-    if (permissionsLoading) {
-      return tabs.filter(tab => tab.id === 'dashboard');
+  // Filtrer les onglets selon les permissions
+ const getVisibleTabs = () => {
+  // Si permissions en chargement, montrer seulement dashboard
+  if (permissionsLoading) {
+    return tabs.filter(tab => tab.id === 'dashboard');
+  }
+
+  return tabs.filter(tab => {
+    // Toujours visible ?
+    if (tab.alwaysVisible) return true;
+    
+    // Réservé super admin ?
+    if (tab.superAdminOnly) {
+      return currentUser?.is_super_admin === true;
     }
+    
+    // Vérifier la permission
+    return hasPermission(tab.permission);
+  });
+};
 
-    // Filtrer selon les permissions
-    return tabs.filter(tab => {
-      // Toujours afficher les tabs marqués comme alwaysVisible
-      if (tab.alwaysVisible) return true;
-      
-      // Vérifier si c'est réservé aux super admins
-      if (tab.superAdminOnly) {
-        return currentUser?.is_super_admin === true;
-      }
-      
-      // Pour la rétrocompatibilité avec l'ancien système de rôles
-      // Si pas de système de permissions, utiliser l'ancien système
-      if (userPermissions.length === 0 && !permissionsLoading) {
-        // Ancien système basé sur les rôles
-        if (currentUser?.role === 'admin') return true;
-        if (currentUser?.role === 'employe_production') {
-          return ['dashboard', 'stock', 'stock-atelier', 'recettes', 'demandes', 'production'].includes(tab.id);
-        }
-        if (currentUser?.role === 'employe_boutique') {
-          return ['dashboard', 'stock-boutique', 'demandes', 'caisse'].includes(tab.id);
-        }
-        return false;
-      }
-      
-      // Nouveau système : vérifier la permission
-      return hasPermission(tab.permission);
-    });
-  };
+const visibleTabs = getVisibleTabs();
 
-  const visibleTabs = getVisibleTabs();
-
-  // Vérifier si l'onglet actif est toujours visible
   useEffect(() => {
     if (currentUser && !permissionsLoading) {
       const tabStillVisible = visibleTabs.some(tab => tab.id === activeTab);
