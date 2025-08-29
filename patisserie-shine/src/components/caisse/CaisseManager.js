@@ -3,8 +3,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { caisseService, stockBoutiqueService, utils } from '../../lib/supabase';
-import { ShoppingCart, Plus, Minus, Trash2, Calculator, CreditCard, Printer, Receipt, Calendar, BarChart3, X } from 'lucide-react';
+import { caisseService, stockBoutiqueService, utils, supabase } from '../../lib/supabase';
+import { ShoppingCart, Plus, Minus, Trash2, Calculator, CreditCard, Printer, Receipt, Calendar, BarChart3, X, Lock } from 'lucide-react';
 import { Card, Modal } from '../ui';
 
 export default function CaisseManager({ currentUser }) {
