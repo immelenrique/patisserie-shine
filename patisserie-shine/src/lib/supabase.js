@@ -1106,10 +1106,6 @@ async getStockBoutique() {
     // Formater les données en s'assurant d'inclure type_produit
     const stockFormate = (data || []).map(item => {
       const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0) - (item.quantite_utilisee || 0);
-
-      // Formater les données de la vue finale
-      const stockFormate = (data || []).map(item => ({
-        id: item.stock_id || item.id,
       return {
         id: item.id,
         produit_id: item.produit_id,
@@ -3394,6 +3390,7 @@ export const backupService = {
 
 // Export par défaut
 export default supabase
+
 
 
 
