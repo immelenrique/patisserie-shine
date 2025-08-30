@@ -736,29 +736,39 @@ export const productService = {
   }
 };
 // ===================== SERVICES DEMANDES =====================
+// ===================== SERVICES DEMANDES =====================
 export const demandeService = {
   async getAll() {
     try {
+      // Récupérer les demandes individuelles
       const { data: demandesIndividuelles, error: erreurIndividuelles } = await supabase
         .from('demandes')
         .select(`
           *,
           produit:produits(id, nom, quantite_restante, unite:unites(label)),
-          demandeur:profiles!demandes_demandeur_id_fkey(nom),
-          valideur:profiles!demandes_valideur_id_fkey(nom)
+          demandeur:profiles!demandes_demandeur_id_fkey(nom, username),
+          valideur:profiles!demandes_valideur_id_fkey(nom, username)
         `)
         .is('demande_groupee_id', null)
         .order('created_at', { ascending: false })
 
+      // Récupérer les demandes groupées AVEC TOUS LES DÉTAILS
       const { data: demandesGroupees, error: erreurGroupees } = await supabase
         .from('demandes_groupees')
         .select(`
           *,
-          demandeur:profiles!demandes_groupees_demandeur_id_fkey(nom),
-          valideur:profiles!demandes_groupees_valideur_id_fkey(nom),
-          demandes!demandes_demande_groupee_id_fkey(
+          demandeur:profiles!demandes_groupees_demandeur_id_fkey(nom, username),
+          valideur:profiles!demandes_groupees_valideur_id_fkey(nom, username),
+          lignes:demandes!demandes_demande_groupee_id_fkey(
             *,
-            produit:produits(id, nom, quantite_restante, unite:unites(label))
+            produit:produits(
+              id, 
+              nom, 
+              quantite_restante, 
+              prix_achat,
+              unite:unites(label, value)
+            ),
+            valideur:profiles!demandes_valideur_id_fkey(nom, username)
           )
         `)
         .order('created_at', { ascending: false })
@@ -770,9 +780,23 @@ export const demandeService = {
         console.error('Erreur demandes groupées:', erreurGroupees)
       }
 
+      // Formater toutes les demandes
       const toutes = [
-        ...(demandesIndividuelles || []).map(d => ({ ...d, type: 'individuelle' })),
-        ...(demandesGroupees || []).map(d => ({ ...d, type: 'groupee' }))
+        ...(demandesIndividuelles || []).map(d => ({ 
+          ...d, 
+          type: 'individuelle' 
+        })),
+        ...(demandesGroupees || []).map(d => ({ 
+          ...d, 
+          type: 'groupee',
+          // Calculer le nombre de produits validés/refusés
+          stats: {
+            total: d.lignes?.length || 0,
+            validees: d.lignes?.filter(l => l.statut === 'validee').length || 0,
+            refusees: d.lignes?.filter(l => l.statut === 'refusee').length || 0,
+            en_attente: d.lignes?.filter(l => l.statut === 'en_attente').length || 0
+          }
+        }))
       ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 
       return { demandes: toutes, error: null }
@@ -782,179 +806,59 @@ export const demandeService = {
     }
   },
 
-  async create(demandeData) {
+  async getGroupedDetails(demandeGroupeeId) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      
       const { data, error } = await supabase
-        .from('demandes')
-        .insert({
-          ...demandeData,
-          demandeur_id: user?.id,
-          statut: 'en_attente'
-        })
-        .select()
-        .single()
-      
-      if (error) {
-        return { demande: null, error: error.message }
-      }
-      
-      return { demande: data, error: null }
-    } catch (error) {
-      console.error('Erreur dans create demande:', error)
-      return { demande: null, error: error.message }
-    }
-  },
-
-  async createGroupee(demandes, destination = 'Production', commentaire = '') {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      const { data: demandeGroupee, error: errorGroupee } = await supabase
         .from('demandes_groupees')
-        .insert({
-          destination,
-          commentaire,
-          demandeur_id: user?.id,
-          statut: 'en_attente',
-          nombre_produits: demandes.length
-        })
-        .select()
-        .single()
-
-      if (errorGroupee) {
-        return { demandeGroupee: null, error: errorGroupee.message }
-      }
-
-      const demandesAvecGroupeId = demandes.map(d => ({
-        ...d,
-        demande_groupee_id: demandeGroupee.id,
-        demandeur_id: user?.id,
-        statut: 'en_attente'
-      }))
-
-      const { data: demandesCreees, error: errorDemandes } = await supabase
-        .from('demandes')
-        .insert(demandesAvecGroupeId)
-        .select()
-
-      if (errorDemandes) {
-        await supabase.from('demandes_groupees').delete().eq('id', demandeGroupee.id)
-        return { demandeGroupee: null, error: errorDemandes.message }
-      }
-
-      return { 
-        demandeGroupee: {
-          ...demandeGroupee,
-          demandes: demandesCreees
-        }, 
-        error: null 
-      }
-    } catch (error) {
-      console.error('Erreur dans createGroupee:', error)
-      return { demandeGroupee: null, error: error.message }
-    }
-  },
-
-  async validate(demandeId) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      const { data: demande } = await supabase
-        .from('demandes')
-        .select('*, produit:produits(*)')
-        .eq('id', demandeId)
-        .single()
-
-      if (!demande) {
-        return { result: null, error: 'Demande non trouvée' }
-      }
-
-      const nouvQuantite = (demande.produit.quantite_restante || 0) - demande.quantite
-
-      if (nouvQuantite < 0) {
-        return { result: null, error: 'Stock insuffisant' }
-      }
-
-      const { error: updateProduitError } = await supabase
-        .from('produits')
-        .update({ quantite_restante: nouvQuantite })
-        .eq('id', demande.produit_id)
-
-      if (updateProduitError) {
-        return { result: null, error: updateProduitError.message }
-      }
-
-      const { data, error } = await supabase
-        .from('demandes')
-        .update({
-          statut: 'validee',
-          valideur_id: user?.id,
-          date_validation: new Date().toISOString()
-        })
-        .eq('id', demandeId)
-        .select()
+        .select(`
+          *,
+          demandeur:profiles!demandes_groupees_demandeur_id_fkey(nom, username, telephone),
+          valideur:profiles!demandes_groupees_valideur_id_fkey(nom, username),
+          lignes:demandes!demandes_demande_groupee_id_fkey(
+            *,
+            produit:produits(
+              id, 
+              nom, 
+              quantite_restante, 
+              prix_achat,
+              unite:unites(label, value)
+            ),
+            valideur_ligne:profiles!demandes_valideur_id_fkey(nom, username)
+          )
+        `)
+        .eq('id', demandeGroupeeId)
         .single()
 
       if (error) {
-        return { result: null, error: error.message }
+        return { details: null, error: error.message }
       }
 
-      await supabase.from('mouvements_stock').insert({
-        produit_id: demande.produit_id,
-        type_mouvement: 'sortie',
-        quantite: demande.quantite,
-        quantite_avant: demande.produit.quantite_restante,
-        quantite_apres: nouvQuantite,
-        utilisateur_id: user?.id,
-        reference_id: demandeId,
-        reference_type: 'demande',
-        commentaire: `Demande validée pour ${demande.destination}`
-      })
+      // Calculer les totaux
+      const valeurTotale = data.lignes?.reduce((sum, ligne) => {
+        const prix = ligne.produit?.prix_achat || 0
+        const quantite = ligne.quantite || 0
+        return sum + (prix * quantite)
+      }, 0) || 0
 
       return { 
-        result: {
+        details: {
           ...data,
-          message: `Demande validée ! Stock restant: ${nouvQuantite} ${demande.produit.unite?.label || ''}`
+          valeur_totale: valeurTotale,
+          stats: {
+            total: data.lignes?.length || 0,
+            validees: data.lignes?.filter(l => l.statut === 'validee').length || 0,
+            refusees: data.lignes?.filter(l => l.statut === 'refusee').length || 0,
+            en_attente: data.lignes?.filter(l => l.statut === 'en_attente').length || 0
+          }
         }, 
         error: null 
       }
     } catch (error) {
-      console.error('Erreur dans validate demande:', error)
-      return { result: null, error: error.message }
-    }
-  },
-
-  async reject(demandeId) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      const { data, error } = await supabase
-        .from('demandes')
-        .update({
-          statut: 'refusee',
-          valideur_id: user?.id,
-          date_validation: new Date().toISOString()
-        })
-        .eq('id', demandeId)
-        .eq('statut', 'en_attente')
-        .select()
-        .single()
-      
-      if (error) {
-        console.error('Erreur reject demande:', error)
-        return { demande: null, error: error.message }
-      }
-      
-      return { demande: data, error: null }
-    } catch (error) {
-      console.error('Erreur dans reject demande:', error)
-      return { demande: null, error: error.message }
+      console.error('Erreur dans getGroupedDetails:', error)
+      return { details: null, error: error.message }
     }
   }
 }
-
 // ===================== SERVICES STOCK ATELIER =====================
 export const stockAtelierService = {
   // Récupérer tout le stock atelier SANS prix_vente de produits
@@ -3178,6 +3082,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
