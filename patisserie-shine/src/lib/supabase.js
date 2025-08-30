@@ -2588,48 +2588,20 @@ export const recetteService = {
 // ===================== SERVICES RÉFÉRENTIEL =====================
 // Dans src/lib/supabase.js, corrigez la fonction referentielService.create :
 
-export const referentielService = {
-  async getAll() {
-    try {
-      const { data, error } = await supabase
-        .from('referentiel_produits')
-        .select('*')
-        .eq('actif', true)
-        .order('nom')
-      
-      if (error) {
-        console.error('Erreur getAll référentiel:', error)
-        return { referentiels: [], error: error.message }
-      }
-      
-      return { referentiels: data || [], error: null }
-    } catch (error) {
-      console.error('Erreur dans getAll référentiel:', error)
-      return { referentiels: [], error: error.message }
-    }
-  },
+// Dans src/lib/supabase.js, corrigez referentielService :
 
+export const referentielService = {
   async create(referentielData) {
     try {
-      // Convertir les valeurs en nombres
-      const prixTotal = parseFloat(referentielData.prix_achat_total) || 0;
-      const quantiteConditionnement = parseFloat(referentielData.quantite_par_conditionnement) || 1;
-      
-      const prixUnitaire = quantiteConditionnement > 0 
-        ? prixTotal / quantiteConditionnement 
-        : 0;
-
+      // NE PAS inclure prix_unitaire - il sera calculé automatiquement
       const dataToInsert = {
         reference: referentielData.reference,
         nom: referentielData.nom,
         type_conditionnement: referentielData.type_conditionnement,
         unite_mesure: referentielData.unite_mesure,
-        quantite_par_conditionnement: quantiteConditionnement,
-        prix_achat_total: prixTotal,
-        prix_unitaire: prixUnitaire,
-        actif: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        quantite_par_conditionnement: parseFloat(referentielData.quantite_par_conditionnement),
+        prix_achat_total: parseFloat(referentielData.prix_achat_total)
+        // PAS de prix_unitaire ici !
       };
 
       console.log('Données à insérer dans référentiel:', dataToInsert);
@@ -2654,22 +2626,16 @@ export const referentielService = {
 
   async update(id, updates) {
     try {
-      const prixTotal = parseFloat(updates.prix_achat_total) || 0;
-      const quantiteConditionnement = parseFloat(updates.quantite_par_conditionnement) || 1;
-      
-      const prixUnitaire = quantiteConditionnement > 0 
-        ? prixTotal / quantiteConditionnement 
-        : 0;
-
+      // Pareil pour update - pas de prix_unitaire
       const dataToUpdate = {
         reference: updates.reference,
         nom: updates.nom,
         type_conditionnement: updates.type_conditionnement,
         unite_mesure: updates.unite_mesure,
-        quantite_par_conditionnement: quantiteConditionnement,
-        prix_achat_total: prixTotal,
-        prix_unitaire: prixUnitaire,
+        quantite_par_conditionnement: parseFloat(updates.quantite_par_conditionnement),
+        prix_achat_total: parseFloat(updates.prix_achat_total),
         updated_at: new Date().toISOString()
+        // PAS de prix_unitaire ici non plus !
       };
 
       const { data, error } = await supabase
@@ -2702,7 +2668,6 @@ export const referentielService = {
         .eq('id', id);
 
       if (error) {
-        console.error('Erreur SQL delete référentiel:', error);
         return { success: false, error: error.message };
       }
 
@@ -3078,6 +3043,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
