@@ -917,38 +917,22 @@ export const demandeService = {
 
 // ===================== SERVICES STOCK ATELIER =====================
 export const stockAtelierService = {
-  async getStockAtelier() {
-    try {
-      const { data, error } = await supabase
-        .from('stock_atelier')
-        .select(`
-          *,
-          produit:produits(id, nom, unite:unites(label))
-        `)
-        .order('derniere_maj', { ascending: false })
-      
-      if (error) {
-        return { stocks: [], error: error.message }
-      }
-      
-      return { stocks: data || [], error: null }
-    } catch (error) {
-      console.error('Erreur dans getStockAtelier:', error)
-      return { stocks: [], error: error.message }
-    }
-  },
-  
   async getAll() {
     try {
       const { data, error } = await supabase
         .from('stock_atelier')
         .select(`
           *,
-          produit:produits(id, nom, unite:unites(label))
+          produit:produits(
+            id, 
+            nom, 
+            unite:unites(label)
+          )
         `)
-        .order('derniere_maj', { ascending: false })
+        .order('created_at', { ascending: false })
       
       if (error) {
+        console.error('Erreur getAll stock atelier:', error)
         return { stocks: [], error: error.message }
       }
       
@@ -959,97 +943,148 @@ export const stockAtelierService = {
     }
   },
 
-  async transferer(produitId, quantite) {
+  async create(stockData) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       
-      const { data: existingStock } = await supabase
+      const { data, error } = await supabase
         .from('stock_atelier')
-        .select('*')
-        .eq('produit_id', produitId)
+        .insert({
+          ...stockData,
+          created_by: user?.id,
+          created_at: new Date().toISOString()
+        })
+        .select()
         .single()
-
-      if (existingStock) {
-        const { data, error } = await supabase
-          .from('stock_atelier')
-          .update({
-            quantite_disponible: existingStock.quantite_disponible + quantite,
-            transfere_par: user?.id,
-            derniere_maj: new Date().toISOString()
-          })
-          .eq('id', existingStock.id)
-          .select()
-          .single()
-
-        if (error) {
-          return { stock: null, error: error.message }
-        }
-        return { stock: data, error: null }
-      } else {
-        const { data, error } = await supabase
-          .from('stock_atelier')
-          .insert({
-            produit_id: produitId,
-            quantite_disponible: quantite,
-            quantite_reservee: 0,
-            transfere_par: user?.id,
-            statut: 'effectue'
-          })
-          .select()
-          .single()
-
-        if (error) {
-          return { stock: null, error: error.message }
-        }
-        return { stock: data, error: null }
+      
+      if (error) {
+        return { stock: null, error: error.message }
       }
+      
+      return { stock: data, error: null }
     } catch (error) {
-      console.error('Erreur dans transferer stock atelier:', error)
+      console.error('Erreur dans create stock atelier:', error)
       return { stock: null, error: error.message }
     }
   },
 
-  async consommer(produitId, quantite, productionId = null) {
+  async update(id, updates) {
     try {
-      const { data: stock } = await supabase
-        .from('stock_atelier')
-        .select('*')
-        .eq('produit_id', produitId)
-        .single()
-
-      if (!stock) {
-        return { success: false, error: 'Produit non trouvé en stock atelier' }
-      }
-
-      if (stock.quantite_disponible < quantite) {
-        return { success: false, error: 'Stock insuffisant' }
-      }
-
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('stock_atelier')
         .update({
-          quantite_disponible: stock.quantite_disponible - quantite,
-          derniere_maj: new Date().toISOString()
+          ...updates,
+          updated_at: new Date().toISOString()
         })
-        .eq('id', stock.id)
+        .eq('id', id)
+        .select()
+        .single()
+      
+      if (error) {
+        return { stock: null, error: error.message }
+      }
+      
+      return { stock: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans update stock atelier:', error)
+      return { stock: null, error: error.message }
+    }
+  },
 
+  async delete(id) {
+    try {
+      const { error } = await supabase
+        .from('stock_atelier')
+        .delete()
+        .eq('id', id)
+      
       if (error) {
         return { success: false, error: error.message }
       }
-
-      if (productionId) {
-        await supabase.from('consommations_atelier').insert({
-          production_id: productionId,
-          produit_id: produitId,
-          quantite_consommee: quantite,
-          cout_unitaire: stock.produit?.prix_achat || 0
-        })
-      }
-
+      
       return { success: true, error: null }
     } catch (error) {
-      console.error('Erreur dans consommer stock atelier:', error)
+      console.error('Erreur dans delete stock atelier:', error)
       return { success: false, error: error.message }
+    }
+  },
+
+  // FONCTION MANQUANTE - AJOUTEZ CECI
+  async getHistoriqueTransferts(produitId = null) {
+    try {
+      let query = supabase
+        .from('historique_transferts_atelier')
+        .select(`
+          *,
+          produit:produits(nom, unite:unites(label)),
+          demandeur:profiles!historique_transferts_atelier_demandeur_id_fkey(nom),
+          valideur:profiles!historique_transferts_atelier_valideur_id_fkey(nom)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (produitId) {
+        query = query.eq('produit_id', produitId)
+      }
+
+      const { data, error } = await query
+
+      if (error) {
+        console.error('Erreur getHistoriqueTransferts:', error)
+        // Si la table n'existe pas, retourner un tableau vide
+        if (error.code === '42P01') {
+          return { historique: [], error: null }
+        }
+        return { historique: [], error: error.message }
+      }
+
+      return { historique: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans getHistoriqueTransferts:', error)
+      return { historique: [], error: error.message }
+    }
+  },
+
+  // Fonction alternative si la table n'existe pas
+  async getTransfertsFromDemandes(destination = 'Atelier') {
+    try {
+      const { data, error } = await supabase
+        .from('demandes')
+        .select(`
+          *,
+          produit:produits(nom, unite:unites(label)),
+          demandeur:profiles!demandes_demandeur_id_fkey(nom),
+          valideur:profiles!demandes_valideur_id_fkey(nom)
+        `)
+        .eq('destination', destination)
+        .eq('statut', 'valide')
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (error) {
+        console.error('Erreur getTransfertsFromDemandes:', error)
+        return { historique: [], error: error.message }
+      }
+
+      // Transformer en format historique
+      const historique = (data || []).map(demande => ({
+        id: demande.id,
+        produit_id: demande.produit_id,
+        produit: demande.produit,
+        quantite: demande.quantite,
+        type: 'transfert',
+        source: 'Stock Principal',
+        destination: destination,
+        demandeur: demande.demandeur,
+        valideur: demande.valideur,
+        created_at: demande.created_at,
+        validated_at: demande.validated_at
+      }))
+
+      return { historique, error: null }
+    } catch (error) {
+      console.error('Erreur dans getTransfertsFromDemandes:', error)
+      return { historique: [], error: error.message }
     }
   }
 }
@@ -2916,6 +2951,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
