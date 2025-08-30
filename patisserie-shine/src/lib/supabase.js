@@ -2551,6 +2551,7 @@ export const referentielService = {
   }
 }
 // ===================== SERVICES UNITÉS =====================
+// ===================== SERVICES UNITÉS =====================
 export const uniteService = {
   async getAll() {
     try {
@@ -2648,8 +2649,9 @@ export const uniteService = {
       console.error('Erreur dans delete unite:', error)
       return { success: false, error: error.message }
     }
-  }
-   async createBasicUnitsIfEmpty() {
+  },  // ← VIRGULE IMPORTANTE ICI
+
+  async createBasicUnitsIfEmpty() {
     try {
       // Vérifier s'il y a déjà des unités
       const { data: existingUnites, error: checkError } = await supabase
@@ -2667,8 +2669,8 @@ export const uniteService = {
         return { success: true, message: 'Unités déjà existantes' }
       }
       
-      // Créer les unités de base
-      const unitesDeBase = [
+      // Créer les unités de base - CORRECTION ICI
+      const unitesDeBase = [  // ← FIX: c'était "supabase.js" par erreur
         { value: 'kg', label: 'Kilogrammes' },
         { value: 'g', label: 'Grammes' },
         { value: 'L', label: 'Litres' },
@@ -2696,7 +2698,7 @@ export const uniteService = {
       console.error('Erreur dans createBasicUnitsIfEmpty:', error)
       return { success: false, error: error.message }
     }
-     }
+  }
 }
 // ===================== SERVICES MOUVEMENTS STOCK =====================
 export const mouvementStockService = {
@@ -2914,6 +2916,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
