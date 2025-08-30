@@ -67,30 +67,59 @@ useEffect(() => {
 
   const initializeAuth = async () => {
     try {
+      setLoading(true);
+      
+      // Vérifier la session Supabase
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!mounted) return;
 
-      if (session?.user) {
-        // ⚡ mettre immédiatement l'user brut
-        setCurrentUser(session.user);
+      if (!session || !session.user) {
+        // Pas de session valide
+        setCurrentUser(null);
+        setLoading(false);
+        return;
+      }
 
-        // 🔎 charger le profil en parallèle
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", session.user.id)
-          .single();
+      // Session valide, charger le profil complet
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", session.user.id)
+        .single();
 
-        if (profile) {
-          setCurrentUser({ ...session.user, profile });
+      if (!mounted) return;
+
+      if (profileError || !profile) {
+        // Profil introuvable, déconnecter
+        await supabase.auth.signOut();
+        setCurrentUser(null);
+      } else {
+        // Fusionner les données
+        const fullUser = {
+          ...session.user,
+          ...profile,
+          profile: profile
+        };
+        
+        setCurrentUser(fullUser);
+        
+        // Vérifier si changement de mot de passe requis
+        if (profile.force_password_change) {
+          setPasswordChangeRequired(true);
+          setShowPasswordModal(true);
+        } else {
+          // Charger les stats seulement si pas de changement requis
+          loadDashboardStats();
         }
       }
+      
     } catch (error) {
-      console.error("Erreur init:", error);
+      console.error("Erreur init auth:", error);
+      setCurrentUser(null);
     } finally {
       if (mounted) {
-        setLoading(false); // ⚡ ne jamais bloquer ici
+        setLoading(false);
       }
     }
   };
@@ -209,18 +238,40 @@ useEffect(() => {
 
   // Déconnexion
   const logout = async () => {
-    try {
-      await authService.signOut();
-      setCurrentUser(null);
-      setActiveTab('dashboard');
-      setStats(null);
-      setPasswordChangeRequired(false);
-      setShowPasswordModal(false);
-      setUserPermissions([]);
-    } catch (err) {
-      console.error('Erreur déconnexion:', err);
+  try {
+    // 1. Déconnexion Supabase
+    await authService.signOut();
+    
+    // 2. IMPORTANT: Nettoyer TOUT le localStorage et sessionStorage
+    if (typeof window !== 'undefined') {
+      localStorage.clear();
+      sessionStorage.clear();
     }
-  };
+    
+    // 3. Réinitialiser TOUS les états
+    setCurrentUser(null);
+    setActiveTab('dashboard');
+    setStats(null);
+    setPasswordChangeRequired(false);
+    setShowPasswordModal(false);
+    setUserPermissions([]);
+    setLoading(false);
+    setSessionError(false);
+    setSubmitting(false);
+    setLoginError('');
+    
+    // 4. Forcer le rechargement complet de la page
+    window.location.href = '/';
+    
+  } catch (err) {
+    console.error('Erreur déconnexion:', err);
+    // Même en cas d'erreur, nettoyer et recharger
+    if (typeof window !== 'undefined') {
+      localStorage.clear();
+      window.location.href = '/';
+    }
+  }
+};
 
   // Gérer le changement de mot de passe
   const handlePasswordChange = async () => {
@@ -510,6 +561,7 @@ useEffect(() => {
     </div>
   );
 }
+
 
 
 
