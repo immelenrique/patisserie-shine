@@ -588,6 +588,7 @@ export const statsService = {
 }
 
 // ===================== SERVICES PRODUITS =====================
+// ===================== SERVICES PRODUITS =====================
 export const productService = {
   async getAll() {
     try {
@@ -601,100 +602,139 @@ export const productService = {
       
       if (error) {
         console.error('Erreur getAll produits:', error)
-        return { produits: [], error: error.message }
+        return { products: [], error: error.message } // Utiliser 'products' partout
       }
       
-      return { produits: data || [], error: null }
+      return { products: data || [], error: null }
     } catch (error) {
       console.error('Erreur dans getAll produits:', error)
-      return { produits: [], error: error.message }
+      return { products: [], error: error.message }
     }
   },
 
-  async create(productData) {
+  async createFromReferentiel(referentielId, quantite, dateAchat) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
       
-      const { data, error } = await supabase
-        .from('produits')
-        .insert({
-          ...productData,
-          created_by: user?.id
-        })
-        .select()
+      // 1. Récupérer le référentiel
+      const { data: referentiel, error: refError } = await supabase
+        .from('referentiel_produits')
+        .select('*')
+        .eq('id', referentielId)
         .single()
       
-      if (error) {
-        return { produit: null, error: error.message }
+      if (refError || !referentiel) {
+        return { product: null, error: 'Référentiel non trouvé' }
       }
+
+      // 2. Trouver l'unité correspondante
+      const { data: unite, error: uniteError } = await supabase
+        .from('unites')
+        .select('id')
+        .eq('value', referentiel.unite_mesure)
+        .single()
       
-      return { produit: data, error: null }
+      if (uniteError || !unite) {
+        return { product: null, error: `Unité "${referentiel.unite_mesure}" non trouvée. Créez-la d'abord.` }
+      }
+
+      // 3. Créer le produit
+      const { data: produit, error: produitError } = await supabase
+        .from('produits')
+        .insert({
+          nom: referentiel.nom,
+          date_achat: dateAchat || new Date().toISOString().split('T')[0],
+          prix_achat: referentiel.prix_unitaire,
+          quantite: parseFloat(quantite),
+          quantite_restante: parseFloat(quantite),
+          unite_id: unite.id,
+          created_by: user?.id
+        })
+        .select('*, unite:unites(id, value, label)')
+        .single()
+
+      if (produitError) {
+        console.error('Erreur création produit:', produitError)
+        return { product: null, error: produitError.message }
+      }
+
+      return { product: produit, error: null }
     } catch (error) {
-      console.error('Erreur dans create produit:', error)
-      return { produit: null, error: error.message }
+      console.error('Erreur dans createFromReferentiel:', error)
+      return { product: null, error: error.message }
     }
   },
 
-  async update(id, updates) {
+  async createWithPriceOption(productData) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      // Créer le produit
+      const { data: produit, error: produitError } = await supabase
+        .from('produits')
+        .insert({
+          nom: productData.nom,
+          date_achat: productData.date_achat,
+          prix_achat: productData.prix_achat,
+          quantite: productData.quantite,
+          quantite_restante: productData.quantite,
+          unite_id: productData.unite_id,
+          created_by: user?.id
+        })
+        .select('*, unite:unites(id, value, label)')
+        .single()
+
+      if (produitError) {
+        return { product: null, error: produitError.message }
+      }
+
+      // Si prix de vente défini
+      if (productData.definir_prix_vente && productData.prix_vente) {
+        await supabase
+          .from('prix_vente_produits')
+          .insert({
+            produit_id: produit.id,
+            prix: productData.prix_vente,
+            marge_pourcentage: ((productData.prix_vente - productData.prix_achat) / productData.prix_achat) * 100,
+            actif: true
+          })
+      }
+
+      return { product: produit, error: null }
+    } catch (error) {
+      console.error('Erreur dans createWithPriceOption:', error)
+      return { product: null, error: error.message }
+    }
+  },
+
+  async update(productId, updates) {
     try {
       const { data, error } = await supabase
         .from('produits')
         .update({
-          ...updates,
+          nom: updates.nom,
+          date_achat: updates.date_achat,
+          prix_achat: updates.prix_achat,
+          quantite: updates.quantite,
+          quantite_restante: updates.quantite_restante,
+          unite_id: updates.unite_id,
           updated_at: new Date().toISOString()
         })
-        .eq('id', id)
-        .select()
+        .eq('id', productId)
+        .select('*, unite:unites(id, value, label)')
         .single()
-      
-      if (error) {
-        return { produit: null, error: error.message }
-      }
-      
-      return { produit: data, error: null }
-    } catch (error) {
-      console.error('Erreur dans update produit:', error)
-      return { produit: null, error: error.message }
-    }
-  },
 
-  async delete(id) {
-    try {
-      const { error } = await supabase
-        .from('produits')
-        .delete()
-        .eq('id', id)
-      
       if (error) {
-        return { success: false, error: error.message }
+        return { product: null, error: error.message }
       }
-      
-      return { success: true, error: null }
-    } catch (error) {
-      console.error('Erreur dans delete produit:', error)
-      return { success: false, error: error.message }
-    }
-  },
 
-  async getStockCritique() {
-    try {
-      const { data, error } = await supabase
-        .from('produits')
-        .select('*')
-        .lt('quantite_restante', 10)
-        .order('quantite_restante', { ascending: true })
-      
-      if (error) {
-        return { produits: [], error: error.message }
-      }
-      
-      return { produits: data || [], error: null }
+      return { product: data, error: null }
     } catch (error) {
-      console.error('Erreur dans getStockCritique:', error)
-      return { produits: [], error: error.message }
+      console.error('Erreur dans update:', error)
+      return { product: null, error: error.message }
     }
   }
-}
+};
 // ===================== SERVICES DEMANDES =====================
 export const demandeService = {
   async getAll() {
@@ -2665,14 +2705,20 @@ export const referentielService = {
 
   async create(referentielData) {
     try {
-      const prixUnitaire = referentielData.quantite_par_conditionnement > 0
-        ? referentielData.prix_achat_total / referentielData.quantite_par_conditionnement
+      // Calculer le prix unitaire
+      const prixUnitaire = parseFloat(referentielData.quantite_par_conditionnement) > 0
+        ? parseFloat(referentielData.prix_achat_total) / parseFloat(referentielData.quantite_par_conditionnement)
         : 0
 
       const { data, error } = await supabase
         .from('referentiel_produits')
         .insert({
-          ...referentielData,
+          reference: referentielData.reference,
+          nom: referentielData.nom,
+          type_conditionnement: referentielData.type_conditionnement,
+          unite_mesure: referentielData.unite_mesure,
+          quantite_par_conditionnement: parseFloat(referentielData.quantite_par_conditionnement),
+          prix_achat_total: parseFloat(referentielData.prix_achat_total),
           prix_unitaire: prixUnitaire,
           actif: true
         })
@@ -2680,26 +2726,32 @@ export const referentielService = {
         .single()
 
       if (error) {
-        return { referentiel: null, error: error.message }
+        console.error('Erreur création référentiel:', error)
+        return { success: false, error: error.message }
       }
 
-      return { referentiel: data, error: null }
+      return { success: true, referentiel: data, error: null }
     } catch (error) {
       console.error('Erreur dans create référentiel:', error)
-      return { referentiel: null, error: error.message }
+      return { success: false, error: error.message }
     }
   },
 
   async update(id, updates) {
     try {
-      const prixUnitaire = updates.quantite_par_conditionnement > 0
-        ? updates.prix_achat_total / updates.quantite_par_conditionnement
+      const prixUnitaire = parseFloat(updates.quantite_par_conditionnement) > 0
+        ? parseFloat(updates.prix_achat_total) / parseFloat(updates.quantite_par_conditionnement)
         : 0
 
       const { data, error } = await supabase
         .from('referentiel_produits')
         .update({
-          ...updates,
+          reference: updates.reference,
+          nom: updates.nom,
+          type_conditionnement: updates.type_conditionnement,
+          unite_mesure: updates.unite_mesure,
+          quantite_par_conditionnement: parseFloat(updates.quantite_par_conditionnement),
+          prix_achat_total: parseFloat(updates.prix_achat_total),
           prix_unitaire: prixUnitaire,
           updated_at: new Date().toISOString()
         })
@@ -2708,38 +2760,58 @@ export const referentielService = {
         .single()
 
       if (error) {
-        return { referentiel: null, error: error.message }
+        return { success: false, error: error.message }
       }
 
-      return { referentiel: data, error: null }
+      return { success: true, referentiel: data, error: null }
     } catch (error) {
       console.error('Erreur dans update référentiel:', error)
-      return { referentiel: null, error: error.message }
+      return { success: false, error: error.message }
     }
   },
 
-  async delete(referentielId) {
+  async delete(id) {
     try {
+      // Soft delete - juste désactiver
       const { error } = await supabase
         .from('referentiel_produits')
         .update({
           actif: false,
           updated_at: new Date().toISOString()
         })
-        .eq('id', referentielId)
+        .eq('id', id)
 
       if (error) {
-        console.error('Erreur delete référentiel:', error)
         return { success: false, error: error.message }
       }
 
-      return { success: true, message: 'Élément supprimé avec succès' }
+      return { success: true, message: 'Référentiel supprimé avec succès' }
     } catch (error) {
       console.error('Erreur dans delete référentiel:', error)
       return { success: false, error: error.message }
     }
+  },
+
+  async searchByName(searchTerm) {
+    try {
+      const { data, error } = await supabase
+        .from('referentiel_produits')
+        .select('*')
+        .eq('actif', true)
+        .ilike('nom', `%${searchTerm}%`)
+        .limit(10)
+      
+      if (error) {
+        return { referentiels: [], error: error.message }
+      }
+      
+      return { referentiels: data || [], error: null }
+    } catch (error) {
+      console.error('Erreur dans searchByName:', error)
+      return { referentiels: [], error: error.message }
+    }
   }
-}
+};
 // ===================== SERVICES UNITÉS =====================
 // ===================== SERVICES UNITÉS =====================
 export const uniteService = {
@@ -3106,6 +3178,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
