@@ -1,17 +1,24 @@
+// Dans src/components/stock/StockAtelierManager.js - VERSION CORRIGÉE
+
 "use client";
 
 import { useState, useEffect } from 'react';
 import { stockAtelierService, productService, utils } from '../../lib/supabase';
-import { Package, AlertTriangle, Clock, TrendingUp, TrendingDown, Warehouse, ArrowRight } from 'lucide-react';
-import { Card, StatCard } from '../ui';
+import { Package, Plus, Search, ArrowRight, AlertTriangle, History } from 'lucide-react';
+import { Card, Modal } from '../ui';
 
 export default function StockAtelierManager({ currentUser }) {
-  const [stockAtelier, setStockAtelier] = useState([]);
+  // États - TOUJOURS initialiser avec des tableaux vides
+  const [stocks, setStocks] = useState([]);
   const [produits, setProduits] = useState([]);
-  const [transferts, setTransferts] = useState([]);
+  const [historique, setHistorique] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('stock');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [selectedStock, setSelectedStock] = useState(null);
+  const [transferQuantity, setTransferQuantity] = useState('');
+  const [transferring, setTransferring] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -19,46 +26,154 @@ export default function StockAtelierManager({ currentUser }) {
 
   const loadData = async () => {
     setLoading(true);
+    setError('');
     try {
-      const [stockResult, produitsResult, transfertsResult] = await Promise.all([
-        stockAtelierService.getStockAtelier(),
-        productService.getAll(),
-        stockAtelierService.getHistoriqueTransferts()
+      await Promise.all([
+        loadStocks(),
+        loadProduits(),
+        loadHistorique()
       ]);
-
-      if (stockResult.error) throw new Error(stockResult.error);
-      if (produitsResult.error) throw new Error(produitsResult.error);
-      if (transfertsResult.error) throw new Error(transfertsResult.error);
-
-      setStockAtelier(stockResult.stock);
-      setProduits(produitsResult.products);
-      setTransferts(transfertsResult.transferts);
-      setError('');
     } catch (err) {
-      setError(err.message);
+      console.error('Erreur chargement:', err);
+      setError('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
     }
   };
 
-  const getStockStatusInfo = (statut) => {
-    switch (statut) {
-      case 'rupture':
-        return { color: 'text-red-600', bg: 'bg-red-50', label: 'Rupture' };
-      case 'critique':
-        return { color: 'text-orange-600', bg: 'bg-orange-50', label: 'Critique' };
-      case 'faible':
-        return { color: 'text-yellow-600', bg: 'bg-yellow-50', label: 'Faible' };
-      default:
-        return { color: 'text-green-600', bg: 'bg-green-50', label: 'Normal' };
+  const loadStocks = async () => {
+    try {
+      const result = await stockAtelierService.getAll();
+      
+      // Vérifier et logger le résultat
+      console.log('Résultat stockAtelierService.getAll():', result);
+      
+      if (result.error) {
+        console.error('Erreur chargement stocks:', result.error);
+        setError(result.error);
+        setStocks([]); // Toujours un tableau vide en cas d'erreur
+      } else {
+        // S'assurer que c'est un tableau
+        const stocksData = result.stocks || result.stock || [];
+        setStocks(Array.isArray(stocksData) ? stocksData : []);
+        console.log('Stocks chargés:', stocksData.length);
+      }
+    } catch (err) {
+      console.error('Exception loadStocks:', err);
+      setStocks([]); // Toujours un tableau vide
+      setError('Erreur lors du chargement du stock atelier');
     }
   };
 
+  const loadProduits = async () => {
+    try {
+      const result = await productService.getAll();
+      
+      if (result.error) {
+        console.error('Erreur chargement produits:', result.error);
+        setProduits([]);
+      } else {
+        // Gérer les différents noms possibles de la propriété
+        const produitsData = result.products || result.produits || [];
+        setProduits(Array.isArray(produitsData) ? produitsData : []);
+      }
+    } catch (err) {
+      console.error('Exception loadProduits:', err);
+      setProduits([]);
+    }
+  };
+
+  const loadHistorique = async () => {
+    try {
+      const result = await stockAtelierService.getHistoriqueTransferts();
+      
+      if (result.error) {
+        console.error('Erreur chargement historique:', result.error);
+        setHistorique([]);
+      } else {
+        const historiqueData = result.historique || [];
+        setHistorique(Array.isArray(historiqueData) ? historiqueData : []);
+      }
+    } catch (err) {
+      console.error('Exception loadHistorique:', err);
+      setHistorique([]);
+    }
+  };
+
+  // Filtrage SÉCURISÉ - Protection contre undefined
+  const getFilteredStocks = () => {
+    // Vérifier que stocks est un tableau
+    if (!Array.isArray(stocks)) {
+      console.warn('stocks n\'est pas un tableau:', stocks);
+      return [];
+    }
+
+    // Si pas de terme de recherche, retourner tous les stocks
+    if (!searchTerm || searchTerm.trim() === '') {
+      return stocks;
+    }
+
+    // Filtrer de manière sécurisée
+    return stocks.filter(stock => {
+      // Vérifier que stock existe et a les propriétés nécessaires
+      if (!stock || !stock.produit) return false;
+      
+      const nomProduit = stock.produit.nom || '';
+      const searchLower = searchTerm.toLowerCase();
+      
+      return nomProduit.toLowerCase().includes(searchLower);
+    });
+  };
+
+  // Utiliser la fonction de filtrage sécurisée
+  const filteredStocks = getFilteredStocks();
+
+  // Fonction pour gérer le transfert vers boutique
+  const handleTransfer = async () => {
+    if (!selectedStock || !transferQuantity) return;
+
+    const quantity = parseFloat(transferQuantity);
+    if (isNaN(quantity) || quantity <= 0) {
+      setError('Quantité invalide');
+      return;
+    }
+
+    if (quantity > selectedStock.quantite_disponible) {
+      setError('Quantité insuffisante dans le stock atelier');
+      return;
+    }
+
+    setTransferring(true);
+    setError('');
+
+    try {
+      const result = await stockAtelierService.transfererVersBoutique(
+        selectedStock.produit_id,
+        quantity
+      );
+
+      if (result.error) {
+        setError(result.error);
+      } else {
+        alert('Transfert effectué avec succès !');
+        setShowTransferModal(false);
+        setSelectedStock(null);
+        setTransferQuantity('');
+        await loadData(); // Recharger les données
+      }
+    } catch (err) {
+      console.error('Erreur transfert:', err);
+      setError('Erreur lors du transfert');
+    } finally {
+      setTransferring(false);
+    }
+  };
+
+  // États de chargement et d'erreur
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="spinner"></div>
-        <span className="ml-2">Chargement du stock atelier...</span>
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600"></div>
       </div>
     );
   }
@@ -67,210 +182,216 @@ export default function StockAtelierManager({ currentUser }) {
     <div className="space-y-6">
       {/* En-tête */}
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-            <Warehouse className="w-8 h-8 text-orange-600 mr-3" />
-            Stock Atelier (Production)
-          </h1>
-          <p className="text-gray-600">Ingrédients disponibles pour la production - Alimenté par les demandes validées</p>
-        </div>
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-center text-blue-800">
-            <ArrowRight className="w-5 h-5 mr-2" />
-            <div className="text-sm">
-              <p className="font-medium">Pour ajouter au stock atelier :</p>
-              <p>1. Créez une demande (onglet Demandes)</p>
-              <p>2. Faites-la valider par un admin/production</p>
-              <p>3. Les produits validés s'ajoutent automatiquement ici</p>
-            </div>
-          </div>
+        <h2 className="text-2xl font-bold">Stock Atelier (Production)</h2>
+        <div className="text-sm text-gray-500">
+          {filteredStocks.length} produit{filteredStocks.length > 1 ? 's' : ''} en stock
         </div>
       </div>
 
+      {/* Barre de recherche */}
+      <div className="bg-white p-4 rounded-lg shadow">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+          <input
+            type="text"
+            placeholder="Rechercher un produit..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+          />
+        </div>
+      </div>
+
+      {/* Message d'erreur */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <AlertTriangle className="w-5 h-5 text-red-600 mr-2" />
-            <span className="text-red-800">{error}</span>
-          </div>
+        <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
+          {error}
         </div>
       )}
 
-      {/* Onglets */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab('stock')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'stock'
-                ? 'border-orange-500 text-orange-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <Package className="w-4 h-4 inline mr-2" />
-            Stock Atelier Disponible
-          </button>
-          <button
-            onClick={() => setActiveTab('transferts')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'transferts'
-                ? 'border-orange-500 text-orange-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            <Clock className="w-4 h-4 inline mr-2" />
-            Historique des Ajouts
-          </button>
-        </nav>
+      {/* Alerte stock faible */}
+      {filteredStocks.some(s => s.quantite_disponible < 5) && (
+        <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded flex items-center">
+          <AlertTriangle className="w-5 h-5 mr-2" />
+          Certains produits ont un stock faible (moins de 5 unités)
+        </div>
+      )}
+
+      {/* Liste des stocks */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredStocks.length > 0 ? (
+          filteredStocks.map(stock => (
+            <Card key={stock.id} className="p-4">
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <h3 className="font-semibold text-lg">
+                    {stock.produit?.nom || 'Produit inconnu'}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    ID: {stock.produit_id}
+                  </p>
+                </div>
+                {stock.quantite_disponible < 5 && (
+                  <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">
+                    Stock faible
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Quantité disponible:</span>
+                  <span className="font-bold">
+                    {stock.quantite_disponible} {stock.produit?.unite?.label || 'unité'}
+                  </span>
+                </div>
+
+                {stock.quantite_reservee > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Quantité réservée:</span>
+                    <span className="text-orange-600">
+                      {stock.quantite_reservee} {stock.produit?.unite?.label}
+                    </span>
+                  </div>
+                )}
+
+                <div className="pt-3 border-t">
+                  <button
+                    onClick={() => {
+                      setSelectedStock(stock);
+                      setShowTransferModal(true);
+                    }}
+                    disabled={stock.quantite_disponible === 0}
+                    className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center"
+                  >
+                    <ArrowRight className="w-4 h-4 mr-2" />
+                    Transférer vers Boutique
+                  </button>
+                </div>
+              </div>
+            </Card>
+          ))
+        ) : (
+          <div className="col-span-full text-center py-12">
+            <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-500">
+              {searchTerm 
+                ? `Aucun produit trouvé pour "${searchTerm}"`
+                : 'Aucun produit dans le stock atelier'}
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* Contenu des onglets */}
-      {activeTab === 'stock' && (
-        <div className="space-y-4">
-          {/* Statistiques rapides */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <StatCard
-              title="Ingrédients disponibles"
-              value={stockAtelier.filter(s => (s.stock_reel || 0) > 0).length}
-              icon={Package}
-              color="blue"
-            />
-            <StatCard
-              title="Stock critique"
-              value={stockAtelier.filter(s => s.statut_stock === 'critique' || s.statut_stock === 'rupture').length}
-              icon={AlertTriangle}
-              color="red"
-            />
-            <StatCard
-              title="Stock total disponible"
-              value={utils.formatNumber(stockAtelier.reduce((sum, s) => sum + (s.quantite_disponible || 0), 0), 1)}
-              icon={TrendingUp}
-              color="green"
-            />
-            <StatCard
-              title="Stock utilisé en production"
-              value={utils.formatNumber(stockAtelier.reduce((sum, s) => sum + (s.quantite_reservee || 0), 0), 1)}
-              icon={TrendingDown}
-              color="orange"
-            />
-          </div>
-
-          {/* Tableau du stock */}
-          <Card>
-            <div className="flex justify-between items-center mb-4 p-6 border-b">
-              <h3 className="text-lg font-semibold">Ingrédients Disponibles pour Production</h3>
-              <div className="text-sm text-gray-500">
-                Stock réel = Stock reçu - Stock utilisé en production
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="table w-full">
-                <thead>
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ingrédient</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock Reçu</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Utilisé Production</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock Réel</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unité</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stockAtelier.length === 0 ? (
-                    <tr>
-                      <td colSpan="6" className="text-center py-8 text-gray-500">
-                        <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                        Aucun ingrédient dans l'atelier
-                        <br />
-                        <span className="text-sm">Les demandes validées alimenteront ce stock automatiquement</span>
-                      </td>
-                    </tr>
-                  ) : (
-                    stockAtelier.map((stock, index) => {
-                      const statusInfo = getStockStatusInfo(stock.statut_stock || 'normal');
-                      return (
-                        <tr key={index} className={stock.stock_reel <= 0 ? 'opacity-50' : ''}>
-                          <td className="px-6 py-4 font-medium">{stock.nom_produit || `Ingrédient ${index + 1}`}</td>
-                          <td className="px-6 py-4 text-blue-600 font-semibold">
-                            {utils.formatNumber(stock.quantite_disponible || 0, 1)}
-                          </td>
-                          <td className="px-6 py-4 text-orange-600">
-                            {utils.formatNumber(stock.quantite_reservee || 0, 1)}
-                          </td>
-                          <td className="px-6 py-4 font-bold text-lg">
-                            <span className={stock.stock_reel <= 0 ? 'text-red-600' : 'text-green-600'}>
-                              {utils.formatNumber(stock.stock_reel || 0, 1)}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">{stock.unite || 'unité'}</td>
-                          <td className="px-6 py-4">
-                            <span className={`badge ${statusInfo.bg} ${statusInfo.color}`}>
-                              {statusInfo.label}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {activeTab === 'transferts' && (
-        <Card>
-          <h3 className="text-lg font-semibold mb-4 flex items-center p-6 border-b">
-            <Clock className="w-5 h-5 mr-2" />
-            Historique des Ajouts (Demandes Validées)
+      {/* Historique des transferts */}
+      {Array.isArray(historique) && historique.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-lg font-semibold mb-4 flex items-center">
+            <History className="w-5 h-5 mr-2" />
+            Historique récent des transferts
           </h3>
-          <div className="overflow-x-auto">
-            <table className="table w-full">
-              <thead>
+          <div className="bg-white rounded-lg shadow overflow-hidden">
+            <table className="min-w-full">
+              <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ingrédient</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantité</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Demandé par</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validé par</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Destination</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Date</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Produit</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Quantité</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Demandeur</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Statut</th>
                 </tr>
               </thead>
-              <tbody>
-                {transferts.length === 0 ? (
-                  <tr>
-                    <td colSpan="6" className="text-center py-8 text-gray-500">
-                      <Clock className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                      Aucun ajout enregistré
-                      <br />
-                      <span className="text-sm">Les demandes validées apparaîtront ici</span>
+              <tbody className="divide-y divide-gray-200">
+                {historique.slice(0, 5).map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-4 py-2 text-sm">{utils.formatDate(item.created_at)}</td>
+                    <td className="px-4 py-2 text-sm">{item.produit?.nom || 'N/A'}</td>
+                    <td className="px-4 py-2 text-sm">
+                      {item.quantite} {item.produit?.unite?.label || ''}
+                    </td>
+                    <td className="px-4 py-2 text-sm">{item.demandeur?.nom || 'N/A'}</td>
+                    <td className="px-4 py-2 text-sm">
+                      <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
+                        {item.statut || 'Validé'}
+                      </span>
                     </td>
                   </tr>
-                ) : (
-                  transferts.map((transfert, index) => (
-                    <tr key={index}>
-                      <td className="px-6 py-4">{utils.formatDateTime(transfert.created_at)}</td>
-                      <td className="px-6 py-4 font-medium">{transfert.produit?.nom || 'Ingrédient'}</td>
-                      <td className="px-6 py-4">
-                        <span className="font-semibold text-blue-600">
-                          {utils.formatNumber(transfert.quantite_transferee || 0, 1)} {transfert.produit?.unite?.label || ''}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">{transfert.demandeur?.nom || 'Non spécifié'}</td>
-                      <td className="px-6 py-4">{transfert.valideur?.nom || 'Auto'}</td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          Production
-                        </span>
-                      </td>
-                    </tr>
-                  ))
-                )}
+                ))}
               </tbody>
             </table>
           </div>
-        </Card>
+        </div>
+      )}
+
+      {/* Modal de transfert */}
+      {showTransferModal && selectedStock && (
+        <Modal
+          isOpen={showTransferModal}
+          onClose={() => {
+            setShowTransferModal(false);
+            setSelectedStock(null);
+            setTransferQuantity('');
+            setError('');
+          }}
+          title="Transférer vers Boutique"
+        >
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm text-gray-600">Produit</p>
+              <p className="font-semibold">{selectedStock.produit?.nom}</p>
+            </div>
+
+            <div>
+              <p className="text-sm text-gray-600">Quantité disponible</p>
+              <p className="font-semibold">
+                {selectedStock.quantite_disponible} {selectedStock.produit?.unite?.label}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Quantité à transférer
+              </label>
+              <input
+                type="number"
+                value={transferQuantity}
+                onChange={(e) => setTransferQuantity(e.target.value)}
+                max={selectedStock.quantite_disponible}
+                min="0"
+                step="0.01"
+                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="0"
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-50 text-red-600 px-3 py-2 rounded">
+                {error}
+              </div>
+            )}
+
+            <div className="flex space-x-3">
+              <button
+                onClick={handleTransfer}
+                disabled={transferring || !transferQuantity}
+                className="flex-1 bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-300"
+              >
+                {transferring ? 'Transfert...' : 'Confirmer le transfert'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowTransferModal(false);
+                  setSelectedStock(null);
+                  setTransferQuantity('');
+                  setError('');
+                }}
+                className="flex-1 bg-gray-200 text-gray-800 py-2 rounded hover:bg-gray-300"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );
