@@ -30,11 +30,14 @@ export default function StockManager({ currentUser }) {
     definir_prix_vente: false,
     prix_vente: ''
   });
-  const filtered = referentiels.filter(ref =>
-    `${ref.reference} ${ref.nom}`
-      .toLowerCase()
-      .includes(search.toLowerCase())
-  );
+  const filtered = Array.isArray(referentiels) 
+  ? referentiels.filter(ref =>
+      ref && ref.reference && ref.nom &&
+      `${ref.reference} ${ref.nom}`
+        .toLowerCase()
+        .includes((search || '').toLowerCase())
+    )
+  : [];
 
   useEffect(() => {
     loadData();
@@ -57,18 +60,22 @@ export default function StockManager({ currentUser }) {
   };
 
   const loadReferentiels = async () => {
-    try {
-      const { referentiels, error } = await referentielService.getAll();
-      if (error) {
-        console.error('Erreur chargement référentiel:', error);
-      } else {
-        setReferentiels(referentiels);
-        console.log('✅ Référentiels chargés:', referentiels.length);
-      }
-    } catch (err) {
-      console.error('Erreur:', err);
+  try {
+    const result = await referentielService.getAll();
+    const referentielsData = result.referentiels || [];
+    
+    if (result.error) {
+      console.error('Erreur chargement référentiel:', result.error);
+      setReferentiels([]);
+    } else {
+      setReferentiels(Array.isArray(referentielsData) ? referentielsData : []);
+      console.log('✅ Référentiels chargés:', referentielsData.length);
     }
-  };
+  } catch (err) {
+    console.error('Erreur:', err);
+    setReferentiels([]);
+  }
+};
 
   // 🔧 CORRECTION: Fonction handleReferentielSelect avec calcul prix total correct
   const handleReferentielSelect = (referentielId) => {
@@ -129,18 +136,24 @@ export default function StockManager({ currentUser }) {
   };
 
   const loadProducts = async () => {
-    try {
-      const { products, error } = await productService.getAll();
-      if (error) {
-        console.error('Erreur lors du chargement des produits:', error);
-        setError(error);
-      } else {
-        setProducts(products);
-      }
-    } catch (err) {
-      console.error('Erreur:', err);
+  try {
+    const result = await productService.getAll();
+    // Vérifier le nom de la propriété retournée
+    const productsData = result.products || result.produits || [];
+    
+    if (result.error) {
+      console.error('Erreur lors du chargement des produits:', result.error);
+      setError(result.error);
+      setProducts([]); // Tableau vide en cas d'erreur
+    } else {
+      setProducts(Array.isArray(productsData) ? productsData : []);
     }
-  };
+  } catch (err) {
+    console.error('Erreur:', err);
+    setProducts([]); // Tableau vide en cas d'exception
+    setError('Erreur de chargement des produits');
+  }
+};
 
   const loadUnites = async () => {
     setUnitesLoading(true);
@@ -452,10 +465,12 @@ export default function StockManager({ currentUser }) {
     }
   };
 
-  const filteredProducts = products.filter(product => 
-    product.nom.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
+  const filteredProducts = Array.isArray(products)
+  ? products.filter(product =>
+      product && product.nom &&
+      product.nom.toLowerCase().includes((searchTerm || '').toLowerCase())
+    )
+  : [];
   if (loading) {
     return (
       <div className="space-y-6">
