@@ -28,31 +28,47 @@ export default function RecettesManager({ currentUser }) {
     ajouterIngredient();
   }, []);
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [recettesResult, productsResult] = await Promise.all([
-        recetteService.getAll(),
-        productService.getAll()
-      ]);
+ // Dans RecettesManager.js, corrigez la fonction loadData :
 
-      if (recettesResult.error) {
-        console.error('Erreur recettes:', recettesResult.error);
-      } else {
-        setRecettes(recettesResult.recettes);
-      }
-
-      if (productsResult.error) {
-        console.error('Erreur produits:', productsResult.error);
-      } else {
-        setProducts(productsResult.produits);
-      }
-    } catch (err) {
-      console.error('Erreur:', err);
-    } finally {
-      setLoading(false);
+const loadData = async () => {
+  setLoading(true);
+  try {
+    // Charger les recettes
+    const { recettes: recettesData, error: recettesError } = await recetteService.getAll();
+    
+    if (recettesError) {
+      console.error('Erreur chargement recettes:', recettesError);
+      setRecettes([]);
+    } else {
+      setRecettes(recettesData || []);
     }
-  };
+
+    // IMPORTANT: Charger les produits DIRECTEMENT depuis Supabase
+    // pour éviter les problèmes de format
+    const { data: produitsData, error: produitsError } = await supabase
+      .from('produits')
+      .select(`
+        *,
+        unite:unites(id, value, label)
+      `)
+      .order('nom', { ascending: true });
+
+    if (produitsError) {
+      console.error('Erreur chargement produits:', produitsError);
+      setProducts([]);
+    } else {
+      console.log('Produits chargés pour recettes:', produitsData?.length || 0);
+      setProducts(produitsData || []);
+    }
+
+  } catch (err) {
+    console.error('Erreur générale dans RecettesManager:', err);
+    setProducts([]); // S'assurer que products est toujours un tableau
+    setRecettes([]);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const ajouterIngredient = () => {
     setIngredients([...ingredients, {
@@ -493,7 +509,9 @@ const handleCalculBesoins = async (e) => {
                 </div>
               ) : (
                 ingredients.map((ingredient, index) => {
-                  const produitSelectionne = products.find(p => p.id === parseInt(ingredient.produit_ingredient_id));
+                  const produitSelectionne = Array.isArray(products) 
+                  ? products.find(p => p && p.id === parseInt(ingredient.produit_ingredient_id))
+                  : null;
                   const estValide = ingredient.produit_ingredient_id && ingredient.quantite_necessaire && parseFloat(ingredient.quantite_necessaire) > 0;
                   
                   return (
