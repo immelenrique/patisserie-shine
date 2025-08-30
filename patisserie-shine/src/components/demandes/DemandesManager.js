@@ -28,24 +28,38 @@ export default function DemandesManager({ currentUser }) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [demandesResult, productsResult] = await Promise.all([
-        demandeService.getAll(),
-        productService.getAll()
-      ]);
-
-      if (demandesResult.error) {
-        console.error('Erreur lors du chargement des demandes:', demandesResult.error);
+      // Charger les demandes
+      const { demandes: demandesData, error: demandesError } = await demandeService.getAll();
+      
+      if (demandesError) {
+        console.error('Erreur chargement demandes:', demandesError);
+        setDemandes([]);
       } else {
-        setDemandes(demandesResult.demandes);
+        setDemandes(demandesData || []);
       }
 
-      if (productsResult.error) {
-        console.error('Erreur lors du chargement des produits:', productsResult.error);
+      // Charger DIRECTEMENT depuis Supabase pour éviter les problèmes de format
+      const { data: produitsData, error: produitsError } = await supabase
+        .from('produits')
+        .select(`
+          *,
+          unite:unites(id, value, label)
+        `)
+        .gt('quantite_restante', 0)  // Seulement les produits avec du stock
+        .order('nom', { ascending: true });
+
+      if (produitsError) {
+        console.error('Erreur chargement produits:', produitsError);
+        setProducts([]);
+        setError('Impossible de charger les produits disponibles');
       } else {
-        setProducts(productsResult.products);
+        console.log(`${produitsData?.length || 0} produits avec stock disponibles`);
+        setProducts(produitsData || []);
       }
+
     } catch (err) {
-      console.error('Erreur:', err);
+      console.error('Erreur générale:', err);
+      setError('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
     }
@@ -90,7 +104,11 @@ export default function DemandesManager({ currentUser }) {
 
   // Filtrer les produits disponibles pour la recherche
   const getAvailableProducts = () => {
+    if (!Array.isArray(products)) return [];
+    
     return products.filter(product => 
+      product && 
+      product.nom &&
       product.quantite_restante > 0 && 
       product.nom.toLowerCase().includes(searchTerm.toLowerCase()) &&
       !selectedProducts.find(p => p.id === product.id)
@@ -119,27 +137,67 @@ export default function DemandesManager({ currentUser }) {
     try {
       setError('');
       
-      // Créer une demande groupée via une nouvelle API
-      const demandeGroupee = {
-        destination: formData.destination,
-        commentaire: formData.commentaire,
-        produits: selectedProducts.map(p => ({
-          produit_id: p.id,
-          quantite: p.quantite_demandee
-        }))
-      };
-
-      const { demande, error } = await demandeService.createGrouped(demandeGroupee);
-
-      if (error) {
-        console.error('Erreur lors de la création:', error);
-        setError('Erreur lors de la création de la demande: ' + error);
-      } else {
-        await loadData();
-        resetForm();
-        setShowAddModal(false);
-        alert(`Demande groupée créée avec succès !\n\n${selectedProducts.length} produit(s) demandé(s) vers ${formData.destination}`);
+      // Créer directement dans Supabase si le service n'existe pas
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        setError('Vous devez être connecté');
+        return;
       }
+
+      // 1. Créer la demande groupée
+      const { data: demandeGroupee, error: groupError } = await supabase
+        .from('demandes_groupees')
+        .insert({
+          destination: formData.destination,
+          commentaire: formData.commentaire || '',
+          demandeur_id: user.id,
+          statut: 'en_attente',
+          nombre_produits: selectedProducts.length,
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (groupError) {
+        console.error('Erreur création demande groupée:', groupError);
+        setError('Erreur lors de la création de la demande: ' + groupError.message);
+        return;
+      }
+
+      // 2. Créer les demandes individuelles
+      const demandesIndividuelles = selectedProducts.map(p => ({
+        produit_id: p.id,
+        quantite: p.quantite_demandee,
+        destination: formData.destination,
+        statut: 'en_attente',
+        demandeur_id: user.id,
+        demande_groupee_id: demandeGroupee.id,
+        created_at: new Date().toISOString()
+      }));
+
+      const { error: demandesError } = await supabase
+        .from('demandes')
+        .insert(demandesIndividuelles);
+
+      if (demandesError) {
+        // Rollback : supprimer la demande groupée
+        await supabase
+          .from('demandes_groupees')
+          .delete()
+          .eq('id', demandeGroupee.id);
+        
+        console.error('Erreur création demandes individuelles:', demandesError);
+        setError('Erreur lors de la création des demandes: ' + demandesError.message);
+        return;
+      }
+
+      // Succès
+      await loadData();
+      resetForm();
+      setShowAddModal(false);
+      alert(`Demande groupée créée avec succès !\n\n${selectedProducts.length} produit(s) demandé(s) vers ${formData.destination}`);
+
     } catch (err) {
       console.error('Erreur:', err);
       setError('Erreur lors de la création de la demande');
@@ -159,15 +217,83 @@ export default function DemandesManager({ currentUser }) {
 
   const handleValidateGroupedDemande = async (demandeGroupeeId) => {
     try {
-      const { result, error, message } = await demandeService.validateGrouped(demandeGroupeeId);
-      
-      if (error) {
-        console.error('Erreur lors de la validation groupée:', error);
-        alert('Erreur lors de la validation de la demande groupée: ' + error);
-      } else {
-        await loadData();
-        alert(message || 'Demande groupée traitée avec succès !');
+      // Récupérer toutes les demandes du groupe
+      const { data: demandesGroupe, error: fetchError } = await supabase
+        .from('demandes')
+        .select('*')
+        .eq('demande_groupee_id', demandeGroupeeId)
+        .eq('statut', 'en_attente');
+
+      if (fetchError) {
+        alert('Erreur lors de la récupération des demandes: ' + fetchError.message);
+        return;
       }
+
+      // Valider chaque demande
+      for (const demande of demandesGroupe) {
+        // Réduire le stock principal
+        const { error: stockError } = await supabase.rpc('decrement_stock', {
+          p_produit_id: demande.produit_id,
+          p_quantite: demande.quantite
+        });
+
+        if (stockError) {
+          console.error('Erreur mise à jour stock:', stockError);
+          continue;
+        }
+
+        // Ajouter au stock de destination
+        if (demande.destination === 'Production' || demande.destination === 'Atelier') {
+          // Vérifier si existe déjà
+          const { data: existingStock } = await supabase
+            .from('stock_atelier')
+            .select('*')
+            .eq('produit_id', demande.produit_id)
+            .single();
+
+          if (existingStock) {
+            await supabase
+              .from('stock_atelier')
+              .update({
+                quantite_disponible: existingStock.quantite_disponible + demande.quantite,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', existingStock.id);
+          } else {
+            await supabase
+              .from('stock_atelier')
+              .insert({
+                produit_id: demande.produit_id,
+                quantite_disponible: demande.quantite,
+                created_at: new Date().toISOString()
+              });
+          }
+        }
+      }
+
+      // Marquer toutes les demandes comme validées
+      await supabase
+        .from('demandes')
+        .update({
+          statut: 'validee',
+          valideur_id: currentUser.id,
+          date_validation: new Date().toISOString()
+        })
+        .eq('demande_groupee_id', demandeGroupeeId);
+
+      // Marquer la demande groupée comme validée
+      await supabase
+        .from('demandes_groupees')
+        .update({
+          statut: 'validee',
+          valideur_id: currentUser.id,
+          date_validation: new Date().toISOString()
+        })
+        .eq('id', demandeGroupeeId);
+
+      await loadData();
+      alert('Demande groupée validée avec succès !');
+      
     } catch (err) {
       console.error('Erreur:', err);
       alert('Erreur lors de la validation de la demande groupée');
@@ -179,7 +305,7 @@ export default function DemandesManager({ currentUser }) {
     
     try {
       // Marquer la demande groupée comme refusée
-      const { error: groupError } = await supabase
+      await supabase
         .from('demandes_groupees')
         .update({
           statut: 'refusee',
@@ -188,26 +314,15 @@ export default function DemandesManager({ currentUser }) {
         })
         .eq('id', demandeGroupeeId);
 
-      if (groupError) {
-        console.error('Erreur refus demande groupée:', groupError);
-        alert('Erreur lors du refus de la demande groupée: ' + groupError.message);
-        return;
-      }
-
-      // Marquer toutes les lignes comme refusées
-      const { error: lignesError } = await supabase
+      // Marquer toutes les demandes comme refusées
+      await supabase
         .from('demandes')
         .update({
           statut: 'refusee',
           valideur_id: currentUser.id,
           date_validation: new Date().toISOString()
         })
-        .eq('demande_groupee_id', demandeGroupeeId)
-        .eq('statut', 'en_attente');
-
-      if (lignesError) {
-        console.error('Erreur refus lignes:', lignesError);
-      }
+        .eq('demande_groupee_id', demandeGroupeeId);
 
       await loadData();
       alert('Demande groupée refusée');
@@ -217,13 +332,12 @@ export default function DemandesManager({ currentUser }) {
     }
   };
 
-  const handleValidateDemande = async (demandeId, destination) => {
+  const handleValidateDemande = async (demandeId) => {
     try {
       const { result, error, message } = await demandeService.validateWithBoutiqueCheck(demandeId);
       
       if (error) {
-        console.error('Erreur lors de la validation:', error);
-        alert('Erreur lors de la validation de la demande: ' + error);
+        alert('Erreur lors de la validation: ' + error);
       } else {
         await loadData();
         alert(message || 'Demande validée avec succès !');
@@ -241,8 +355,7 @@ export default function DemandesManager({ currentUser }) {
       const { demande, error } = await demandeService.reject(demandeId);
       
       if (error) {
-        console.error('Erreur lors du refus:', error);
-        alert('Erreur lors du refus de la demande: ' + error);
+        alert('Erreur lors du refus: ' + error);
       } else {
         await loadData();
         alert('Demande refusée');
@@ -257,7 +370,6 @@ export default function DemandesManager({ currentUser }) {
     switch (destination) {
       case 'Production': return <Warehouse className="w-4 h-4" />;
       case 'Boutique': return <Store className="w-4 h-4" />;
-      case 'Commande': return <Package className="w-4 h-4" />;
       default: return <Package className="w-4 h-4" />;
     }
   };
@@ -266,212 +378,126 @@ export default function DemandesManager({ currentUser }) {
     switch (destination) {
       case 'Production': return 'bg-blue-100 text-blue-800';
       case 'Boutique': return 'bg-green-100 text-green-800';
-      case 'Commande': return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-gray-200 rounded w-1/3"></div>
-          <div className="h-64 bg-gray-200 rounded"></div>
-        </div>
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600"></div>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900 flex items-center">
-            <ShoppingCart className="w-8 h-8 text-orange-600 mr-3" />
-            Demandes de Matières Premières
-          </h2>
-          <p className="text-gray-600">Transfert du stock principal vers la production ou la boutique</p>
-        </div>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Demandes de Matières Premières</h2>
         <button 
-          onClick={() => setShowAddModal(true)}
-          className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-2 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 flex items-center space-x-2"
+          onClick={() => {
+            setShowAddModal(true);
+            setError('');
+          }}
+          className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 flex items-center"
         >
-          <Plus className="h-5 w-5" />
-          <span>Nouvelle Demande Multi-produits</span>
+          <Plus className="h-5 w-5 mr-2" />
+          Nouvelle Demande Multi-produits
         </button>
       </div>
 
-      {/* Informations sur le processus amélioré */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h3 className="font-medium text-blue-900 mb-2 flex items-center">
-          <ArrowRight className="w-5 h-5 mr-2" />
-          Processus de demande multi-produits
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-blue-800">
-          <div className="flex items-center space-x-2">
-            <span className="bg-blue-200 text-blue-900 px-2 py-1 rounded-full text-xs font-medium">1</span>
-            <span>Sélectionner plusieurs ingrédients</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <span className="bg-blue-200 text-blue-900 px-2 py-1 rounded-full text-xs font-medium">2</span>
-            <span>Validation groupée par admin/production</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <span className="bg-blue-200 text-blue-900 px-2 py-1 rounded-full text-xs font-medium">3</span>
-            <span>Traitement automatique de tous les produits</span>
-          </div>
+      {/* Message si pas de produits */}
+      {products.length === 0 && !loading && (
+        <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded">
+          Aucun produit avec du stock disponible. Veuillez d'abord ajouter des produits dans le stock principal.
         </div>
-        <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded text-xs text-green-700">
-          <Store className="w-4 h-4 inline mr-1" />
-          <strong>Nouveau :</strong> Créez une demande avec plusieurs produits en une seule fois !
-        </div>
-      </div>
+      )}
 
+      {/* Liste des demandes */}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Demande</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Produits</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destination</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Demandeur</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Demande</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produits</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Destination</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Demandeur</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="divide-y divide-gray-200">
               {demandes.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-8 text-gray-500">
+                  <td colSpan="6" className="text-center py-8 text-gray-500">
                     <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                     Aucune demande enregistrée
-                    <br />
-                    <span className="text-sm">Créez votre première demande multi-produits</span>
                   </td>
                 </tr>
               ) : (
                 demandes.map((demande) => {
-                  const produit = demande.produit;
                   const peutValider = currentUser.role === 'admin' || currentUser.role === 'employe_production';
                   
                   return (
-                    <tr key={demande.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">#{demande.id}</div>
-                        {demande.commentaire && (
-                          <div className="text-xs text-gray-500 max-w-xs truncate">{demande.commentaire}</div>
-                        )}
-                      </td>
+                    <tr key={demande.id}>
+                      <td className="px-6 py-4">#{demande.id}</td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center">
-                          <Package className="w-4 h-4 text-gray-400 mr-2" />
+                        {demande.type === 'groupee' ? (
                           <div>
-                            {demande.type === 'groupee' ? (
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">
-                                  📦 Demande groupée ({demande.nombre_produits} produits)
-                                </div>
-                                <div className="text-xs text-gray-500 space-y-1 mt-1">
-                                  {demande.lignes && demande.lignes.slice(0, 3).map((ligne, idx) => (
-                                    <div key={idx}>
-                                      • {ligne.produit?.nom}: {utils.formatNumber(ligne.quantite, 2)} {ligne.produit?.unite?.label}
-                                    </div>
-                                  ))}
-                                  {demande.lignes && demande.lignes.length > 3 && (
-                                    <div className="text-blue-600">
-                                      ... et {demande.lignes.length - 3} autre(s)
-                                    </div>
-                                  )}
-                                </div>
-                                {demande.commentaire && (
-                                  <div className="text-xs text-blue-600 mt-1 italic">
-                                    💬 {demande.commentaire}
-                                  </div>
+                            <span className="font-medium">
+                              {demande.nombre_produits} produits
+                            </span>
+                            {demande.demandes && (
+                              <div className="text-xs text-gray-500 mt-1">
+                                {demande.demandes.slice(0, 2).map((d, i) => (
+                                  <div key={i}>• {d.produit?.nom}</div>
+                                ))}
+                                {demande.demandes.length > 2 && (
+                                  <div>... et {demande.demandes.length - 2} autres</div>
                                 )}
-                              </div>
-                            ) : (
-                              <div>
-                                <div className="text-sm font-medium text-gray-900">{produit?.nom || 'Ingrédient inconnu'}</div>
-                                <div className="text-xs text-gray-500">
-                                  {utils.formatNumber(demande.quantite, 2)} {produit?.unite?.label || ''} demandé(s)
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  Stock: {produit?.quantite_restante || 0} {produit?.unite?.label || ''}
-                                </div>
                               </div>
                             )}
                           </div>
-                        </div>
-                        {demande.type !== 'groupee' && produit && demande.quantite > produit.quantite_restante && (
-                          <div className="text-xs text-red-600 mt-1">⚠ Quantité supérieure au stock</div>
-                        )}
-                        {demande.type === 'groupee' && demande.lignes && demande.lignes.some(l => l.quantite > (l.produit?.quantite_restante || 0)) && (
-                          <div className="text-xs text-red-600 mt-1">⚠ Certains produits dépassent le stock</div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getDestinationColor(demande.destination)}`}>
-                          {getDestinationIcon(demande.destination)}
-                          <span className="ml-1">{demande.destination}</span>
-                        </span>
-                        {demande.destination === 'Production' && (
-                          <div className="text-xs text-blue-600 mt-1">→ Stock Atelier</div>
-                        )}
-                        {demande.destination === 'Boutique' && (
-                          <div className="text-xs text-green-600 mt-1">→ Stock Boutique</div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {demande.demandeur?.nom || 'Non spécifié'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {utils.formatDate(demande.created_at)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <StatusBadge status={demande.statut} />
-                        {demande.statut === 'validee' && (
-                          <div className="text-xs text-green-600 mt-1">
-                            ✓ {demande.destination === 'Production' ? 'Ajouté au stock atelier' : 'Ajouté au stock boutique'}
+                        ) : (
+                          <div>
+                            <div className="font-medium">{demande.produit?.nom}</div>
+                            <div className="text-sm text-gray-500">
+                              {demande.quantite} {demande.produit?.unite?.label}
+                            </div>
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded-full text-xs ${getDestinationColor(demande.destination)}`}>
+                          {demande.destination}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm">{demande.demandeur?.nom}</td>
+                      <td className="px-6 py-4">
+                        <StatusBadge status={demande.statut} />
+                      </td>
+                      <td className="px-6 py-4">
                         {demande.statut === 'en_attente' && peutValider && (
                           <div className="flex space-x-2">
                             <button 
                               onClick={() => demande.type === 'groupee' 
-                                ? handleValidateGroupedDemande(demande.demande_groupee_id)
-                                : handleValidateDemande(demande.id, demande.destination)
+                                ? handleValidateGroupedDemande(demande.id)
+                                : handleValidateDemande(demande.id)
                               }
-                              className="text-green-600 hover:text-green-900 p-1 hover:bg-green-50 rounded"
-                              title={demande.type === 'groupee' 
-                                ? 'Valider toute la demande groupée'
-                                : demande.destination === 'Boutique' ? 'Valider et ajouter à la boutique' : 'Valider et transférer à l\'atelier'
-                              }
+                              className="text-green-600 hover:text-green-900"
                             >
                               <Check className="h-4 w-4" />
                             </button>
                             <button 
                               onClick={() => demande.type === 'groupee'
-                                ? handleRejectGroupedDemande(demande.demande_groupee_id)
+                                ? handleRejectGroupedDemande(demande.id)
                                 : handleRejectDemande(demande.id)
                               }
-                              className="text-red-600 hover:text-red-900 p-1 hover:bg-red-50 rounded"
-                              title={demande.type === 'groupee' ? 'Refuser toute la demande groupée' : 'Refuser'}
+                              className="text-red-600 hover:text-red-900"
                             >
                               <X className="h-4 w-4" />
                             </button>
-                          </div>
-                        )}
-                        {demande.statut !== 'en_attente' && (
-                          <div className="text-xs text-gray-500">
-                            {demande.statut === 'validee' && demande.valideur && `Par ${demande.valideur.nom}`}
-                            {demande.statut === 'refusee' && 'Refusée'}
-                            {demande.statut === 'partiellement_validee' && (
-                              <span className="text-yellow-600">Partiellement validée</span>
-                            )}
                           </div>
                         )}
                       </td>
@@ -484,59 +510,57 @@ export default function DemandesManager({ currentUser }) {
         </div>
       </Card>
 
-      {/* Modal Nouvelle Demande Multi-produits */}
+      {/* Modal Nouvelle Demande */}
       <Modal 
         isOpen={showAddModal} 
-        onClose={() => {setShowAddModal(false); resetForm();}} 
+        onClose={() => {
+          setShowAddModal(false); 
+          resetForm();
+        }} 
         title="Nouvelle Demande Multi-produits" 
         size="lg"
       >
         <form onSubmit={handleCreateDemande} className="space-y-6">
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-              <div className="text-red-800 text-sm">{error}</div>
+            <div className="bg-red-50 border border-red-200 text-red-600 px-3 py-2 rounded">
+              {error}
             </div>
           )}
 
-          {/* Sélection de la destination */}
+          {/* Destination */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Destination *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Destination</label>
             <select
               value={formData.destination}
               onChange={(e) => setFormData({...formData, destination: e.target.value})}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
             >
-              <option value="Production">Production (→ Stock Atelier)</option>
-              <option value="Boutique">Boutique (→ Vente directe)</option>
-              <option value="Commande">Commande spéciale</option>
-              <option value="Échantillon">Échantillon/Test</option>
-              <option value="Perte">Perte/Casse</option>
+              <option value="Production">Production (Stock Atelier)</option>
+              <option value="Boutique">Boutique</option>
             </select>
           </div>
 
-          {/* Commentaire optionnel */}
+          {/* Commentaire */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Commentaire (optionnel)</label>
             <textarea
               value={formData.commentaire}
               onChange={(e) => setFormData({...formData, commentaire: e.target.value})}
               rows={2}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
               placeholder="Description de la demande..."
             />
           </div>
 
-          {/* Section de recherche et sélection des produits */}
+          {/* Sélection des produits */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Sélectionner les produits ({selectedProducts.length} sélectionné{selectedProducts.length > 1 ? 's' : ''})
+              Produits ({selectedProducts.length} sélectionnés)
             </label>
             
-            {/* Barre de recherche */}
+            {/* Recherche */}
             <div className="relative mb-4">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-5 w-5 text-gray-400" />
-              </div>
+              <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
               <input
                 type="text"
                 value={searchTerm}
@@ -545,181 +569,100 @@ export default function DemandesManager({ currentUser }) {
                   setShowProductSearch(e.target.value.length > 0);
                 }}
                 onFocus={() => setShowProductSearch(searchTerm.length > 0)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                placeholder="Rechercher un produit à ajouter..."
+                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                placeholder="Rechercher un produit..."
               />
               
-              {/* Liste des produits trouvés */}
+              {/* Résultats de recherche */}
               {showProductSearch && searchTerm && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {getAvailableProducts().map(product => (
-                    <div
-                      key={product.id}
-                      onClick={() => addProductToSelection(product)}
-                      className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                    >
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{product.nom}</div>
-                          <div className="text-xs text-gray-500">
-                            Stock: {product.quantite_restante} {product.unite?.label}
-                          </div>
-                        </div>
-                        <Plus className="h-4 w-4 text-orange-500" />
-                      </div>
-                    </div>
-                  ))}
-                  {getAvailableProducts().length === 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {getAvailableProducts().length === 0 ? (
                     <div className="px-4 py-3 text-sm text-gray-500 text-center">
-                      Aucun produit trouvé ou tous déjà sélectionnés
+                      Aucun produit trouvé
                     </div>
+                  ) : (
+                    getAvailableProducts().map(product => (
+                      <div
+                        key={product.id}
+                        onClick={() => addProductToSelection(product)}
+                        className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+                      >
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <div className="font-medium">{product.nom}</div>
+                            <div className="text-xs text-gray-500">
+                              Stock: {product.quantite_restante} {product.unite?.label}
+                            </div>
+                          </div>
+                          <Plus className="h-4 w-4 text-orange-500" />
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
               )}
             </div>
 
-            {/* Liste des produits sélectionnés */}
+            {/* Produits sélectionnés */}
             {selectedProducts.length > 0 && (
-              <div className="border border-gray-200 rounded-lg p-4 space-y-3">
-                <h4 className="text-sm font-medium text-gray-700">Produits sélectionnés :</h4>
-                {selectedProducts.map((product, index) => (
-                  <div key={product.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+              <div className="border rounded-lg p-4 space-y-3">
+                {selectedProducts.map((product) => (
+                  <div key={product.id} className="flex items-center justify-between bg-gray-50 rounded p-3">
                     <div className="flex-1">
-                      <div className="text-sm font-medium text-gray-900">{product.nom}</div>
+                      <div className="font-medium">{product.nom}</div>
                       <div className="text-xs text-gray-500">
-                        Stock disponible: {product.quantite_disponible} {product.unite?.label}
+                        Max: {product.quantite_disponible} {product.unite?.label}
                       </div>
                     </div>
                     
                     <div className="flex items-center space-x-3">
-                      <div className="flex items-center space-x-2">
-                        <label className="text-xs text-gray-600">Quantité:</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          max={product.quantite_disponible}
-                          value={product.quantite_demandee}
-                          onChange={(e) => updateProductQuantity(product.id, e.target.value)}
-                          className="w-20 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                        />
-                        <span className="text-xs text-gray-500">{product.unite?.label}</span>
-                      </div>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        max={product.quantite_disponible}
+                        value={product.quantite_demandee}
+                        onChange={(e) => updateProductQuantity(product.id, e.target.value)}
+                        className="w-20 px-2 py-1 border rounded"
+                      />
+                      <span className="text-xs">{product.unite?.label}</span>
                       
                       <button
                         type="button"
                         onClick={() => removeProductFromSelection(product.id)}
-                        className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded"
-                        title="Retirer de la sélection"
+                        className="text-red-500 hover:text-red-700"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
                   </div>
                 ))}
-                
-                {/* Résumé */}
-                <div className="border-t pt-3 text-sm text-gray-600">
-                  <strong>Résumé:</strong> {selectedProducts.length} produit{selectedProducts.length > 1 ? 's' : ''} sélectionné{selectedProducts.length > 1 ? 's' : ''} pour {formData.destination}
-                </div>
               </div>
             )}
           </div>
 
-          {/* Information sur le processus */}
-          <div className="bg-blue-50 p-4 rounded-xl">
-            <h4 className="font-medium text-blue-900 mb-2">🔄 Processus de validation</h4>
-            <div className="text-sm text-blue-800 space-y-1">
-              <p>• Votre demande groupée sera soumise à validation</p>
-              <p>• Les administrateurs et employés de production peuvent valider</p>
-              <p>• Une fois validée, tous les produits seront traités automatiquement</p>
-              {formData.destination === 'Production' && (
-                <p>• <strong>Pour la production :</strong> tous les ingrédients seront ajoutés au stock atelier</p>
-              )}
-              {formData.destination === 'Boutique' && (
-                <p>• <strong>Pour la boutique :</strong> tous les produits seront ajoutés au stock boutique avec leurs prix</p>
-              )}
-            </div>
-          </div>
-          
-          <div className="flex space-x-4 pt-4">
+          {/* Boutons */}
+          <div className="flex space-x-4">
             <button 
               type="submit" 
               disabled={selectedProducts.length === 0}
-              className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-2 px-4 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 bg-orange-600 text-white py-2 rounded-lg hover:bg-orange-700 disabled:bg-gray-300"
             >
-              Créer la demande ({selectedProducts.length} produit{selectedProducts.length > 1 ? 's' : ''})
+              Créer la demande
             </button>
             <button 
               type="button" 
-              onClick={() => {setShowAddModal(false); resetForm();}}
-              className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300 transition-all duration-200"
+              onClick={() => {
+                setShowAddModal(false); 
+                resetForm();
+              }}
+              className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300"
             >
               Annuler
             </button>
           </div>
         </form>
       </Modal>
-    </div>
-  );
-}
-
-// Composant pour afficher le prix boutique d'un produit
-function PrixBoutiqueCell({ produitId }) {
-  const [prix, setPrix] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (produitId) {
-      loadPrix();
-    }
-  }, [produitId]);
-
-  const loadPrix = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('prix_vente_produits')
-        .select('prix, actif')
-        .eq('produit_id', produitId);
-      
-      if (error) {
-        setPrix(null);
-      } else if (data && data.length > 0) {
-        const prixActif = data.find(p => p.actif === true) || data[0];
-        setPrix(prixActif?.prix || null);
-      } else {
-        setPrix(null);
-      }
-    } catch (err) {
-      setPrix(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return <div className="text-xs text-gray-400">Chargement...</div>;
-  }
-
-  return (
-    <div className="text-xs">
-      {prix ? (
-        <>
-          <div className="flex items-center text-green-600">
-            <DollarSign className="w-3 h-3 mr-1" />
-            {utils.formatCFA(prix)}
-          </div>
-          <div className="text-gray-500">Prix défini ✓</div>
-        </>
-      ) : (
-        <>
-          <div className="flex items-center text-yellow-600">
-            <DollarSign className="w-3 h-3 mr-1" />
-            Non défini
-          </div>
-          <div className="text-gray-500">À définir</div>
-        </>
-      )}
     </div>
   );
 }
