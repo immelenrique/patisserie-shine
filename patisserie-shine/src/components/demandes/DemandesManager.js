@@ -11,6 +11,10 @@ export default function DemandesManager({ currentUser }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedGroupedDemande, setSelectedGroupedDemande] = useState(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
   
   // État pour la demande multi-produits
   const [formData, setFormData] = useState({
@@ -365,6 +369,24 @@ export default function DemandesManager({ currentUser }) {
       alert('Erreur lors du refus de la demande');
     }
   };
+  // Fonction pour charger les détails
+const loadGroupedDetails = async (demandeGroupeeId) => {
+  setLoadingDetails(true);
+  try {
+    const { details, error } = await demandeService.getGroupedDetails(demandeGroupeeId);
+    if (error) {
+      console.error('Erreur chargement détails:', error);
+      alert('Erreur lors du chargement des détails');
+    } else {
+      setSelectedGroupedDemande(details);
+      setShowDetailsModal(true);
+    }
+  } catch (err) {
+    console.error('Erreur:', err);
+  } finally {
+    setLoadingDetails(false);
+  }
+};
 
   const getDestinationIcon = (destination) => {
     switch (destination) {
@@ -444,22 +466,52 @@ export default function DemandesManager({ currentUser }) {
                       <td className="px-6 py-4">#{demande.id}</td>
                       <td className="px-6 py-4">
                         {demande.type === 'groupee' ? (
-                          <div>
-                            <span className="font-medium">
-                              {demande.nombre_produits} produits
-                            </span>
-                            {demande.demandes && (
-                              <div className="text-xs text-gray-500 mt-1">
-                                {demande.demandes.slice(0, 2).map((d, i) => (
-                                  <div key={i}>• {d.produit?.nom}</div>
-                                ))}
-                                {demande.demandes.length > 2 && (
-                                  <div>... et {demande.demandes.length - 2} autres</div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
+  <div>
+    <div className="text-sm font-medium text-gray-900">
+      📦 Demande groupée ({demande.nombre_produits || demande.lignes?.length || 0} produits)
+    </div>
+    
+    {/* Aperçu des 3 premiers produits */}
+    <div className="text-xs text-gray-500 space-y-1 mt-1">
+      {demande.lignes && demande.lignes.slice(0, 3).map((ligne, idx) => (
+        <div key={idx} className="flex justify-between">
+          <span>• {ligne.produit?.nom}:</span>
+          <span className="font-medium">
+            {utils.formatNumber(ligne.quantite)} {ligne.produit?.unite?.label}
+            {ligne.statut === 'validee' && ' ✅'}
+            {ligne.statut === 'refusee' && ' ❌'}
+          </span>
+        </div>
+      ))}
+      {demande.lignes && demande.lignes.length > 3 && (
+        <div className="text-blue-600 font-medium">
+          ... et {demande.lignes.length - 3} autre(s)
+        </div>
+      )}
+    </div>
+    
+    {/* Bouton pour voir tous les détails */}
+    <button
+      onClick={() => loadGroupedDetails(demande.id)}
+      className="mt-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 transition-colors"
+    >
+      👁️ Voir tous les détails
+    </button>
+    
+    {/* Afficher le valideur si la demande est traitée */}
+    {demande.valideur && (
+      <div className="mt-2 text-xs text-green-600">
+        ✅ Validée par: {demande.valideur.nom}
+        {demande.date_validation && (
+          <span className="text-gray-500 ml-2">
+            le {new Date(demande.date_validation).toLocaleDateString('fr-FR')}
+          </span>
+        )}
+      </div>
+    )}
+  </div>
+) : (
+
                           <div>
                             <div className="font-medium">{demande.produit?.nom}</div>
                             <div className="text-sm text-gray-500">
@@ -511,7 +563,53 @@ export default function DemandesManager({ currentUser }) {
       </Card>
 
       {/* Modal Nouvelle Demande */}
-      <Modal 
+    {demande.type === 'groupee' ? (
+  <div>
+    <div className="text-sm font-medium text-gray-900">
+      📦 Demande groupée ({demande.nombre_produits || demande.lignes?.length || 0} produits)
+    </div>
+    
+    {/* Aperçu des 3 premiers produits */}
+    <div className="text-xs text-gray-500 space-y-1 mt-1">
+      {demande.lignes && demande.lignes.slice(0, 3).map((ligne, idx) => (
+        <div key={idx} className="flex justify-between">
+          <span>• {ligne.produit?.nom}:</span>
+          <span className="font-medium">
+            {utils.formatNumber(ligne.quantite)} {ligne.produit?.unite?.label}
+            {ligne.statut === 'validee' && ' ✅'}
+            {ligne.statut === 'refusee' && ' ❌'}
+          </span>
+        </div>
+      ))}
+      {demande.lignes && demande.lignes.length > 3 && (
+        <div className="text-blue-600 font-medium">
+          ... et {demande.lignes.length - 3} autre(s)
+        </div>
+      )}
+    </div>
+    
+    {/* Bouton pour voir tous les détails */}
+    <button
+      onClick={() => loadGroupedDetails(demande.id)}
+      className="mt-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 transition-colors"
+    >
+      👁️ Voir tous les détails
+    </button>
+    
+    {/* Afficher le valideur si la demande est traitée */}
+    {demande.valideur && (
+      <div className="mt-2 text-xs text-green-600">
+        ✅ Validée par: {demande.valideur.nom}
+        {demande.date_validation && (
+          <span className="text-gray-500 ml-2">
+            le {new Date(demande.date_validation).toLocaleDateString('fr-FR')}
+          </span>
+        )}
+      </div>
+    )}
+  </div>
+) : (
+
         isOpen={showAddModal} 
         onClose={() => {
           setShowAddModal(false); 
@@ -663,6 +761,201 @@ export default function DemandesManager({ currentUser }) {
           </div>
         </form>
       </Modal>
+      <Modal 
+  isOpen={showDetailsModal} 
+  onClose={() => {
+    setShowDetailsModal(false);
+    setSelectedGroupedDemande(null);
+  }} 
+  title="Détails de la Demande Groupée" 
+  size="xl"
+>
+  {selectedGroupedDemande && (
+    <div className="space-y-6">
+      {/* En-tête avec informations générales */}
+      <div className="bg-gray-50 rounded-lg p-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-sm text-gray-600">Demandeur</p>
+            <p className="font-medium">
+              {selectedGroupedDemande.demandeur?.nom || 'Non spécifié'}
+              <span className="text-gray-500 text-sm ml-2">
+                @{selectedGroupedDemande.demandeur?.username}
+              </span>
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">Destination</p>
+            <p className="font-medium flex items-center">
+              {selectedGroupedDemande.destination === 'Production' ? (
+                <>
+                  <Factory className="w-4 h-4 mr-1 text-blue-600" />
+                  Production / Atelier
+                </>
+              ) : (
+                <>
+                  <Store className="w-4 h-4 mr-1 text-green-600" />
+                  Boutique
+                </>
+              )}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">Date de création</p>
+            <p className="font-medium">
+              {new Date(selectedGroupedDemande.created_at).toLocaleDateString('fr-FR')}
+              <span className="text-gray-500 text-sm ml-2">
+                {new Date(selectedGroupedDemande.created_at).toLocaleTimeString('fr-FR')}
+              </span>
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600">Statut</p>
+            <StatusBadge status={selectedGroupedDemande.statut} />
+          </div>
+        </div>
+        
+        {/* Valideur si validée */}
+        {selectedGroupedDemande.valideur && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <p className="text-sm text-gray-600">Validée par</p>
+            <p className="font-medium text-green-600">
+              {selectedGroupedDemande.valideur.nom}
+              <span className="text-gray-500 text-sm ml-2">
+                le {new Date(selectedGroupedDemande.date_validation).toLocaleDateString('fr-FR')}
+                à {new Date(selectedGroupedDemande.date_validation).toLocaleTimeString('fr-FR')}
+              </span>
+            </p>
+          </div>
+        )}
+        
+        {/* Commentaire si présent */}
+        {selectedGroupedDemande.commentaire && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <p className="text-sm text-gray-600">Commentaire</p>
+            <p className="text-gray-900 italic">"{selectedGroupedDemande.commentaire}"</p>
+          </div>
+        )}
+      </div>
+
+      {/* Statistiques */}
+      <div className="grid grid-cols-4 gap-4">
+        <Card className="p-4 text-center">
+          <p className="text-2xl font-bold text-gray-900">
+            {selectedGroupedDemande.stats?.total || 0}
+          </p>
+          <p className="text-sm text-gray-600">Produits</p>
+        </Card>
+        <Card className="p-4 text-center">
+          <p className="text-2xl font-bold text-green-600">
+            {selectedGroupedDemande.stats?.validees || 0}
+          </p>
+          <p className="text-sm text-gray-600">Validés</p>
+        </Card>
+        <Card className="p-4 text-center">
+          <p className="text-2xl font-bold text-red-600">
+            {selectedGroupedDemande.stats?.refusees || 0}
+          </p>
+          <p className="text-sm text-gray-600">Refusés</p>
+        </Card>
+        <Card className="p-4 text-center">
+          <p className="text-2xl font-bold text-blue-600">
+            {utils.formatCFA(selectedGroupedDemande.valeur_totale || 0)}
+          </p>
+          <p className="text-sm text-gray-600">Valeur totale</p>
+        </Card>
+      </div>
+
+      {/* Liste détaillée des produits */}
+      <div>
+        <h3 className="font-medium text-gray-900 mb-3">
+          Détail des produits ({selectedGroupedDemande.lignes?.length || 0})
+        </h3>
+        <div className="max-h-96 overflow-y-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50 sticky top-0">
+              <tr>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Produit</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Quantité demandée</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Stock disponible</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Valeur</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Validé par</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {selectedGroupedDemande.lignes?.map((ligne, idx) => (
+                <tr key={idx} className={ligne.statut === 'refusee' ? 'bg-red-50' : ''}>
+                  <td className="px-4 py-2 text-sm">
+                    <div className="font-medium text-gray-900">{ligne.produit?.nom}</div>
+                    <div className="text-xs text-gray-500">{ligne.produit?.unite?.label}</div>
+                  </td>
+                  <td className="px-4 py-2 text-sm font-medium">
+                    {utils.formatNumber(ligne.quantite)}
+                  </td>
+                  <td className="px-4 py-2 text-sm">
+                    <span className={ligne.produit?.quantite_restante < ligne.quantite ? 'text-red-600' : 'text-green-600'}>
+                      {utils.formatNumber(ligne.produit?.quantite_restante || 0)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-sm">
+                    {utils.formatCFA((ligne.produit?.prix_achat || 0) * ligne.quantite)}
+                  </td>
+                  <td className="px-4 py-2">
+                    <StatusBadge status={ligne.statut} />
+                  </td>
+                  <td className="px-4 py-2 text-sm text-gray-500">
+                    {ligne.valideur_ligne?.nom || '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex justify-end space-x-3 pt-4 border-t">
+        <button
+          onClick={() => {
+            setShowDetailsModal(false);
+            setSelectedGroupedDemande(null);
+          }}
+          className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors"
+        >
+          Fermer
+        </button>
+        
+        {/* Si admin et demande en attente */}
+        {selectedGroupedDemande.statut === 'en_attente' && 
+         (currentUser.role === 'admin' || currentUser.role === 'employe_production') && (
+          <>
+            <button
+              onClick={() => {
+                setShowDetailsModal(false);
+                handleValidateGroupedDemande(selectedGroupedDemande.id);
+              }}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center"
+            >
+              <Check className="w-4 h-4 mr-2" />
+              Valider tout
+            </button>
+            <button
+              onClick={() => {
+                setShowDetailsModal(false);
+                handleRejectGroupedDemande(selectedGroupedDemande.id);
+              }}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center"
+            >
+              <X className="w-4 h-4 mr-2" />
+              Refuser tout
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )}
+</Modal>
     </div>
   );
 }
