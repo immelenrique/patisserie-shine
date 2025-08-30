@@ -8,6 +8,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Variables d\'environnement Supabase manquantes')
 }
 
+// Dans /patisserie-shine/src/lib/supabase.js
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
@@ -15,6 +16,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
     storage: {
       getItem: (key) => {
+        // ✅ AJOUT: Vérifier qu'on est côté client
+        if (typeof window === 'undefined') {
+          return null;
+        }
         try {
           const item = localStorage.getItem(key);
           if (item === 'undefined' || item === 'null' || item === '') {
@@ -27,6 +32,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
         }
       },
       setItem: (key, value) => {
+        // ✅ AJOUT: Vérifier qu'on est côté client
+        if (typeof window === 'undefined') {
+          return;
+        }
         try {
           if (value !== 'undefined' && value !== 'null') {
             localStorage.setItem(key, value);
@@ -36,6 +45,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
         }
       },
       removeItem: (key) => {
+        // ✅ AJOUT: Vérifier qu'on est côté client
+        if (typeof window === 'undefined') {
+          return;
+        }
         try {
           localStorage.removeItem(key);
         } catch {
@@ -2901,6 +2914,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
