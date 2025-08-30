@@ -2586,14 +2586,10 @@ export const recetteService = {
   }
 }     
 // ===================== SERVICES RÉFÉRENTIEL =====================
-// Dans src/lib/supabase.js, corrigez la fonction referentielService.create :
-
-// Dans src/lib/supabase.js, corrigez referentielService :
-
 export const referentielService = {
   async create(referentielData) {
     try {
-      // NE PAS inclure prix_unitaire - il sera calculé automatiquement
+      // Créer l'objet sans prix_unitaire ni les dates automatiques
       const dataToInsert = {
         reference: referentielData.reference,
         nom: referentielData.nom,
@@ -2601,8 +2597,10 @@ export const referentielService = {
         unite_mesure: referentielData.unite_mesure,
         quantite_par_conditionnement: parseFloat(referentielData.quantite_par_conditionnement),
         prix_achat_total: parseFloat(referentielData.prix_achat_total)
-        // PAS de prix_unitaire ici !
       };
+      
+      // NE PAS ajouter: actif, created_at, updated_at, prix_unitaire
+      // Ces colonnes ont des valeurs DEFAULT
 
       console.log('Données à insérer dans référentiel:', dataToInsert);
 
@@ -2626,16 +2624,14 @@ export const referentielService = {
 
   async update(id, updates) {
     try {
-      // Pareil pour update - pas de prix_unitaire
       const dataToUpdate = {
         reference: updates.reference,
         nom: updates.nom,
         type_conditionnement: updates.type_conditionnement,
         unite_mesure: updates.unite_mesure,
         quantite_par_conditionnement: parseFloat(updates.quantite_par_conditionnement),
-        prix_achat_total: parseFloat(updates.prix_achat_total),
-        updated_at: new Date().toISOString()
-        // PAS de prix_unitaire ici non plus !
+        prix_achat_total: parseFloat(updates.prix_achat_total)
+        // PAS de updated_at non plus si c'est automatique
       };
 
       const { data, error } = await supabase
@@ -2653,27 +2649,6 @@ export const referentielService = {
       return { success: true, referentiel: data, error: null };
     } catch (error) {
       console.error('Exception dans update référentiel:', error);
-      return { success: false, error: error.message };
-    }
-  },
-
-  async delete(id) {
-    try {
-      const { error } = await supabase
-        .from('referentiel_produits')
-        .update({
-          actif: false,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id);
-
-      if (error) {
-        return { success: false, error: error.message };
-      }
-
-      return { success: true, error: null };
-    } catch (error) {
-      console.error('Exception dans delete référentiel:', error);
       return { success: false, error: error.message };
     }
   }
@@ -3043,6 +3018,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
