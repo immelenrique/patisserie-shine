@@ -917,6 +917,7 @@ export const demandeService = {
 
 // ===================== SERVICES STOCK ATELIER =====================
 export const stockAtelierService = {
+  // Récupérer tout le stock atelier
   async getAll() {
     try {
       const { data, error } = await supabase
@@ -926,7 +927,8 @@ export const stockAtelierService = {
           produit:produits(
             id, 
             nom, 
-            unite:unites(label)
+            unite:unites(label),
+            prix_vente
           )
         `)
         .order('created_at', { ascending: false })
@@ -943,38 +945,105 @@ export const stockAtelierService = {
     }
   },
 
-  async create(stockData) {
+  // FONCTION QUI MANQUAIT - getStockAtelier (alias de getAll)
+  async getStockAtelier() {
+    return this.getAll();
+  },
+
+  // Récupérer un stock spécifique par produit
+  async getByProduitId(produitId) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      
       const { data, error } = await supabase
         .from('stock_atelier')
-        .insert({
-          ...stockData,
-          created_by: user?.id,
-          created_at: new Date().toISOString()
-        })
-        .select()
+        .select(`
+          *,
+          produit:produits(
+            id, 
+            nom, 
+            unite:unites(label)
+          )
+        `)
+        .eq('produit_id', produitId)
         .single()
       
       if (error) {
+        if (error.code === 'PGRST116') {
+          // Pas de stock pour ce produit
+          return { stock: null, error: null }
+        }
         return { stock: null, error: error.message }
       }
       
       return { stock: data, error: null }
+    } catch (error) {
+      console.error('Erreur dans getByProduitId:', error)
+      return { stock: null, error: error.message }
+    }
+  },
+
+  // Créer ou ajouter du stock
+  async create(stockData) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      // Vérifier si le stock existe déjà pour ce produit
+      const { data: existing } = await supabase
+        .from('stock_atelier')
+        .select('id, quantite_disponible')
+        .eq('produit_id', stockData.produit_id)
+        .single()
+      
+      if (existing) {
+        // Mettre à jour la quantité existante
+        const nouvelleQuantite = existing.quantite_disponible + (stockData.quantite_disponible || 0)
+        
+        const { data, error } = await supabase
+          .from('stock_atelier')
+          .update({
+            quantite_disponible: nouvelleQuantite,
+            updated_at: new Date().toISOString(),
+            updated_by: user?.id
+          })
+          .eq('id', existing.id)
+          .select()
+          .single()
+        
+        if (error) return { stock: null, error: error.message }
+        return { stock: data, error: null }
+        
+      } else {
+        // Créer un nouveau stock
+        const { data, error } = await supabase
+          .from('stock_atelier')
+          .insert({
+            ...stockData,
+            created_by: user?.id,
+            created_at: new Date().toISOString()
+          })
+          .select()
+          .single()
+        
+        if (error) return { stock: null, error: error.message }
+        return { stock: data, error: null }
+      }
+      
     } catch (error) {
       console.error('Erreur dans create stock atelier:', error)
       return { stock: null, error: error.message }
     }
   },
 
+  // Mettre à jour le stock
   async update(id, updates) {
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
       const { data, error } = await supabase
         .from('stock_atelier')
         .update({
           ...updates,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          updated_by: user?.id
         })
         .eq('id', id)
         .select()
@@ -991,6 +1060,87 @@ export const stockAtelierService = {
     }
   },
 
+  // Transférer du stock vers la boutique
+  async transfererVersBoutique(produitId, quantite) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      // Vérifier le stock disponible
+      const { data: stockAtelier } = await supabase
+        .from('stock_atelier')
+        .select('id, quantite_disponible')
+        .eq('produit_id', produitId)
+        .single()
+      
+      if (!stockAtelier || stockAtelier.quantite_disponible < quantite) {
+        return { 
+          success: false, 
+          error: 'Stock insuffisant dans l\'atelier' 
+        }
+      }
+      
+      // Réduire le stock atelier
+      const { error: updateError } = await supabase
+        .from('stock_atelier')
+        .update({
+          quantite_disponible: stockAtelier.quantite_disponible - quantite,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', stockAtelier.id)
+      
+      if (updateError) {
+        return { success: false, error: updateError.message }
+      }
+      
+      // Ajouter au stock boutique
+      const { data: stockBoutique } = await supabase
+        .from('stock_boutique')
+        .select('id, quantite_disponible')
+        .eq('produit_id', produitId)
+        .single()
+      
+      if (stockBoutique) {
+        // Mettre à jour le stock existant
+        await supabase
+          .from('stock_boutique')
+          .update({
+            quantite_disponible: stockBoutique.quantite_disponible + quantite,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', stockBoutique.id)
+      } else {
+        // Créer un nouveau stock boutique
+        await supabase
+          .from('stock_boutique')
+          .insert({
+            produit_id: produitId,
+            quantite_disponible: quantite,
+            created_by: user?.id
+          })
+      }
+      
+      // Enregistrer le transfert dans l'historique
+      await supabase
+        .from('mouvements_stock')
+        .insert({
+          produit_id: produitId,
+          type_mouvement: 'transfert',
+          quantite: quantite,
+          source: 'Atelier',
+          destination: 'Boutique',
+          utilisateur_id: user?.id,
+          created_at: new Date().toISOString()
+        })
+      
+      return { success: true, error: null }
+      
+    } catch (error) {
+      console.error('Erreur dans transfererVersBoutique:', error)
+      return { success: false, error: error.message }
+    }
+  },
+
+  // Supprimer un stock
   async delete(id) {
     try {
       const { error } = await supabase
@@ -1009,17 +1159,17 @@ export const stockAtelierService = {
     }
   },
 
-  // FONCTION MANQUANTE - AJOUTEZ CECI
+  // Historique des transferts
   async getHistoriqueTransferts(produitId = null) {
     try {
       let query = supabase
-        .from('historique_transferts_atelier')
+        .from('mouvements_stock')
         .select(`
           *,
           produit:produits(nom, unite:unites(label)),
-          demandeur:profiles!historique_transferts_atelier_demandeur_id_fkey(nom),
-          valideur:profiles!historique_transferts_atelier_valideur_id_fkey(nom)
+          utilisateur:profiles!mouvements_stock_utilisateur_id_fkey(nom)
         `)
+        .or('source.eq.Atelier,destination.eq.Atelier')
         .order('created_at', { ascending: false })
         .limit(50)
 
@@ -1031,10 +1181,6 @@ export const stockAtelierService = {
 
       if (error) {
         console.error('Erreur getHistoriqueTransferts:', error)
-        // Si la table n'existe pas, retourner un tableau vide
-        if (error.code === '42P01') {
-          return { historique: [], error: null }
-        }
         return { historique: [], error: error.message }
       }
 
@@ -1045,46 +1191,33 @@ export const stockAtelierService = {
     }
   },
 
-  // Fonction alternative si la table n'existe pas
-  async getTransfertsFromDemandes(destination = 'Atelier') {
+  // Calculer les statistiques du stock atelier
+  async getStatistiques() {
     try {
-      const { data, error } = await supabase
-        .from('demandes')
+      const { data: stocks, error } = await supabase
+        .from('stock_atelier')
         .select(`
-          *,
-          produit:produits(nom, unite:unites(label)),
-          demandeur:profiles!demandes_demandeur_id_fkey(nom),
-          valideur:profiles!demandes_valideur_id_fkey(nom)
+          quantite_disponible,
+          produit:produits(nom, prix_vente)
         `)
-        .eq('destination', destination)
-        .eq('statut', 'valide')
-        .order('created_at', { ascending: false })
-        .limit(50)
-
+      
       if (error) {
-        console.error('Erreur getTransfertsFromDemandes:', error)
-        return { historique: [], error: error.message }
+        return { stats: null, error: error.message }
       }
-
-      // Transformer en format historique
-      const historique = (data || []).map(demande => ({
-        id: demande.id,
-        produit_id: demande.produit_id,
-        produit: demande.produit,
-        quantite: demande.quantite,
-        type: 'transfert',
-        source: 'Stock Principal',
-        destination: destination,
-        demandeur: demande.demandeur,
-        valideur: demande.valideur,
-        created_at: demande.created_at,
-        validated_at: demande.validated_at
-      }))
-
-      return { historique, error: null }
+      
+      const stats = {
+        totalProduits: stocks?.length || 0,
+        stockFaible: stocks?.filter(s => s.quantite_disponible < 5).length || 0,
+        valeurTotale: stocks?.reduce((sum, s) => {
+          const prix = s.produit?.prix_vente || 0
+          return sum + (s.quantite_disponible * prix)
+        }, 0) || 0
+      }
+      
+      return { stats, error: null }
     } catch (error) {
-      console.error('Erreur dans getTransfertsFromDemandes:', error)
-      return { historique: [], error: error.message }
+      console.error('Erreur dans getStatistiques:', error)
+      return { stats: null, error: error.message }
     }
   }
 }
@@ -2951,6 +3084,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
