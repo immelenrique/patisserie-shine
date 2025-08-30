@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { demandeService, productService, utils, supabase } from '../../lib/supabase';
-import { Plus, ShoppingCart, Check, X, Clock, Package, ArrowRight, Warehouse, Store, DollarSign, Trash2, Search } from 'lucide-react';
+import { Plus, ShoppingCart, Check, X, Clock, Package, ArrowRight, Warehouse, Store, DollarSign, Factory,Trash2, Search } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
 
 export default function DemandesManager({ currentUser }) {
@@ -562,54 +562,8 @@ const loadGroupedDetails = async (demandeGroupeeId) => {
         </div>
       </Card>
 
-      {/* Modal Nouvelle Demande */}
-    {demande.type === 'groupee' ? (
-  <div>
-    <div className="text-sm font-medium text-gray-900">
-      📦 Demande groupée ({demande.nombre_produits || demande.lignes?.length || 0} produits)
-    </div>
-    
-    {/* Aperçu des 3 premiers produits */}
-    <div className="text-xs text-gray-500 space-y-1 mt-1">
-      {demande.lignes && demande.lignes.slice(0, 3).map((ligne, idx) => (
-        <div key={idx} className="flex justify-between">
-          <span>• {ligne.produit?.nom}:</span>
-          <span className="font-medium">
-            {utils.formatNumber(ligne.quantite)} {ligne.produit?.unite?.label}
-            {ligne.statut === 'validee' && ' ✅'}
-            {ligne.statut === 'refusee' && ' ❌'}
-          </span>
-        </div>
-      ))}
-      {demande.lignes && demande.lignes.length > 3 && (
-        <div className="text-blue-600 font-medium">
-          ... et {demande.lignes.length - 3} autre(s)
-        </div>
-      )}
-    </div>
-    
-    {/* Bouton pour voir tous les détails */}
-    <button
-      onClick={() => loadGroupedDetails(demande.id)}
-      className="mt-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 transition-colors"
-    >
-      👁️ Voir tous les détails
-    </button>
-    
-    {/* Afficher le valideur si la demande est traitée */}
-    {demande.valideur && (
-      <div className="mt-2 text-xs text-green-600">
-        ✅ Validée par: {demande.valideur.nom}
-        {demande.date_validation && (
-          <span className="text-gray-500 ml-2">
-            le {new Date(demande.date_validation).toLocaleDateString('fr-FR')}
-          </span>
-        )}
-      </div>
-    )}
-  </div>
-) : (
-
+  {/* Modal Nouvelle Demande */}
+      <Modal 
         isOpen={showAddModal} 
         onClose={() => {
           setShowAddModal(false); 
@@ -761,15 +715,18 @@ const loadGroupedDetails = async (demandeGroupeeId) => {
           </div>
         </form>
       </Modal>
+
+      {/* Modal Détails Demande Groupée */}
       <Modal 
-  isOpen={showDetailsModal} 
-  onClose={() => {
-    setShowDetailsModal(false);
-    setSelectedGroupedDemande(null);
-  }} 
-  title="Détails de la Demande Groupée" 
-  size="xl"
->
+        isOpen={showDetailsModal} 
+        onClose={() => {
+          setShowDetailsModal(false);
+          setSelectedGroupedDemande(null);
+        }} 
+        title="Détails de la Demande Groupée" 
+        size="xl"
+      >
+        {selectedGroupedDemande && (  
   {selectedGroupedDemande && (
     <div className="space-y-6">
       {/* En-tête avec informations générales */}
