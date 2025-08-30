@@ -1,11 +1,30 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  swcMinify: false, // Désactiver temporairement la minification SWC
+  reactStrictMode: true,
+  swcMinify: true, // Réactiver la minification
   eslint: {
-    ignoreDuringBuilds: true, // Ignorer les erreurs ESLint pendant le build
+    ignoreDuringBuilds: false, // Réactiver ESLint
   },
   typescript: {
-    ignoreBuildErrors: true, // Ignorer les erreurs TypeScript pendant le build
+    ignoreBuildErrors: false, // Réactiver vérification TypeScript
+  },
+  // Ajouter headers de sécurité
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+        ],
+      },
+    ]
   },
 }
 
