@@ -128,12 +128,7 @@ useEffect(() => {
   
 
   initializeAuth();
-useEffect(() => {
-    if (currentUser) {
-      loadUserPermissions();
-      loadDashboardStats();
-    }
-  }, [currentUser]);
+
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
       if (event === "SIGNED_IN" && session) {
@@ -150,7 +145,12 @@ useEffect(() => {
   };
 }, []);
 
-
+useEffect(() => {
+    if (currentUser) {
+      loadUserPermissions();
+      loadDashboardStats();
+    }
+  }, [currentUser]);
 
  
 
