@@ -446,42 +446,75 @@ export const userService = {
     }
   },
 
- async deleteUser(userId, permanentDelete = false) {
-    try {
-      if (permanentDelete) {
-        // Suppression définitive avec la fonction SQL sécurisée
-        const { data, error } = await supabase
-          .rpc('safe_delete_user', { p_user_id: userId });
+// Remplacez UNIQUEMENT la fonction deleteUser existante par celle-ci :
+async deleteUser(userId, permanentDelete = false) {
+  try {
+    if (permanentDelete) {
+      // Suppression définitive avec la fonction SQL sécurisée
+      const { data, error } = await supabase
+        .rpc('safe_delete_user', { p_user_id: userId });
 
-        if (error) {
-          console.error('Erreur suppression définitive:', error);
-          
-          // Gestion des erreurs spécifiques
-          if (error.message.includes('foreign key constraint')) {
-            return {
-              success: false,
-              error: 'Impossible de supprimer : cet utilisateur a des données liées dans le système. Les demandes validées doivent être conservées pour l\'historique.'
-            };
-          }
-          
+      if (error) {
+        console.error('Erreur suppression définitive:', error);
+        
+        if (error.message.includes('foreign key constraint')) {
           return {
             success: false,
-            error: error.message || 'Erreur lors de la suppression définitive'
+            error: 'Impossible de supprimer : cet utilisateur a des données liées dans le système.'
           };
         }
-
-        if (data && !data.success) {
-          return {
-            success: false,
-            error: data.error || data.message || 'Erreur lors de la suppression'
-          };
-        }
-
+        
         return {
-          success: true,
-          message: data?.message || 'Utilisateur supprimé définitivement',
-          deletionType: 'permanent'
+          success: false,
+          error: error.message || 'Erreur lors de la suppression définitive'
         };
+      }
+
+      if (data && !data.success) {
+        return {
+          success: false,
+          error: data.error || data.message || 'Erreur lors de la suppression'
+        };
+      }
+
+      return {
+        success: true,
+        message: data?.message || 'Utilisateur supprimé définitivement',
+        deletionType: 'permanent'
+      };
+
+    } else {
+      // Désactivation simple (soft delete)
+      const { error } = await supabase
+        .from('profiles')
+        .update({ 
+          actif: false,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Erreur désactivation:', error);
+        return {
+          success: false,
+          error: error.message || 'Erreur lors de la désactivation'
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Utilisateur désactivé avec succès',
+        deletionType: 'soft'
+      };
+    }
+  } catch (err) {
+    console.error('Erreur générale deleteUser:', err);
+    return {
+      success: false,
+      error: err.message || 'Erreur lors de l\'opération'
+    };
+  }
+},
   async reactivateUser(userId) {
     try {
       const { error } = await supabase
@@ -3215,6 +3248,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
