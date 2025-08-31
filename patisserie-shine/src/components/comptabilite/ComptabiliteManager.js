@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { comptabiliteService, caisseService, utils } from '../../lib/supabase';
+import { comptabiliteService, caisseService, utils, supabase } from '../../lib/supabase';
 import { BarChart3, TrendingUp, TrendingDown, DollarSign, Calendar, Download, FileText, PieChart, Calculator, Receipt } from 'lucide-react';
-import { Card, StatCard } from '../ui';
+import { Card, StatCard,Modal } from '../ui';
 
 export default function ComptabiliteManager({ currentUser }) {
   const [rapportMensuel, setRapportMensuel] = useState(null);
@@ -11,6 +11,9 @@ export default function ComptabiliteManager({ currentUser }) {
   const [produitsTop, setProduitsTop] = useState([]);
   const [ventesJour, setVentesJour] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [ventes, setVentes] = useState([]);
+  const [selectedVente, setSelectedVente] = useState(null);
+  const [showTicket, setShowTicket] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('mensuel');
   const [periodeSelectionnee, setPeriodeSelectionnee] = useState({
@@ -89,6 +92,34 @@ export default function ComptabiliteManager({ currentUser }) {
       alert('Erreur lors de l\'export : ' + err.message);
     }
   };
+const viewTicket = async (venteId) => {
+  try {
+    const { data: vente, error: venteError } = await supabase
+      .from('ventes')
+      .select(`
+        *,
+        vendeur:vendeur_id(nom, username),
+        lignes_vente(
+          *,
+          nom_produit,
+          quantite,
+          prix_unitaire,
+          total,
+          produit:produit_id(nom)
+        )
+      `)
+      .eq('id', venteId)
+      .single();
+
+    if (venteError) throw venteError;
+
+    setSelectedVente(vente);
+    setShowTicket(true);
+  } catch (error) {
+    console.error('Erreur chargement ticket:', error);
+    alert('Erreur lors du chargement du ticket');
+  }
+};
 
   const genererRapportPersonnalise = async () => {
     setLoading(true);
@@ -558,6 +589,7 @@ export default function ComptabiliteManager({ currentUser }) {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Donné</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rendu</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendeur</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -589,6 +621,15 @@ export default function ComptabiliteManager({ currentUser }) {
                         <td className="px-6 py-4">{utils.formatCFA(vente.montant_donne)}</td>
                         <td className="px-6 py-4">{utils.formatCFA(vente.monnaie_rendue)}</td>
                         <td className="px-6 py-4">{vente.vendeur?.nom}</td>
+                       <td className="px-6 py-4">  {/* AJOUTER CE BLOC */}
+                        <button
+                          onClick={() => viewTicket(vente.id)}
+                          className="text-blue-600 hover:text-blue-800 text-sm"
+                        >
+                          Voir ticket
+                        </button>
+                      </td>
+
                       </tr>
                     ))
                   )}
@@ -866,6 +907,59 @@ export default function ComptabiliteManager({ currentUser }) {
           </div>
         )}
       </div>
+    {showTicket && selectedVente && (
+        <Modal
+          isOpen={showTicket}
+          onClose={() => {
+            setShowTicket(false);
+            setSelectedVente(null);
+          }}
+          title={`Ticket #${selectedVente.numero_ticket}`}
+        >
+          <div className="font-mono text-xs space-y-1 bg-gray-50 p-3 rounded">
+            <div className="text-center border-b pb-2 mb-2">
+              <div className="font-bold text-base">PÂTISSERIE SHINE</div>
+              <div>{new Date(selectedVente.created_at).toLocaleString('fr-FR')}</div>
+              <div>Ticket #{selectedVente.numero_ticket}</div>
+            </div>
+            
+            {selectedVente.lignes_vente?.map((ligne, index) => (
+              <div key={index}>
+                <div>{ligne.nom_produit}</div>
+                <div className="flex justify-between pl-4">
+                  <span>{ligne.quantite} x {utils.formatCFA(ligne.prix_unitaire)}</span>
+                  <span>{utils.formatCFA(ligne.total)}</span>
+                </div>
+              </div>
+            ))}
+            
+            <div className="border-t pt-2 mt-2">
+              <div className="flex justify-between font-bold">
+                <span>TOTAL</span>
+                <span>{utils.formatCFA(selectedVente.total)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Espèces</span>
+                <span>{utils.formatCFA(selectedVente.montant_donne)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Rendu</span>
+                <span>{utils.formatCFA(selectedVente.monnaie_rendue)}</span>
+              </div>
+            </div>
+            
+            <div className="text-center border-t pt-2 mt-2">
+              <div>Servi par: {selectedVente.vendeur?.nom}</div>
+              <div className="mt-1">MERCI DE VOTRE VISITE</div>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {/* FIN du Modal Ticket */}
+      
+  
+
+
     </div>
   );
 }
