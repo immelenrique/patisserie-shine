@@ -71,19 +71,18 @@ useEffect(() => {
     try {
       setLoading(true);
       
-      // Vérifier la session Supabase
+      // 1. Récupérer la session
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!mounted) return;
 
-      if (!session || !session.user) {
-        // Pas de session valide
+      if (!session?.user) {
         setCurrentUser(null);
         setLoading(false);
         return;
       }
 
-      // Session valide, charger le profil complet
+      // 2. Charger le profil
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("*")
@@ -93,27 +92,48 @@ useEffect(() => {
       if (!mounted) return;
 
       if (profileError || !profile) {
-        // Profil introuvable, déconnecter
         await supabase.auth.signOut();
         setCurrentUser(null);
-      } else {
-        // Fusionner les données
-        const fullUser = {
-          ...session.user,
-          ...profile,
-          profile: profile
-        };
-        
-        setCurrentUser(fullUser);
-        
-        // Vérifier si changement de mot de passe requis
-        if (profile.force_password_change) {
-          setPasswordChangeRequired(true);
-          setShowPasswordModal(true);
-        } else {
-          // Charger les stats seulement si pas de changement requis
-          loadDashboardStats();
+        setLoading(false);
+        return;
+      }
+
+      // 3. Définir l'utilisateur
+      setCurrentUser(profile);
+      
+      // 4. Charger les permissions SI l'utilisateur existe
+      if (profile.id) {
+        try {
+          const { data: permData, error: permError } = await supabase
+            .from('user_permissions')
+            .select(`
+              permission_id,
+              permissions (
+                code,
+                nom,
+                type
+              )
+            `)
+            .eq('user_id', profile.id)
+            .eq('granted', true);
+            
+          if (!permError && permData) {
+            const permissions = permData.map(up => up.permissions).filter(Boolean);
+            setCurrentUserPermissions(permissions);
+            console.log('✅ Permissions chargées:', permissions);
+          }
+        } catch (err) {
+          console.error('Erreur chargement permissions:', err);
         }
+      }
+      
+      // 5. Vérifier le changement de mot de passe
+      if (profile.force_password_change) {
+        setPasswordChangeRequired(true);
+        setShowPasswordModal(true);
+      } else {
+        // Charger les stats seulement si pas de changement requis
+        loadDashboardStats();
       }
       
     } catch (error) {
@@ -125,16 +145,24 @@ useEffect(() => {
       }
     }
   };
-  
 
+  // Initialiser
   initializeAuth();
 
+  // Écouter les changements d'auth
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
-      if (event === "SIGNED_IN" && session) {
-        setCurrentUser(session.user);
-      } else if (event === "SIGNED_OUT") {
+      console.log('🔄 Auth event:', event);
+      
+      if (event === 'SIGNED_IN' && session && mounted) {
+        // Recharger après connexion
+        await initializeAuth();
+      } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
+        setCurrentUserPermissions([]);
+        setLoading(false);
+      } else if (event === 'TOKEN_REFRESHED') {
+        console.log('✅ Token rafraîchi');
       }
     }
   );
@@ -144,62 +172,10 @@ useEffect(() => {
     subscription?.unsubscribe();
   };
 }, []);
-
-useEffect(() => {
-    if (currentUser) {
-      loadUserPermissions();
-      loadDashboardStats();
-    }
-  }, [currentUser]);
-
  
 
   // Chargement des permissions quand l'utilisateur se connecte
   // Chargement des permissions UNE SEULE FOIS après connexion
-useEffect(() => {
-  if (currentUser?.id && !permissionsLoading) {
-    const loadPermissions = async () => {
-      setPermissionsLoading(true);
-      try {
-        const { data } = await permissionsService.getUserPermissions(currentUser.id);
-        if (data) setUserPermissions(data);
-      } catch (err) {
-        console.error('Erreur permissions:', err);
-      } finally {
-        setPermissionsLoading(false);
-      }
-    };
-    
-    loadPermissions();
-  }
-}, [currentUser?.id]); // Seulement l'ID, pas l'objet entier
-
-
-  // Vérifier l'authentification
-  const checkAuth = async () => {
-    try {
-      const { user, profile } = await authService.getCurrentUser();
-      
-      if (profile) {
-       setCurrentUser(prev => ({ ...prev, ...profile }));
-
-        
-        // Vérifier si le changement de mot de passe est requis
-        const { required } = await authService.checkPasswordChangeRequired(profile.id);
-        if (required) {
-          setPasswordChangeRequired(true);
-          setShowPasswordModal(true);
-        } else {
-          // Charger les stats du dashboard
-          loadDashboardStats();
-        }
-      }
-    } catch (err) {
-      console.error('Erreur auth:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   
 
@@ -378,32 +354,7 @@ useEffect(() => {
   // Ensuite vérifier la permission spécifique
   return hasPermission(tab.permission);
 });
-  const loadUserPermissions = async () => {
-  if (!currentUser?.id) return;
-  
-  try {
-    // Charger les permissions spécifiques de l'utilisateur
-    const { data, error } = await supabase
-      .from('user_permissions')
-      .select(`
-        permission_id,
-        permissions (
-          code,
-          nom,
-          type
-        )
-      `)
-      .eq('user_id', currentUser.id)
-      .eq('granted', true);
-    
-    if (!error && data) {
-      const permissions = data.map(up => up.permissions).filter(Boolean);
-      setCurrentUserPermissions(permissions);
-    }
-  } catch (err) {
-    console.error('Erreur chargement permissions:', err);
-  }
-};
+
 
   // Si chargement
   if (loading) {
@@ -421,7 +372,6 @@ useEffect(() => {
   if (!currentUser) {
     return <LoginForm onLogin={(user) => {
       setCurrentUser(user);
-      checkAuth();
     }} />;
   }
 
