@@ -114,7 +114,7 @@ export default function DemandesManager({ currentUser }) {
     setSelectedProducts(prev => 
       prev.map(p => 
         p.id === productId 
-          ? { ...p, quantite_demandee: Math.max(0.01, parseFloat(newQuantity) || 0.01) }
+          ? { ...p, quantite_demandee: Math.max(1, parseInt(newQuantity) || 1) }
           : p
       )
     );
@@ -151,7 +151,7 @@ const handleCreateDemande = async (e) => {
   
   // Vérifier que toutes les quantités sont valides
   const invalidProducts = selectedProducts.filter(p => 
-    !p.quantite_demandee || p.quantite_demandee <= 0 || p.quantite_demandee > p.quantite_disponible
+      !p.quantite_demandee || p.quantite_demandee < 1 || p.quantite_demandee > Math.floor(p.quantite_disponible)
   );
   
   if (invalidProducts.length > 0) {
@@ -861,7 +861,7 @@ const handleCreateDemande = async (e) => {
                         type="number"
                         step="1"
                         min="1"
-                        max={product.quantite_disponible}
+                        max={Math.floor(product.quantite_disponible)}
                         value={product.quantite_demandee}
                         onChange={(e) => updateProductQuantity(product.id, e.target.value)}
                         className="w-20 px-2 py-1 border rounded"
