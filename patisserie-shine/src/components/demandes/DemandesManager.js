@@ -238,187 +238,183 @@ export default function DemandesManager({ currentUser }) {
   };
 
   const handleValidateGroupedDemande = async (demandeGroupeeId) => {
-    try {
-      // Récupérer toutes les demandes du groupe
-      const { data: demandesGroupe, error: fetchError } = await supabase
-        .from('demandes')
-        .select('*')
-        .eq('demande_groupee_id', demandeGroupeeId)
-        .eq('statut', 'en_attente');
+  try {
+    // Récupérer toutes les demandes du groupe
+    const { data: demandesGroupe, error: fetchError } = await supabase
+      .from('demandes')
+      .select('*')
+      .eq('demande_groupee_id', demandeGroupeeId)
+      .eq('statut', 'en_attente');
 
-      if (fetchError) {
-        alert('Erreur lors de la récupération des demandes: ' + fetchError.message);
-        return;
-      }
+    if (fetchError) {
+      alert('Erreur lors de la récupération des demandes: ' + fetchError.message);
+      return;
+    }
 
-      // Valider chaque demande
-      for (const demande of demandesGroupe) {
-        // Réduire le stock principal
-        const { error: stockError } = await supabase.rpc('decrement_stock', {
-          p_produit_id: demande.produit_id,
-          p_quantite: demande.quantite
-        });
-
-        if (stockError) {
-          console.error('Erreur mise à jour stock:', stockError);
-          continue;
-        }
-
-        // Ajouter au stock de destination
-        if (demande.destination === 'Production' || demande.destination === 'Atelier') {
-  // Code existant pour stock_atelier...
-  const { data: existingStock } = await supabase
-    .from('stock_atelier')
-    .select('*')
-    .eq('produit_id', demande.produit_id)
-    .single();
-
-  if (existingStock) {
-    await supabase
-      .from('stock_atelier')
-      .update({
-        quantite_disponible: existingStock.quantite_disponible + demande.quantite,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', existingStock.id);
-  } else {
-    await supabase
-      .from('stock_atelier')
-      .insert({
-        produit_id: demande.produit_id,
-        quantite_disponible: demande.quantite,
-        created_at: new Date().toISOString()
+    // Valider chaque demande
+    for (const demande of demandesGroupe) {
+      // Réduire le stock principal
+      const { error: stockError } = await supabase.rpc('decrement_stock', {
+        p_produit_id: demande.produit_id,
+        p_quantite: demande.quantite
       });
-  }
-} else if (demande.destination === 'Boutique') {
-  // Récupérer le prix de vente depuis la table prix_vente_produits si elle existe
-  const { data: prixVenteData } = await supabase
-    .from('prix_vente_produits')
-    .select('prix')
-    .eq('produit_id', demande.produit_id)
-    .eq('actif', true)
-    .single();
 
-  // Vérifier si existe déjà dans stock_boutique
-  const { data: existingStockBoutique } = await supabase
-    .from('stock_boutique')
-    .select('*')
-    .eq('produit_id', demande.produit_id)
-    .single();
-
-  if (existingStockBoutique) {
-    const updateData = {
-      quantite_disponible: existingStockBoutique.quantite_disponible + demande.quantite,
-      updated_at: new Date().toISOString()
-    };
-    
-    // Mettre à jour le prix_vente si trouvé
-    if (prixVenteData?.prix) {
-      updateData.prix_vente = prixVenteData.prix;
-    }
-    
-    await supabase
-      .from('stock_boutique')
-      .update(updateData)
-      .eq('id', existingStockBoutique.id);
-  } else {
-    const insertData = {
-      produit_id: demande.produit_id,
-      quantite_disponible: demande.quantite,
-      quantite_vendue: 0,
-      quantite_utilisee: 0,
-      type_produit: 'vendable',
-      transfere_par: currentUser.id,
-      statut_stock: 'normal',
-      created_at: new Date().toISOString()
-    };
-    
-    // Ajouter le prix_vente si trouvé
-    if (prixVenteData?.prix) {
-      insertData.prix_vente = prixVenteData.prix;
-    }
-    
-    await supabase
-      .from('stock_boutique')
-      .insert(insertData);
-  }
-  
-  // Optionnel : Enregistrer dans entrees_boutique pour la traçabilité
-  await supabase
-    .from('entrees_boutique')
-    .insert({
-      produit_id: demande.produit_id,
-      quantite: demande.quantite,
-      source: 'Stock Principal',
-      type_entree: 'Demande',
-      prix_vente: prixVenteData?.prix || null,
-      ajoute_par: currentUser.id,
-      created_at: new Date().toISOString()
-    });
-}
+      if (stockError) {
+        console.error('Erreur mise à jour stock:', stockError);
+        continue;
       }
 
-      // Marquer toutes les demandes comme validées
-      await supabase
-        .from('demandes')
-        .update({
-          statut: 'validee',
-          valideur_id: currentUser.id,
-          date_validation: new Date().toISOString()
-        })
-        .eq('demande_groupee_id', demandeGroupeeId);
+      // Ajouter au stock de destination selon la destination
+      if (demande.destination === 'Production' || demande.destination === 'Atelier') {
+        // STOCK ATELIER
+        // Vérifier si existe déjà
+        const { data: existingStock } = await supabase
+          .from('stock_atelier')
+          .select('*')
+          .eq('produit_id', demande.produit_id)
+          .single();
 
-      // Marquer la demande groupée comme validée
-      await supabase
-        .from('demandes_groupees')
-        .update({
-          statut: 'validee',
-          valideur_id: currentUser.id,
-          date_validation: new Date().toISOString()
-        })
-        .eq('id', demandeGroupeeId);
+        if (existingStock) {
+          await supabase
+            .from('stock_atelier')
+            .update({
+              quantite_disponible: existingStock.quantite_disponible + demande.quantite,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existingStock.id);
+        } else {
+          await supabase
+            .from('stock_atelier')
+            .insert({
+              produit_id: demande.produit_id,
+              quantite_disponible: demande.quantite,
+              transfere_par: currentUser.id,
+              created_at: new Date().toISOString()
+            });
+        }
+        
+      } else if (demande.destination === 'Boutique') {
+        // STOCK BOUTIQUE
+        // Récupérer le prix de vente depuis prix_vente_produits si disponible
+        const { data: prixVenteData } = await supabase
+          .from('prix_vente_produits')
+          .select('prix')
+          .eq('produit_id', demande.produit_id)
+          .eq('actif', true)
+          .single();
 
-      await loadData();
-      alert('Demande groupée validée avec succès !');
-      
-    } catch (err) {
-      console.error('Erreur:', err);
-      alert('Erreur lors de la validation de la demande groupée');
+        // Vérifier si existe déjà dans stock_boutique
+        const { data: existingStockBoutique } = await supabase
+          .from('stock_boutique')
+          .select('*')
+          .eq('produit_id', demande.produit_id)
+          .single();
+
+        if (existingStockBoutique) {
+          // Mettre à jour le stock existant
+          const updateData = {
+            quantite_disponible: (existingStockBoutique.quantite_disponible || 0) + demande.quantite,
+            updated_at: new Date().toISOString()
+          };
+          
+          // Mettre à jour le prix_vente seulement s'il est trouvé et n'existe pas déjà
+          if (prixVenteData?.prix && !existingStockBoutique.prix_vente) {
+            updateData.prix_vente = prixVenteData.prix;
+          }
+          
+          await supabase
+            .from('stock_boutique')
+            .update(updateData)
+            .eq('id', existingStockBoutique.id);
+        } else {
+          // Créer un nouveau stock boutique
+          const insertData = {
+            produit_id: demande.produit_id,
+            quantite_disponible: demande.quantite,
+            quantite_vendue: 0,
+            quantite_utilisee: 0,
+            type_produit: 'vendable',
+            transfere_par: currentUser.id,
+            statut_stock: 'normal',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          
+          // Ajouter le prix_vente si trouvé
+          if (prixVenteData?.prix) {
+            insertData.prix_vente = prixVenteData.prix;
+          }
+          
+          await supabase
+            .from('stock_boutique')
+            .insert(insertData);
+        }
+        
+        // Enregistrer dans entrees_boutique pour la traçabilité
+        const entreeData = {
+          produit_id: demande.produit_id,
+          quantite: demande.quantite,
+          source: 'Stock Principal',
+          type_entree: 'Demande',
+          ajoute_par: currentUser.id,
+          created_at: new Date().toISOString()
+        };
+        
+        if (prixVenteData?.prix) {
+          entreeData.prix_vente = prixVenteData.prix;
+        }
+        
+        await supabase
+          .from('entrees_boutique')
+          .insert(entreeData);
+      }
+
+      // Enregistrer le mouvement de stock pour traçabilité
+      await supabase
+        .from('mouvements_stock')
+        .insert({
+          produit_id: demande.produit_id,
+          type_mouvement: 'transfert',
+          quantite: demande.quantite,
+          source: 'Stock Principal',
+          destination: demande.destination,
+          utilisateur_id: currentUser.id,
+          reference_id: demande.id,
+          reference_type: 'demande',
+          commentaire: `Demande groupée #${demandeGroupeeId} validée`,
+          created_at: new Date().toISOString()
+        });
     }
-  };
 
-  const handleRejectGroupedDemande = async (demandeGroupeeId) => {
-    if (!confirm('Êtes-vous sûr de vouloir refuser toute cette demande groupée ?')) return;
+    // Marquer toutes les demandes comme validées
+    await supabase
+      .from('demandes')
+      .update({
+        statut: 'validee',
+        valideur_id: currentUser.id,
+        date_validation: new Date().toISOString()
+      })
+      .eq('demande_groupee_id', demandeGroupeeId);
+
+    // Marquer la demande groupée comme validée
+    await supabase
+      .from('demandes_groupees')
+      .update({
+        statut: 'validee',
+        valideur_id: currentUser.id,
+        date_validation: new Date().toISOString()
+      })
+      .eq('id', demandeGroupeeId);
+
+    await loadData();
+    alert('Demande groupée validée avec succès ! Les produits ont été ajoutés au stock ' + 
+          (demandesGroupe[0]?.destination || 'de destination'));
     
-    try {
-      // Marquer la demande groupée comme refusée
-      await supabase
-        .from('demandes_groupees')
-        .update({
-          statut: 'refusee',
-          valideur_id: currentUser.id,
-          date_validation: new Date().toISOString()
-        })
-        .eq('id', demandeGroupeeId);
-
-      // Marquer toutes les demandes comme refusées
-      await supabase
-        .from('demandes')
-        .update({
-          statut: 'refusee',
-          valideur_id: currentUser.id,
-          date_validation: new Date().toISOString()
-        })
-        .eq('demande_groupee_id', demandeGroupeeId);
-
-      await loadData();
-      alert('Demande groupée refusée');
-    } catch (err) {
-      console.error('Erreur:', err);
-      alert('Erreur lors du refus de la demande groupée');
-    }
-  };
-
+  } catch (err) {
+    console.error('Erreur:', err);
+    alert('Erreur lors de la validation de la demande groupée');
+  }
+};
   const handleValidateDemande = async (demandeId) => {
     try {
       const { result, error, message } = await demandeService.validateWithBoutiqueCheck(demandeId);
