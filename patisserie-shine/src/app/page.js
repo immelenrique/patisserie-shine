@@ -166,6 +166,7 @@ useEffect(() => {
     subscription?.unsubscribe();
   };
 }, []);
+  
   // Écouter les changements d'auth
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
@@ -186,7 +187,9 @@ useEffect(() => {
 
   return () => {
     mounted = false;
-    subscription?.unsubscribe();
+    if (subscription) {
+      subscription.unsubscribe();
+    }
   };
 }, []);
  
