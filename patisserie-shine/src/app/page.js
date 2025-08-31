@@ -372,51 +372,48 @@ useEffect(() => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-orange-100">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-orange-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center">
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-orange-400 bg-clip-text text-transparent">
-                Pâtisserie Shine
-              </h1>
-              {currentUser?.username === 'proprietaire' && (
-                <Crown className="w-5 h-5 text-yellow-500 ml-2" />
-              )}
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
-                <User className="w-4 h-4" />
-                <span>{currentUser.nom || currentUser.username}</span>
-                <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs">
-                  {currentUser.role}
-                </span>
-              </div>
-              
-              <button
-                onClick={() => setShowPasswordModal(true)}
-                className="p-2 text-gray-500 hover:text-orange-600 transition-colors"
-                title="Changer le mot de passe"
-              >
-                <KeyRound className="w-5 h-5" />
-              </button>
-              <div className="flex items-center space-x-4">
-              {/*Notifications */}
-              <NotificationCenter currentUser={currentUser} />
-              
-            
-            
-              <button
-                onClick={logout}
-                className="p-2 text-gray-500 hover:text-red-600 transition-colors"
-                title="Déconnexion"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
+     <header className="bg-white shadow-sm border-b border-orange-200">
+  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="flex justify-between items-center py-4">
+      <div className="flex items-center">
+        <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-orange-400 bg-clip-text text-transparent">
+          Pâtisserie Shine
+        </h1>
+        {currentUser?.username === 'proprietaire' && (
+          <Crown className="w-5 h-5 text-yellow-500 ml-2" />
+        )}
+      </div>
+      
+      <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2 text-sm text-gray-600">
+          <User className="w-4 h-4" />
+          <span>{currentUser.nom || currentUser.username}</span>
+          <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs">
+            {currentUser.role}
+          </span>
         </div>
-      </header>
+        
+        <button
+          onClick={() => setShowPasswordModal(true)}
+          className="p-2 text-gray-500 hover:text-orange-600 transition-colors"
+          title="Changer le mot de passe"
+        >
+          <KeyRound className="w-5 h-5" />
+        </button>
+        
+        {/* <NotificationCenter currentUser={currentUser} /> */}
+        
+        <button
+          onClick={logout}
+          className="p-2 text-gray-500 hover:text-red-600 transition-colors"
+          title="Déconnexion"
+        >
+          <LogOut className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  </div>
+</header>
 
       {/* Navigation */}
       <nav className="bg-white shadow-sm border-b">
