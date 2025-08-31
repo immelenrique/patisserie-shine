@@ -59,7 +59,7 @@ export default function Home() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState('');
   const [passwordChangeRequired, setPasswordChangeRequired] = useState(false);
-  
+  const [currentUserPermissions, setCurrentUserPermissions] = useState([]);
   // États dashboard
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -125,9 +125,15 @@ useEffect(() => {
       }
     }
   };
+  
 
   initializeAuth();
-
+useEffect(() => {
+    if (currentUser) {
+      loadUserPermissions();
+      loadDashboardStats();
+    }
+  }, [currentUser]);
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
       if (event === "SIGNED_IN" && session) {
@@ -216,12 +222,52 @@ useEffect(() => {
 };
 
   // Vérifier si l'utilisateur a une permission
-  const hasPermission = (permissionCode) => {
-    if (currentUser?.role === 'admin' || currentUser?.username === 'proprietaire') {
-      return true;
+  const hasPermission = (permission) => {
+  // Propriétaire a toutes les permissions
+  if (currentUser?.username === 'proprietaire') {
+    return true;
+  }
+  
+  // Admin a toutes les permissions de vue et gestion basiques
+  if (currentUser?.role === 'admin') {
+    // Les admins peuvent tout voir sauf les permissions système
+    if (permission === 'manage_permissions') {
+      return false;
     }
-    return userPermissions.some(p => p.permission_code === permissionCode);
-  };
+    return true;
+  }
+  
+  // Pour les employés, vérifier les permissions spécifiques
+  if (currentUserPermissions && currentUserPermissions.length > 0) {
+    // Si l'utilisateur a des permissions personnalisées, les utiliser
+    return currentUserPermissions.some(p => p.code === permission);
+  }
+  
+  // Sinon, utiliser les permissions par défaut selon le rôle
+  if (currentUser?.role === 'employe_production') {
+    const defaultProductionPermissions = [
+      'view_dashboard',
+      'view_stock',
+      'view_stock_atelier',
+      'view_recettes',
+      'view_demandes',
+      'view_production'
+    ];
+    return defaultProductionPermissions.includes(permission);
+  }
+  
+  if (currentUser?.role === 'employe_boutique') {
+    const defaultBoutiquePermissions = [
+      'view_dashboard',
+      'view_stock_boutique',
+      'view_demandes',
+      'view_caisse'
+    ];
+    return defaultBoutiquePermissions.includes(permission);
+  }
+  
+  return false;
+};
 
   // Charger les statistiques du dashboard
   const loadDashboardStats = async () => {
@@ -338,15 +384,44 @@ useEffect(() => {
   ];
 
   // Filtrer les onglets selon les permissions
-  const availableTabs = tabs.filter(tab => {
-    if (tab.superAdminOnly) {
-      return currentUser?.username === 'proprietaire';
+ const availableTabs = tabs.filter(tab => {
+  // Vérifier adminOnly d'abord
+  if (tab.adminOnly) {
+    // Seuls admin et propriétaire peuvent voir les onglets adminOnly
+    if (currentUser?.role !== 'admin' && currentUser?.username !== 'proprietaire') {
+      return false;
     }
-    if (tab.adminOnly) {
-      return currentUser?.role === 'admin' || currentUser?.username === 'proprietaire';
+  }
+  
+  // Ensuite vérifier la permission spécifique
+  return hasPermission(tab.permission);
+});
+  const loadUserPermissions = async () => {
+  if (!currentUser?.id) return;
+  
+  try {
+    // Charger les permissions spécifiques de l'utilisateur
+    const { data, error } = await supabase
+      .from('user_permissions')
+      .select(`
+        permission_id,
+        permissions (
+          code,
+          nom,
+          type
+        )
+      `)
+      .eq('user_id', currentUser.id)
+      .eq('granted', true);
+    
+    if (!error && data) {
+      const permissions = data.map(up => up.permissions).filter(Boolean);
+      setCurrentUserPermissions(permissions);
     }
-    return hasPermission(tab.permission);
-  });
+  } catch (err) {
+    console.error('Erreur chargement permissions:', err);
+  }
+};
 
   // Si chargement
   if (loading) {
