@@ -165,47 +165,68 @@ useEffect(() => {
 
   // Vérifier si l'utilisateur a une permission
   const hasPermission = (permission) => {
-  // Propriétaire a toutes les permissions
+  // Propriétaire voit tout
   if (currentUser?.username === 'proprietaire') {
     return true;
   }
   
-  // Admin a toutes les permissions de vue et gestion basiques
+  // Admin : vérifier d'abord les permissions personnalisées
   if (currentUser?.role === 'admin') {
-    // Les admins peuvent tout voir sauf les permissions système
-    if (permission === 'manage_permissions') {
-      return false;
+    // Si l'admin a des permissions personnalisées attribuées
+    if (currentUserPermissions && currentUserPermissions.length > 0) {
+      // Vérifier si manage_permissions lui a été spécifiquement accordée
+      const hasManagePermissions = currentUserPermissions.some(p => 
+        p.code === 'manage_permissions' || p.code === 'view_permissions'
+      );
+      
+      if (permission === 'manage_permissions') {
+        return hasManagePermissions; // Seulement si explicitement accordée
+      }
+    } else {
+      // Admin sans permissions personnalisées : tout sauf manage_permissions
+      if (permission === 'manage_permissions') {
+        return false;
+      }
     }
+    
+    // Pour toutes les autres permissions, admin a accès
     return true;
   }
   
-  // Pour les employés, vérifier les permissions spécifiques
+  // Pour les employés, vérifier les permissions personnalisées
   if (currentUserPermissions && currentUserPermissions.length > 0) {
-    // Si l'utilisateur a des permissions personnalisées, les utiliser
-    return currentUserPermissions.some(p => p.code === permission);
+    const hasDirectPermission = currentUserPermissions.some(p => p.code === permission);
+    
+    const hasManagePermission = currentUserPermissions.some(p => {
+      if (permission.startsWith('view_') && p.code.startsWith('manage_')) {
+        const module = permission.replace('view_', '');
+        return p.code === `manage_${module}`;
+      }
+      return false;
+    });
+    
+    if (hasDirectPermission || hasManagePermission) {
+      return true;
+    }
   }
   
-  // Sinon, utiliser les permissions par défaut selon le rôle
-  if (currentUser?.role === 'employe_production') {
-    const defaultProductionPermissions = [
-      'view_dashboard',
-      'view_stock',
-      'view_stock_atelier',
-      'view_recettes',
-      'view_demandes',
-      'view_production'
-    ];
-    return defaultProductionPermissions.includes(permission);
-  }
-  
-  if (currentUser?.role === 'employe_boutique') {
-    const defaultBoutiquePermissions = [
-      'view_dashboard',
-      'view_stock_boutique',
-      'view_demandes',
-      'view_caisse'
-    ];
-    return defaultBoutiquePermissions.includes(permission);
+  // Permissions par défaut si pas de permissions personnalisées
+  if (!currentUserPermissions || currentUserPermissions.length === 0) {
+    if (currentUser?.role === 'employe_production') {
+      const defaultPermissions = [
+        'view_dashboard', 'view_stock', 'view_stock_atelier',
+        'view_recettes', 'view_demandes', 'view_production'
+      ];
+      return defaultPermissions.includes(permission);
+    }
+    
+    if (currentUser?.role === 'employe_boutique') {
+      const defaultPermissions = [
+        'view_dashboard', 'view_stock_boutique', 
+        'view_demandes', 'view_caisse'
+      ];
+      return defaultPermissions.includes(permission);
+    }
   }
   
   return false;
