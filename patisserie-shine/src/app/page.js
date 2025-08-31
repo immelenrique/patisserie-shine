@@ -331,7 +331,8 @@ useEffect(() => {
     { id: 'unites', label: 'Unités', icon: Ruler, permission: 'manage_units', adminOnly: true },
     { id: 'equipe', label: 'Équipe', icon: Users, permission: 'manage_team', adminOnly: true },
     { id: 'users', label: 'Utilisateurs', icon: UserCog, permission: 'manage_users', adminOnly: true },
-    { id: 'permissions', label: 'Permissions', icon: Shield, permission: 'manage_permissions', superAdminOnly: true }
+    { id: 'permissions', label: 'Permissions', icon: Shield, permission: 'manage_permissions' }
+
   ];
 
   // Filtrer les onglets selon les permissions
@@ -561,6 +562,7 @@ useEffect(() => {
     </div>
   );
 }
+
 
 
 
