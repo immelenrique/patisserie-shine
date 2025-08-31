@@ -139,9 +139,7 @@ export default function DemandesManager({ currentUser }) {
   };
 
   // Créer la demande multi-produits
-  // Ajoutez d'abord l'import en haut du fichier DemandesManager.js :
-import { notificationService } from '../../services/notificationService';
-
+ 
 // Puis remplacez votre handleCreateDemande par celle-ci :
 const handleCreateDemande = async (e) => {
   e.preventDefault();
