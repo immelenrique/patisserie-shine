@@ -859,8 +859,8 @@ const handleCreateDemande = async (e) => {
                     <div className="flex items-center space-x-3">
                       <input
                         type="number"
-                        step="0.01"
-                        min="0.01"
+                        step="1"
+                        min="1"
                         max={product.quantite_disponible}
                         value={product.quantite_demandee}
                         onChange={(e) => updateProductQuantity(product.id, e.target.value)}
