@@ -79,11 +79,31 @@ useEffect(() => {
         return;
       }
       
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", session.user.id)
-        .single();
+      const { data: permData, error: permError } = await supabase
+  .from("user_permissions")
+  .select(`
+    permission_id,
+    permissions (
+      code,
+      nom,
+      type
+    )
+  `)
+  .eq("user_id", profile.id)
+  .eq("granted", true);
+
+// AJOUTEZ CES LOGS
+console.log('=== LOADING PERMISSIONS ===');
+console.log('User ID:', profile.id);
+console.log('Query result:', { permData, permError });
+
+if (permData) {
+  const extracted = permData.map(up => up.permissions).filter(Boolean);
+  console.log('Extracted permissions:', extracted);
+  setCurrentUserPermissions(extracted);
+} else {
+  console.log('No permissions data returned');
+}
       
       if (ignore) return;
       
