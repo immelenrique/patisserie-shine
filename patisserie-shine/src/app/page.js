@@ -65,103 +65,99 @@ export default function Home() {
   const [statsLoading, setStatsLoading] = useState(false);
 
 useEffect(() => {
-  let mounted = true;
-
+  let ignore = false;
+  
   const initializeAuth = async () => {
     try {
       setLoading(true);
-      
       const { data: { session } } = await supabase.auth.getSession();
-
-      if (!mounted) return;
-
+      
+      if (ignore) return;
+      
       if (!session?.user) {
         setCurrentUser(null);
-        setLoading(false);
         return;
       }
-
+      
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", session.user.id)
         .single();
-
-      if (!mounted) return;
-
+      
+      if (ignore) return;
+      
       if (profileError || !profile) {
+        console.error("❌ Profil introuvable");
         await supabase.auth.signOut();
         setCurrentUser(null);
-        setLoading(false);
         return;
       }
-
+      
       setCurrentUser(profile);
       
-      if (profile.id) {
-        try {
-          const { data: permData, error: permError } = await supabase
-            .from('user_permissions')
-            .select(`
-              permission_id,
-              permissions (
-                code,
-                nom,
-                type
-              )
-            `)
-            .eq('user_id', profile.id)
-            .eq('granted', true);
-            
-          if (!permError && permData) {
-            const permissions = permData.map(up => up.permissions).filter(Boolean);
-            setCurrentUserPermissions(permissions);
-          }
-        } catch (err) {
-          console.error('Erreur chargement permissions:', err);
-        }
+      // Charger permissions
+      const { data: permData } = await supabase
+        .from("user_permissions")
+        .select(`
+          permission_id,
+          permissions (
+            code,
+            nom,
+            type
+          )
+        `)
+        .eq("user_id", profile.id)
+        .eq("granted", true);
+      
+      if (permData) {
+        setCurrentUserPermissions(
+          permData.map(up => up.permissions).filter(Boolean)
+        );
       }
       
+      // Vérifier changement mot de passe
       if (profile.force_password_change) {
         setPasswordChangeRequired(true);
         setShowPasswordModal(true);
       } else {
-        loadDashboardStats();
+        loadDashboardStats(); // Pas besoin d'await ici
       }
-      
     } catch (error) {
       console.error("Erreur init auth:", error);
       setCurrentUser(null);
     } finally {
-      if (mounted) {
+      if (!ignore) {
         setLoading(false);
       }
     }
-  }; // ← Ferme la fonction initializeAuth
-
-  // Appeler la fonction
+  };
+  
+  // Initialiser une seule fois
   initializeAuth();
-
-  // Listener pour les changements d'auth
+  
+  // Listener SANS relancer initializeAuth sur SIGNED_IN
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     (event, session) => {
-      console.log('🔄 Auth event:', event);
+      console.log("🔄 Auth event:", event);
       
-      if (event === 'SIGNED_OUT') {
+      if (event === "SIGNED_OUT") {
         setCurrentUser(null);
         setCurrentUserPermissions([]);
+        setPasswordChangeRequired(false);
+        setShowPasswordModal(false);
         setLoading(false);
       }
+      // NE PAS relancer initializeAuth sur SIGNED_IN
+      // Cela créerait une boucle infinie
     }
-  ); 
-
-  // Cleanup function
+  );
+  
   return () => {
-    mounted = false;
+    ignore = true;
     subscription?.unsubscribe();
   };
-
-}, []); 
+}, []);
   // Chargement des permissions quand l'utilisateur se connecte
   // Chargement des permissions UNE SEULE FOIS après connexion
 
