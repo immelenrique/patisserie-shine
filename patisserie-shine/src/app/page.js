@@ -404,13 +404,8 @@ useEffect(() => {
               {/*Notifications */}
               <NotificationCenter currentUser={currentUser} />
               
-              <button
-                onClick={onLogout}
-                className="p-2 text-gray-400 hover:text-red-600"
-              >
-                <LogOut className="h-5 w-5" />
-              </button>
-            </div>
+            
+            
               <button
                 onClick={logout}
                 className="p-2 text-gray-500 hover:text-red-600 transition-colors"
@@ -574,6 +569,7 @@ useEffect(() => {
     </div>
   );
 }
+
 
 
 
