@@ -1,5 +1,7 @@
 import React from 'react';
 import { ChefHat, Bell, LogOut, Home, Package, Warehouse, Calculator, ShoppingCart, Users, UserPlus, Store, CreditCard, BarChart3,Database } from 'lucide-react';
+import NotificationCenter from '../notifications/NotificationCenter';
+
 
 // Header Component
 export function Header({ currentUser, stats, onLogout }) {
@@ -27,16 +29,8 @@ export function Header({ currentUser, stats, onLogout }) {
           </div>
           
           <div className="flex items-center space-x-4">
-            <div className="relative">
-              <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
-                <Bell className="h-5 w-5" />
-                {((stats?.demandes_en_attente || 0) + (stats?.stock_atelier_critique || 0) + (stats?.produits_stock_critique || 0)) > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-                    {(stats?.demandes_en_attente || 0) + (stats?.stock_atelier_critique || 0) + (stats?.produits_stock_critique || 0)}
-                  </span>
-                )}
-              </button>
-            </div>
+            <NotificationCenter currentUser={currentUser} />
+
 
             <div className="flex items-center space-x-3 px-4 py-2 bg-gray-50 rounded-xl">
               <div className="w-8 h-8 bg-gradient-to-r from-green-400 to-blue-500 rounded-lg flex items-center justify-center">
