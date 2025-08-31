@@ -247,8 +247,7 @@ useEffect(() => {
     setUserPermissions([]);
     setLoading(false);
     setSessionError(false);
-    setSubmitting(false);
-    setLoginError('');
+    
     
     // 4. Forcer le rechargement complet de la page
     window.location.href = '/';
