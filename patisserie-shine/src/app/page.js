@@ -401,7 +401,7 @@ useEffect(() => {
           <KeyRound className="w-5 h-5" />
         </button>
         
-        {/* <NotificationCenter currentUser={currentUser} /> */}
+        <NotificationCenter currentUser={currentUser} />
         
         <button
           onClick={logout}
