@@ -201,32 +201,7 @@ useEffect(() => {
     }
   };
 
-  // Charger les permissions de l'utilisateur
-  const loadUserPermissions = async () => {
-  if (!currentUser?.id) return;
   
-  try {
-    const { data, error } = await supabase
-      .from('user_permissions')
-      .select(`
-        permission_id,
-        permissions (
-          code,
-          nom,
-          type
-        )
-      `)
-      .eq('user_id', currentUser.id)
-      .eq('granted', true);
-    
-    if (!error && data) {
-      const permissions = data.map(up => up.permissions).filter(Boolean);
-      setCurrentUserPermissions(permissions);
-    }
-  } catch (err) {
-    console.error('Erreur chargement permissions:', err);
-  }
-};
 
   // Vérifier si l'utilisateur a une permission
   const hasPermission = (permission) => {
