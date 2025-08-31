@@ -101,7 +101,7 @@ useEffect(() => {
       // 3. Définir l'utilisateur
       setCurrentUser(profile);
       
-      // 4. Charger les permissions SI l'utilisateur existe
+      // 4. Charger les permissions
       if (profile.id) {
         try {
           const { data: permData, error: permError } = await supabase
@@ -120,7 +120,6 @@ useEffect(() => {
           if (!permError && permData) {
             const permissions = permData.map(up => up.permissions).filter(Boolean);
             setCurrentUserPermissions(permissions);
-            console.log('✅ Permissions chargées:', permissions);
           }
         } catch (err) {
           console.error('Erreur chargement permissions:', err);
@@ -132,7 +131,6 @@ useEffect(() => {
         setPasswordChangeRequired(true);
         setShowPasswordModal(true);
       } else {
-        // Charger les stats seulement si pas de changement requis
         loadDashboardStats();
       }
       
@@ -146,9 +144,28 @@ useEffect(() => {
     }
   };
 
-  // Initialiser
+  // Appeler la fonction une seule fois
   initializeAuth();
 
+  // Écouter les changements d'auth SANS recharger à chaque fois
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    (event, session) => {
+      console.log('🔄 Auth event:', event);
+      
+      if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+        setCurrentUserPermissions([]);
+        setLoading(false);
+      }
+      // NE PAS appeler initializeAuth() sur SIGNED_IN pour éviter la boucle
+    }
+  );
+
+  return () => {
+    mounted = false;
+    subscription?.unsubscribe();
+  };
+}, []);
   // Écouter les changements d'auth
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
