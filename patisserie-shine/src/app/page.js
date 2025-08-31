@@ -347,14 +347,6 @@ useEffect(() => {
 
   // Filtrer les onglets selon les permissions
  const availableTabs = tabs.filter(tab => {
-  // Vérifier adminOnly d'abord
-  if (tab.adminOnly) {
-    // Seuls admin et propriétaire peuvent voir les onglets adminOnly
-    if (currentUser?.role !== 'admin' && currentUser?.username !== 'proprietaire') {
-      return false;
-    }
-  }
-  
   // Ensuite vérifier la permission spécifique
   return hasPermission(tab.permission);
 });
