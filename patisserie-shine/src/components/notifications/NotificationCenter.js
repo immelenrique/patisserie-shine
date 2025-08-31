@@ -56,7 +56,7 @@ export default function NotificationCenter({ currentUser }) {
         .from('notifications')
         .select(`
           *,
-          emetteur:emetteur_id(nom, username)
+          emetteur:profiles!emetteur_id(nom, username)
         `)
         .eq('destinataire_id', currentUser.id)
         .order('created_at', { ascending: false })
