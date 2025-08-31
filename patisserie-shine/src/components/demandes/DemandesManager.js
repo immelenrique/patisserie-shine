@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { demandeService, productService, utils, supabase } from '../../lib/supabase';
 import { Plus, ShoppingCart, Check, X, Clock, Package, ArrowRight, Warehouse, Store, DollarSign, Trash2, Search, Factory } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
+import { notificationService } from '../../services/notificationService';
 
 export default function DemandesManager({ currentUser }) {
   const [demandes, setDemandes] = useState([]);
@@ -138,93 +139,137 @@ export default function DemandesManager({ currentUser }) {
   };
 
   // Créer la demande multi-produits
-  const handleCreateDemande = async (e) => {
-    e.preventDefault();
+  // Ajoutez d'abord l'import en haut du fichier DemandesManager.js :
+import { notificationService } from '../../services/notificationService';
+
+// Puis remplacez votre handleCreateDemande par celle-ci :
+const handleCreateDemande = async (e) => {
+  e.preventDefault();
+  
+  if (selectedProducts.length === 0) {
+    alert('Veuillez sélectionner au moins un produit');
+    return;
+  }
+  
+  // Vérifier que toutes les quantités sont valides
+  const invalidProducts = selectedProducts.filter(p => 
+    !p.quantite_demandee || p.quantite_demandee <= 0 || p.quantite_demandee > p.quantite_disponible
+  );
+  
+  if (invalidProducts.length > 0) {
+    alert(`Quantités invalides pour : ${invalidProducts.map(p => p.nom).join(', ')}`);
+    return;
+  }
+  
+  try {
+    setError('');
     
-    if (selectedProducts.length === 0) {
-      alert('Veuillez sélectionner au moins un produit');
+    // Créer directement dans Supabase si le service n'existe pas
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      setError('Vous devez être connecté');
       return;
     }
-
-    // Vérifier que toutes les quantités sont valides
-    const invalidProducts = selectedProducts.filter(p => 
-      !p.quantite_demandee || p.quantite_demandee <= 0 || p.quantite_demandee > p.quantite_disponible
-    );
-
-    if (invalidProducts.length > 0) {
-      alert(`Quantités invalides pour : ${invalidProducts.map(p => p.nom).join(', ')}`);
-      return;
-    }
-
-    try {
-      setError('');
-      
-      // Créer directement dans Supabase si le service n'existe pas
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        setError('Vous devez être connecté');
-        return;
-      }
-
-      // 1. Créer la demande groupée
-      const { data: demandeGroupee, error: groupError } = await supabase
-        .from('demandes_groupees')
-        .insert({
-          destination: formData.destination,
-          commentaire: formData.commentaire || '',
-          demandeur_id: user.id,
-          statut: 'en_attente',
-          nombre_produits: selectedProducts.length,
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-
-      if (groupError) {
-        console.error('Erreur création demande groupée:', groupError);
-        setError('Erreur lors de la création de la demande: ' + groupError.message);
-        return;
-      }
-
-      // 2. Créer les demandes individuelles
-      const demandesIndividuelles = selectedProducts.map(p => ({
-        produit_id: p.id,
-        quantite: p.quantite_demandee,
+    
+    // 1. Créer la demande groupée
+    const { data: demandeGroupee, error: groupError } = await supabase
+      .from('demandes_groupees')
+      .insert({
         destination: formData.destination,
-        statut: 'en_attente',
+        commentaire: formData.commentaire || '',
         demandeur_id: user.id,
-        demande_groupee_id: demandeGroupee.id,
+        statut: 'en_attente',
+        nombre_produits: selectedProducts.length,
         created_at: new Date().toISOString()
-      }));
-
-      const { error: demandesError } = await supabase
-        .from('demandes')
-        .insert(demandesIndividuelles);
-
-      if (demandesError) {
-        // Rollback : supprimer la demande groupée
-        await supabase
-          .from('demandes_groupees')
-          .delete()
-          .eq('id', demandeGroupee.id);
-        
-        console.error('Erreur création demandes individuelles:', demandesError);
-        setError('Erreur lors de la création des demandes: ' + demandesError.message);
-        return;
-      }
-
-      // Succès
-      await loadData();
-      resetForm();
-      setShowAddModal(false);
-      alert(`Demande groupée créée avec succès !\n\n${selectedProducts.length} produit(s) demandé(s) vers ${formData.destination}`);
-
-    } catch (err) {
-      console.error('Erreur:', err);
-      setError('Erreur lors de la création de la demande');
+      })
+      .select()
+      .single();
+      
+    if (groupError) {
+      console.error('Erreur création demande groupée:', groupError);
+      setError('Erreur lors de la création de la demande: ' + groupError.message);
+      return;
     }
-  };
+    
+    // 2. Créer les demandes individuelles
+    const demandesIndividuelles = selectedProducts.map(p => ({
+      produit_id: p.id,
+      quantite: p.quantite_demandee,
+      destination: formData.destination,
+      statut: 'en_attente',
+      demandeur_id: user.id,
+      demande_groupee_id: demandeGroupee.id,
+      created_at: new Date().toISOString()
+    }));
+    
+    const { error: demandesError } = await supabase
+      .from('demandes')
+      .insert(demandesIndividuelles);
+      
+    if (demandesError) {
+      // Rollback : supprimer la demande groupée
+      await supabase
+        .from('demandes_groupees')
+        .delete()
+        .eq('id', demandeGroupee.id);
+      
+      console.error('Erreur création demandes individuelles:', demandesError);
+      setError('Erreur lors de la création des demandes: ' + demandesError.message);
+      return;
+    }
+    
+    // 3. NOUVEAU : Notifier les administrateurs
+    try {
+      // Récupérer tous les admins actifs
+      const { data: admins } = await supabase
+        .from('profiles')
+        .select('id')
+        .or('role.eq.admin,username.eq.proprietaire')
+        .eq('actif', true);
+      
+      if (admins && admins.length > 0) {
+        // Créer une notification pour chaque admin
+        const notifications = admins.map(admin => ({
+          destinataire_id: admin.id,
+          emetteur_id: user.id,
+          type: 'demande_nouvelle',
+          message: `Nouvelle demande de ${currentUser?.nom || currentUser?.username || 'Un employé'}`,
+          details: `${selectedProducts.length} produit(s) pour ${formData.destination}`,
+          lien: `/demandes#${demandeGroupee.id}`,
+          lu: false,
+          priorite: 'normale',
+          created_at: new Date().toISOString()
+        }));
+        
+        const { error: notifError } = await supabase
+          .from('notifications')
+          .insert(notifications);
+        
+        if (notifError) {
+          console.error('Erreur envoi notifications:', notifError);
+          // Ne pas bloquer si les notifications échouent
+        } else {
+          console.log(`${admins.length} administrateur(s) notifié(s)`);
+        }
+      }
+    } catch (notifErr) {
+      console.error('Erreur notifications:', notifErr);
+      // Ne pas bloquer le processus si les notifications échouent
+    }
+    
+    // Succès
+    await loadData();
+    resetForm();
+    setShowAddModal(false);
+    
+    alert(`✅ Demande créée avec succès !\n\n${selectedProducts.length} produit(s) demandé(s) vers ${formData.destination}\n\nLes administrateurs ont été notifiés.`);
+    
+  } catch (err) {
+    console.error('Erreur:', err);
+    setError('Erreur lors de la création de la demande');
+  }
+};
 
   const resetForm = () => {
     setFormData({
@@ -405,14 +450,100 @@ export default function DemandesManager({ currentUser }) {
         date_validation: new Date().toISOString()
       })
       .eq('id', demandeGroupeeId);
-
+    // Récupérer les infos de la demande pour notifier
+    const { data: demandeInfo } = await supabase
+      .from('demandes_groupees')
+      .select('demandeur_id, nombre_produits, destination')
+      .eq('id', demandeGroupeeId)
+      .single();
+    
+    if (demandeInfo?.demandeur_id && demandeInfo.demandeur_id !== currentUser.id) {
+      // Notifier le demandeur
+      await supabase
+        .from('notifications')
+        .insert({
+          destinataire_id: demandeInfo.demandeur_id,
+          emetteur_id: currentUser.id,
+          type: 'demande_validee',
+          message: `Votre demande a été validée par ${currentUser.nom || currentUser.username}`,
+          details: `${demandeInfo.nombre_produits} produit(s) ajoutés au stock ${demandeInfo.destination}`,
+          lien: `/demandes#${demandeGroupeeId}`,
+          lu: false,
+          priorite: 'normale',
+          created_at: new Date().toISOString()
+        });
+    }
     await loadData();
     alert('Demande groupée validée avec succès ! Les produits ont été ajoutés au stock ' + 
           (demandesGroupe[0]?.destination || 'de destination'));
+     // ========== FIN DU CODE DE NOTIFICATION ==========
+
+    await loadData();
+    alert('Demande groupée validée avec succès !');
     
   } catch (err) {
     console.error('Erreur:', err);
     alert('Erreur lors de la validation de la demande groupée');
+  }
+};
+  const handleRejectGroupedDemande = async (demandeGroupeeId) => {
+  if (!confirm('Êtes-vous sûr de vouloir refuser toute cette demande groupée ?')) return;
+  
+  const raison = prompt('Raison du refus (optionnel):');
+  
+  try {
+    // Marquer la demande groupée comme refusée
+    await supabase
+      .from('demandes_groupees')
+      .update({
+        statut: 'refusee',
+        valideur_id: currentUser.id,
+        date_validation: new Date().toISOString()
+      })
+      .eq('id', demandeGroupeeId);
+
+    // Marquer toutes les demandes comme refusées
+    await supabase
+      .from('demandes')
+      .update({
+        statut: 'refusee',
+        valideur_id: currentUser.id,
+        date_validation: new Date().toISOString()
+      })
+      .eq('demande_groupee_id', demandeGroupeeId);
+
+    // ========== NOTIFICATION ==========
+    // Récupérer les infos pour notifier
+    const { data: demandeInfo } = await supabase
+      .from('demandes_groupees')
+      .select('demandeur_id, nombre_produits')
+      .eq('id', demandeGroupeeId)
+      .single();
+    
+    if (demandeInfo?.demandeur_id && demandeInfo.demandeur_id !== currentUser.id) {
+      // Notifier le demandeur du refus
+      await supabase
+        .from('notifications')
+        .insert({
+          destinataire_id: demandeInfo.demandeur_id,
+          emetteur_id: currentUser.id,
+          type: 'demande_refusee',
+          message: `Votre demande a été refusée par ${currentUser.nom || currentUser.username}`,
+          details: raison || 'Aucune raison spécifiée',
+          lien: `/demandes#${demandeGroupeeId}`,
+          lu: false,
+          priorite: 'normale',
+          created_at: new Date().toISOString()
+        });
+    }
+    // ========== FIN NOTIFICATION ==========
+
+    await loadData();
+    alert('Demande refusée. Le demandeur a été notifié.');
+    
+  } catch (err) {
+    console.error('Erreur:', err);
+    alert('Erreur lors du refus de la demande groupée');
   }
 };
   const handleValidateDemande = async (demandeId) => {
