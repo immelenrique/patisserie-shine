@@ -24,6 +24,8 @@ import { Modal } from '../components/ui';
 import { statsService } from '../lib/supabase';
 import { supabase, authService, userService } from '../lib/supabase';
 import { permissionsService } from '../services/permissionsService';
+import NotificationCenter from '../components/notifications/NotificationCenter';
+
 
 import { 
   LogOut, User, KeyRound, LayoutDashboard, Package, 
@@ -398,7 +400,17 @@ useEffect(() => {
               >
                 <KeyRound className="w-5 h-5" />
               </button>
+              <div className="flex items-center space-x-4">
+              {/*Notifications */}
+              <NotificationCenter currentUser={currentUser} />
               
+              <button
+                onClick={onLogout}
+                className="p-2 text-gray-400 hover:text-red-600"
+              >
+                <LogOut className="h-5 w-5" />
+              </button>
+            </div>
               <button
                 onClick={logout}
                 className="p-2 text-gray-500 hover:text-red-600 transition-colors"
@@ -562,6 +574,7 @@ useEffect(() => {
     </div>
   );
 }
+
 
 
 
