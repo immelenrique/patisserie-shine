@@ -71,7 +71,6 @@ useEffect(() => {
     try {
       setLoading(true);
       
-      // 1. Récupérer la session
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!mounted) return;
@@ -82,7 +81,6 @@ useEffect(() => {
         return;
       }
 
-      // 2. Charger le profil
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("*")
@@ -98,10 +96,8 @@ useEffect(() => {
         return;
       }
 
-      // 3. Définir l'utilisateur
       setCurrentUser(profile);
       
-      // 4. Charger les permissions
       if (profile.id) {
         try {
           const { data: permData, error: permError } = await supabase
@@ -126,7 +122,6 @@ useEffect(() => {
         }
       }
       
-      // 5. Vérifier le changement de mot de passe
       if (profile.force_password_change) {
         setPasswordChangeRequired(true);
         setShowPasswordModal(true);
@@ -142,12 +137,12 @@ useEffect(() => {
         setLoading(false);
       }
     }
-  };
+  }; // ← Ferme la fonction initializeAuth
 
-  // Appeler la fonction une seule fois
+  // Appeler la fonction
   initializeAuth();
 
-  // Écouter les changements d'auth SANS recharger à chaque fois
+  // Listener pour les changements d'auth
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     (event, session) => {
       console.log('🔄 Auth event:', event);
@@ -157,43 +152,16 @@ useEffect(() => {
         setCurrentUserPermissions([]);
         setLoading(false);
       }
-      // NE PAS appeler initializeAuth() sur SIGNED_IN pour éviter la boucle
     }
-  );
+  ); 
 
+  // Cleanup function
   return () => {
     mounted = false;
     subscription?.unsubscribe();
   };
-}, []);
-  
-  // Écouter les changements d'auth
-  const { data: { subscription } } = supabase.auth.onAuthStateChange(
-    async (event, session) => {
-      console.log('🔄 Auth event:', event);
-      
-      if (event === 'SIGNED_IN' && session && mounted) {
-        // Recharger après connexion
-        await initializeAuth();
-      } else if (event === 'SIGNED_OUT') {
-        setCurrentUser(null);
-        setCurrentUserPermissions([]);
-        setLoading(false);
-      } else if (event === 'TOKEN_REFRESHED') {
-        console.log('✅ Token rafraîchi');
-      }
-    }
-  );
 
-  return () => {
-    mounted = false;
-    if (subscription) {
-      subscription.unsubscribe();
-    }
-  };
-}, []);
- 
-
+}, []); 
   // Chargement des permissions quand l'utilisateur se connecte
   // Chargement des permissions UNE SEULE FOIS après connexion
 
