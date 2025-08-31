@@ -205,19 +205,26 @@ useEffect(() => {
   const loadUserPermissions = async () => {
   if (!currentUser?.id) return;
   
-  // Empêcher les appels multiples
-  if (permissionsLoading) return;
-  
-  setPermissionsLoading(true);
   try {
-    const { data, error } = await permissionsService.getUserPermissions(currentUser.id);
+    const { data, error } = await supabase
+      .from('user_permissions')
+      .select(`
+        permission_id,
+        permissions (
+          code,
+          nom,
+          type
+        )
+      `)
+      .eq('user_id', currentUser.id)
+      .eq('granted', true);
+    
     if (!error && data) {
-      setUserPermissions(data);
+      const permissions = data.map(up => up.permissions).filter(Boolean);
+      setCurrentUserPermissions(permissions);
     }
   } catch (err) {
     console.error('Erreur chargement permissions:', err);
-  } finally {
-    setPermissionsLoading(false);
   }
 };
 
