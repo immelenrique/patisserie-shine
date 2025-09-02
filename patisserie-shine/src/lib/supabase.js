@@ -390,24 +390,22 @@ export const userService = {
 
  async createUser(userData) {
   try {
-    console.log('🔄 Création utilisateur via API route...');
-    
-    // Récupérer le token de session pour l'autorisation
+    // Récupérer la session actuelle
     const { data: { session } } = await supabase.auth.getSession();
     
-    if (!session) {
+    if (!session || !session.access_token) {
       return { 
         user: null, 
-        error: 'Vous devez être connecté en tant qu\'administrateur' 
+        error: 'Session expirée. Veuillez rafraîchir la page et vous reconnecter.' 
       };
     }
 
-    // APPELER L'API ROUTE (pas signUp directement)
+    // Appeler l'API route avec le bon token
     const response = await fetch('/api/admin/create-user', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`
+        'Authorization': `Bearer ${session.access_token}` // Token correct
       },
       body: JSON.stringify({
         username: userData.username,
@@ -419,27 +417,37 @@ export const userService = {
       })
     });
 
+    // Lire la réponse
     const data = await response.json();
 
+    // Gérer les erreurs HTTP
     if (!response.ok) {
-      console.error('❌ Erreur API:', data.error);
+      if (response.status === 401) {
+        // Token invalide ou expiré
+        return { 
+          user: null, 
+          error: 'Session expirée. Veuillez vous reconnecter.' 
+        };
+      }
+      
+      // Autres erreurs
       return { 
         user: null, 
         error: data.error || 'Erreur lors de la création' 
       };
     }
 
-    console.log('✅ Utilisateur créé avec succès');
+    // Succès
     return { 
       user: data.user, 
       error: null 
     };
     
   } catch (error) {
-    console.error('❌ Erreur dans createUser:', error);
+    // Erreur réseau ou autre
     return { 
       user: null, 
-      error: 'Erreur de connexion au serveur' 
+      error: 'Erreur de connexion au serveur. Vérifiez votre connexion.' 
     };
   }
 },
@@ -3265,6 +3273,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
