@@ -15,25 +15,49 @@ const supabaseAdmin = createClient(
 
 export async function POST(request) {
   try {
-    // Récupérer les données de la requête
-    const { username, nom, telephone, role, password, force_password_change } = await request.json()
-    
-    console.log('🔄 Création utilisateur demandée:', { username, nom, role })
+    const { username, nom, telephone, role, password } = await request.json()
     
     // Validation des données
     if (!username || !nom || !role || !password) {
-      console.error('❌ Données manquantes:', { username: !!username, nom: !!nom, role: !!role, password: !!password })
       return NextResponse.json(
-        { error: 'Tous les champs obligatoires doivent être remplis (username, nom, role, password)' },
+        { error: 'Données manquantes' },
         { status: 400 }
       )
     }
 
-    if (password.length < 6) {
-      console.error('❌ Mot de passe trop court')
+    // Vérifier le token ET les permissions
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
       return NextResponse.json(
-        { error: 'Le mot de passe doit contenir au moins 6 caractères' },
-        { status: 400 }
+        { error: 'Non autorisé' },
+        { status: 401 }
+      )
+    }
+
+    // Extraire et vérifier le token
+    const token = authHeader.replace('Bearer ', '')
+    
+    // Vérifier que l'utilisateur est admin via Supabase
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+    
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Token invalide' },
+        { status: 401 }
+      )
+    }
+
+    // Vérifier le rôle admin
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('role, username')
+      .eq('id', user.id)
+      .single()
+
+    if (!profile || (profile.role !== 'admin' && profile.username !== 'proprietaire')) {
+      return NextResponse.json(
+        { error: 'Permissions insuffisantes' },
+        { status: 403 }
       )
     }
 
