@@ -389,43 +389,46 @@ export const userService = {
   },
 
   async createUser(userData) {
-    try {
-      const email = `${userData.username}@shine.local` // CORRECTION: Un seul @
-      
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password: userData.password
-      })
-
-      if (authError) {
-        return { user: null, error: authError.message }
-      }
-
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: authData.user.id,
-          username: userData.username,
-          nom: userData.nom,
-          telephone: userData.telephone,
-          role: userData.role,
-          actif: true,
-          force_password_change: true
-        })
-        .select()
-        .single()
-
-      if (profileError) {
-        return { user: null, error: profileError.message }
-      }
-
-      return { user: profile, error: null }
-    } catch (error) {
-      console.error('Erreur createUser:', error)
-      return { user: null, error: error.message }
+  try {
+    // Récupérer le token de session pour l'autorisation
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      return { user: null, error: 'Vous devez être connecté pour créer un utilisateur' };
     }
-  },
 
+    // Appeler l'API route au lieu de supabase.auth.signUp
+    const response = await fetch('/api/admin/create-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({
+        username: userData.username,
+        nom: userData.nom,
+        telephone: userData.telephone,
+        role: userData.role,
+        password: userData.password,
+        force_password_change: true
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('Erreur création utilisateur:', data.error);
+      return { user: null, error: data.error || 'Erreur lors de la création' };
+    }
+
+    // Retourner l'utilisateur créé
+    return { user: data.user, error: null };
+    
+  } catch (error) {
+    console.error('Erreur dans createUser:', error);
+    return { user: null, error: 'Erreur de connexion au serveur' };
+  }
+},
   async updateUser(userId, updates) {
     try {
       const { data, error } = await supabase
@@ -3248,6 +3251,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
