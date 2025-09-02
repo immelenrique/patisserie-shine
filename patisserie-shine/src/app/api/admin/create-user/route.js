@@ -37,15 +37,7 @@ export async function POST(request) {
       )
     }
 
-    // Vérifier que l'utilisateur demandeur a les permissions
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      console.error('❌ Token d\'autorisation manquant')
-      return NextResponse.json(
-        { error: 'Token d\'autorisation manquant' },
-        { status: 401 }
-      )
-    }
+   
 
     // Nettoyer et valider le username
     const cleanUsername = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, '')
