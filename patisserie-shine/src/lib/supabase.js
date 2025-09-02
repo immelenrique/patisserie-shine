@@ -390,39 +390,34 @@ export const userService = {
 
 async createUser(userData) {
   try {
-    // 1. Récupérer la session de l'utilisateur connecté
+    // Récupérer la session actuelle
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
-    if (sessionError || !session) {
-      console.error('Pas de session:', sessionError);
-      // Essayer de récupérer l'utilisateur actuel
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return { 
-          user: null, 
-          error: 'Vous devez être connecté pour créer un utilisateur' 
-        };
-      }
-    }
-
-    // 2. Vérifier que nous avons bien un token
-    const token = session?.access_token;
-    if (!token) {
-      console.error('Pas de token dans la session');
+    if (sessionError) {
+      console.error('Erreur récupération session:', sessionError);
       return { 
         user: null, 
-        error: 'Token d\'authentification manquant. Reconnectez-vous.' 
+        error: 'Erreur de session. Rafraîchissez la page.' 
       };
     }
 
-    console.log('Token présent, longueur:', token.length);
+    if (!session || !session.access_token) {
+      console.error('Pas de session ou pas de token');
+      return { 
+        user: null, 
+        error: 'Session non trouvée. Rafraîchissez la page et réessayez.' 
+      };
+    }
 
-    // 3. Appeler votre route API avec le token
+    // Log pour debug (à retirer en production finale)
+    console.log('Session trouvée, appel API avec token');
+
+    // Appeler l'API avec le token
     const response = await fetch('/api/admin/create-user', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${session.access_token}`
       },
       body: JSON.stringify({
         username: userData.username,
@@ -434,30 +429,28 @@ async createUser(userData) {
       })
     });
 
-    // 4. Traiter la réponse
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('Erreur HTTP:', response.status, data.error);
+      console.error('Erreur API:', response.status, data.error);
+      
+      // NE PAS DÉCONNECTER AUTOMATIQUEMENT
+      // Juste retourner l'erreur
       
       if (response.status === 401) {
-        // Token invalide, forcer reconnexion
-        await supabase.auth.signOut();
-        window.location.href = '/';
         return { 
           user: null, 
-          error: 'Session expirée. Reconnexion en cours...' 
+          error: 'Problème d\'autorisation. Vérifiez vos permissions ou rafraîchissez la page.' 
         };
       }
       
       return { 
         user: null, 
-        error: data.error || `Erreur ${response.status}` 
+        error: data.error || 'Erreur lors de la création' 
       };
     }
 
-    // 5. Succès
-    console.log('Utilisateur créé avec succès');
+    console.log('✅ Utilisateur créé avec succès');
     return { 
       user: data.user, 
       error: null 
@@ -3293,6 +3286,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
