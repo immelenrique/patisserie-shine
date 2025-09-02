@@ -1,3 +1,4 @@
+// src/app/api/admin/create-user/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
@@ -15,12 +16,15 @@ const supabaseAdmin = createClient(
 
 export async function POST(request) {
   try {
-    const { username, nom, telephone, role, password } = await request.json()
+    console.log('📋 Début de la création d\'utilisateur');
+    
+    const { username, nom, telephone, role, password, force_password_change } = await request.json()
     
     // Validation des données
     if (!username || !nom || !role || !password) {
+      console.error('❌ Données manquantes:', { username, nom, role, password: '***' });
       return NextResponse.json(
-        { error: 'Données manquantes' },
+        { error: 'Données manquantes. Tous les champs obligatoires doivent être remplis.' },
         { status: 400 }
       )
     }
@@ -28,8 +32,9 @@ export async function POST(request) {
     // Vérifier le token ET les permissions
     const authHeader = request.headers.get('authorization')
     if (!authHeader) {
+      console.error('❌ Pas de header d\'autorisation');
       return NextResponse.json(
-        { error: 'Non autorisé' },
+        { error: 'Non autorisé - Token manquant' },
         { status: 401 }
       )
     }
@@ -41,27 +46,37 @@ export async function POST(request) {
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
     
     if (authError || !user) {
+      console.error('❌ Token invalide:', authError);
       return NextResponse.json(
-        { error: 'Token invalide' },
+        { error: 'Token invalide ou expiré' },
         { status: 401 }
       )
     }
 
     // Vérifier le rôle admin
-    const { data: profile } = await supabaseAdmin
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('role, username')
       .eq('id', user.id)
       .single()
 
-    if (!profile || (profile.role !== 'admin' && profile.username !== 'proprietaire')) {
+    if (profileError || !profile) {
+      console.error('❌ Profil admin non trouvé:', profileError);
       return NextResponse.json(
-        { error: 'Permissions insuffisantes' },
+        { error: 'Profil administrateur non trouvé' },
         { status: 403 }
       )
     }
 
-   
+    if (profile.role !== 'admin' && profile.username !== 'proprietaire') {
+      console.error('❌ Permissions insuffisantes pour:', profile.username);
+      return NextResponse.json(
+        { error: 'Permissions insuffisantes - Seuls les administrateurs peuvent créer des utilisateurs' },
+        { status: 403 }
+      )
+    }
+
+    console.log('✅ Autorisation validée pour:', profile.username);
 
     // Nettoyer et valider le username
     const cleanUsername = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, '')
@@ -73,12 +88,22 @@ export async function POST(request) {
       )
     }
 
-    // Vérifier si le nom d'utilisateur existe déjà
-    const { data: existingProfile } = await supabaseAdmin
+    console.log('📝 Username nettoyé:', cleanUsername);
+
+    // Vérifier si le nom d'utilisateur existe déjà dans profiles
+    const { data: existingProfile, error: checkError } = await supabaseAdmin
       .from('profiles')
       .select('id, username')
       .eq('username', cleanUsername)
       .maybeSingle()
+
+    if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = no rows returned
+      console.error('❌ Erreur vérification username:', checkError);
+      return NextResponse.json(
+        { error: 'Erreur lors de la vérification du nom d\'utilisateur' },
+        { status: 500 }
+      )
+    }
 
     if (existingProfile) {
       console.error('❌ Username déjà existant:', cleanUsername)
@@ -92,21 +117,33 @@ export async function POST(request) {
     const email = `${cleanUsername}@shine.local`
     console.log('📧 Email généré:', email)
 
-    // MÉTHODE CORRIGÉE: Vérifier d'abord si l'email existe dans auth.users
-    const { data: existingAuthUser } = await supabaseAdmin.auth.admin.listUsers()
-    const emailExists = existingAuthUser?.users?.some(user => user.email === email)
-    
-    if (emailExists) {
-      console.error('❌ Email déjà existant dans auth:', email)
-      return NextResponse.json(
-        { error: `L'email ${email} est déjà enregistré dans le système d'authentification` },
-        { status: 400 }
-      )
+    // Vérifier si l'email existe déjà dans auth.users
+    try {
+      const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers()
+      
+      if (listError) {
+        console.error('❌ Erreur listUsers:', listError);
+        // Continue même si on ne peut pas vérifier
+      } else if (listData?.users) {
+        const emailExists = listData.users.some(u => u.email === email)
+        
+        if (emailExists) {
+          console.error('❌ Email déjà existant dans auth:', email)
+          return NextResponse.json(
+            { error: `L'email ${email} est déjà enregistré dans le système` },
+            { status: 400 }
+          )
+        }
+      }
+    } catch (listErr) {
+      console.warn('⚠️ Impossible de vérifier les emails existants:', listErr);
+      // Continue quand même
     }
 
-    // 1. Créer l'utilisateur dans auth.users avec l'admin client
+    // 1. Créer l'utilisateur dans auth.users
     console.log('🔄 Création utilisateur auth...')
-    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+    
+    const { data: authData, error: createAuthError } = await supabaseAdmin.auth.admin.createUser({
       email: email,
       password: password,
       email_confirm: true, // Confirmer automatiquement l'email
@@ -114,96 +151,96 @@ export async function POST(request) {
         username: cleanUsername,
         nom: nom.trim(),
         role: role,
-        telephone: telephone?.trim() || null
+        telephone: telephone?.trim() || ''
       }
     })
 
-    if (authError) {
-      console.error('❌ Erreur création auth user:', authError)
+    if (createAuthError) {
+      console.error('❌ Erreur création auth user:', createAuthError)
       
       // Gestion d'erreurs spécifiques
-      if (authError.message.includes('already registered') || authError.message.includes('already exists')) {
+      if (createAuthError.message?.includes('already registered') || 
+          createAuthError.message?.includes('already exists') ||
+          createAuthError.code === '23505') {
         return NextResponse.json(
-          { error: `L'email ${email} est déjà enregistré` },
+          { error: `L'utilisateur ${cleanUsername} existe déjà` },
           { status: 400 }
         )
       }
       
-      if (authError.message.includes('Database error')) {
+      if (createAuthError.message?.includes('Database error')) {
         return NextResponse.json(
-          { error: 'Erreur de base de données. Vérifiez que votre instance Supabase est correctement configurée.' },
+          { error: 'Erreur de base de données. Vérifiez votre configuration Supabase.' },
           { status: 500 }
+        )
+      }
+
+      if (createAuthError.message?.includes('password')) {
+        return NextResponse.json(
+          { error: 'Le mot de passe ne respecte pas les critères de sécurité (min. 6 caractères)' },
+          { status: 400 }
         )
       }
       
       return NextResponse.json(
-        { error: `Erreur de création de l'authentification: ${authError.message}` },
+        { error: `Erreur de création: ${createAuthError.message}` },
         { status: 400 }
       )
     }
 
-    console.log('✅ Utilisateur auth créé:', authData.user.id)
+    if (!authData?.user?.id) {
+      console.error('❌ Pas d\'ID utilisateur retourné');
+      return NextResponse.json(
+        { error: 'Erreur lors de la création de l\'utilisateur - ID manquant' },
+        { status: 500 }
+      )
+    }
 
-    // 2. Attendre un peu plus pour laisser le trigger s'exécuter
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    console.log('✅ Utilisateur auth créé avec ID:', authData.user.id)
 
-    // 3. Vérifier si le profil existe déjà (créé par trigger)
-    const { data: existingUserProfile } = await supabaseAdmin
-      .from('profiles')
-      .select('*')
-      .eq('id', authData.user.id)
-      .maybeSingle()
+    // 2. Attendre que le trigger ou RLS crée le profil
+    console.log('⏳ Attente de la création automatique du profil...')
+    await new Promise(resolve => setTimeout(resolve, 3000))
 
-    let profileData
-
-    if (existingUserProfile) {
-      console.log('📝 Profil existant trouvé, mise à jour...')
-      // Mettre à jour le profil existant
-      const { data: updatedProfile, error: updateError } = await supabaseAdmin
+    // 3. Vérifier si le profil existe
+    let profileData = null
+    let retries = 3
+    
+    while (retries > 0 && !profileData) {
+      const { data: checkProfile } = await supabaseAdmin
         .from('profiles')
-        .update({
-          username: cleanUsername,
-          nom: nom.trim(),
-          telephone: telephone?.trim() || null,
-          role: role,
-          actif: true,
-          force_password_change: force_password_change !== false, // true par défaut
-          last_password_change: null, // Null car c'est un nouveau compte
-          updated_at: new Date().toISOString()
-        })
+        .select('*')
         .eq('id', authData.user.id)
-        .select()
-        .single()
-
-      if (updateError) {
-        console.error('❌ Erreur mise à jour profil:', updateError)
-        // Nettoyer l'utilisateur auth créé en cas d'erreur
-        try {
-          await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
-        } catch (cleanupError) {
-          console.error('❌ Erreur nettoyage auth:', cleanupError)
-        }
-        return NextResponse.json(
-          { error: `Erreur de mise à jour du profil: ${updateError.message}` },
-          { status: 400 }
-        )
+        .maybeSingle()
+      
+      if (checkProfile) {
+        profileData = checkProfile
+        console.log('✅ Profil trouvé après trigger')
+        break
       }
+      
+      retries--
+      if (retries > 0) {
+        console.log(`⏳ Attente supplémentaire... (${retries} essais restants)`)
+        await new Promise(resolve => setTimeout(resolve, 2000))
+      }
+    }
 
-      profileData = updatedProfile
-    } else {
+    // 4. Si le profil n'existe pas, le créer manuellement
+    if (!profileData) {
       console.log('📝 Création manuelle du profil...')
-      // Créer le profil manuellement (pas de trigger ou échec du trigger)
+      
       const { data: newProfile, error: profileError } = await supabaseAdmin
         .from('profiles')
         .insert({
           id: authData.user.id,
           username: cleanUsername,
           nom: nom.trim(),
-          telephone: telephone?.trim() || null,
+          telephone: telephone?.trim() || '',
           role: role,
           actif: true,
-          force_password_change: force_password_change !== false, // true par défaut
-          last_password_change: null, // Null car c'est un nouveau compte
+          force_password_change: force_password_change !== false,
+          last_password_change: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -213,16 +250,17 @@ export async function POST(request) {
       if (profileError) {
         console.error('❌ Erreur création profil:', profileError)
         
-        // Supprimer l'utilisateur auth si le profil n'a pas pu être créé
+        // Nettoyer l'utilisateur auth créé
         try {
           await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+          console.log('🗑️ Utilisateur auth supprimé suite à l\'échec du profil')
         } catch (cleanupError) {
-          console.error('❌ Erreur nettoyage auth:', cleanupError)
+          console.error('❌ Impossible de nettoyer l\'utilisateur auth:', cleanupError)
         }
         
-        if (profileError.code === '23505') { // Duplicate key
+        if (profileError.code === '23505') {
           return NextResponse.json(
-            { error: 'Un conflit s\'est produit. Veuillez réessayer avec un autre nom d\'utilisateur.' },
+            { error: 'Conflit lors de la création du profil. Réessayez.' },
             { status: 409 }
           )
         }
@@ -234,26 +272,63 @@ export async function POST(request) {
       }
 
       profileData = newProfile
+    } else {
+      // 5. Si le profil existe (créé par trigger), le mettre à jour
+      console.log('📝 Mise à jour du profil existant...')
+      
+      const { data: updatedProfile, error: updateError } = await supabaseAdmin
+        .from('profiles')
+        .update({
+          username: cleanUsername,
+          nom: nom.trim(),
+          telephone: telephone?.trim() || '',
+          role: role,
+          actif: true,
+          force_password_change: force_password_change !== false,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', authData.user.id)
+        .select()
+        .single()
+
+      if (updateError) {
+        console.error('❌ Erreur mise à jour profil:', updateError)
+        
+        // Nettoyer l'utilisateur auth créé
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+          console.log('🗑️ Utilisateur auth supprimé suite à l\'échec de mise à jour')
+        } catch (cleanupError) {
+          console.error('❌ Impossible de nettoyer l\'utilisateur auth:', cleanupError)
+        }
+        
+        return NextResponse.json(
+          { error: `Erreur de mise à jour du profil: ${updateError.message}` },
+          { status: 400 }
+        )
+      }
+
+      profileData = updatedProfile
     }
 
-    console.log('✅ Profil créé/mis à jour:', profileData.id)
+    console.log('✅ Profil finalisé:', profileData.username)
 
-    // 4. Log de la création dans password_change_log (optionnel - avec gestion d'erreur)
+    // 6. Log optionnel de création
     try {
       await supabaseAdmin
         .from('password_change_log')
         .insert({
           user_id: authData.user.id,
-          reason: 'Account created - password change required',
-          changed_by: null // Création par admin
+          changed_by: user.id,
+          reason: 'Account created by admin',
+          created_at: new Date().toISOString()
         })
       console.log('📋 Log de création ajouté')
     } catch (logError) {
-      console.warn('⚠️ Erreur ajout log (non bloquant):', logError.message)
-      // Non bloquant - continuer même si le log échoue
+      console.warn('⚠️ Impossible d\'ajouter le log (non bloquant):', logError.message)
     }
 
-    // 5. Retourner les données de l'utilisateur créé
+    // 7. Retourner le succès
     const responseData = {
       success: true,
       user: {
@@ -267,31 +342,19 @@ export async function POST(request) {
         actif: profileData.actif,
         created_at: profileData.created_at
       },
-      message: `Utilisateur ${cleanUsername} créé avec succès. Changement de mot de passe requis à la première connexion.`
+      message: `Utilisateur ${cleanUsername} créé avec succès !`
     }
 
-    console.log('🎉 Utilisateur créé avec succès:', cleanUsername)
-    return NextResponse.json(responseData)
+    console.log('🎉 Création terminée avec succès pour:', cleanUsername)
+    return NextResponse.json(responseData, { status: 201 })
 
   } catch (error) {
-    console.error('❌ Erreur API create-user (catch global):', error)
-    
-    // Gestion spécifique des erreurs de base de données
-    if (error.message.includes('Database error') || error.message.includes('connection')) {
-      return NextResponse.json(
-        { 
-          error: 'Erreur de connexion à la base de données. Vérifiez votre configuration Supabase.',
-          details: 'Assurez-vous que votre instance Supabase est active et que les variables d\'environnement sont correctes.'
-        },
-        { status: 500 }
-      )
-    }
+    console.error('❌ Erreur globale non gérée:', error)
     
     return NextResponse.json(
       { 
-        error: 'Erreur interne du serveur', 
-        details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        error: 'Erreur interne du serveur',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
       },
       { status: 500 }
     )
