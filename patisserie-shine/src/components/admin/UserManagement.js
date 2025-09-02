@@ -68,33 +68,46 @@ export default function UserManagement({ currentUser }) {
   };
 
   const handleCreateUser = async (e) => {
-    e.preventDefault();
-    setCreating(true);
-    setMessage({ type: '', text: '' });
+  e.preventDefault();
+  setCreating(true);
+  setMessage({ type: '', text: '' });
 
-    try {
-      const { user, error } = await userService.createUser({
+  try {
+    // Appeler directement l'API route au lieu de userService.createUser
+    const response = await fetch('/api/admin/create-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Utiliser le token de l'utilisateur connecté
+        'Authorization': `Bearer ${currentUser?.access_token || ''}`
+      },
+      body: JSON.stringify({
         username: formData.username,
         nom: formData.nom,
         telephone: formData.telephone,
         role: formData.role,
-        password: formData.password
-      });
+        password: formData.password,
+        force_password_change: true
+      })
+    });
 
-      if (error) {
-        setMessage({ type: 'error', text: error });
-      } else {
-        setMessage({ type: 'success', text: `Utilisateur ${formData.username} créé avec succès !` });
-        setShowAddModal(false);
-        resetForm();
-        loadUsers();
-      }
-    } catch (err) {
-      setMessage({ type: 'error', text: 'Erreur lors de la création de l\'utilisateur' });
-    } finally {
-      setCreating(false);
+    const data = await response.json();
+
+    if (!response.ok) {
+      setMessage({ type: 'error', text: data.error || 'Erreur lors de la création' });
+    } else {
+      setMessage({ type: 'success', text: `Utilisateur ${formData.username} créé avec succès !` });
+      setShowAddModal(false);
+      resetForm();
+      loadUsers();
     }
-  };
+  } catch (err) {
+    console.error('Erreur création:', err);
+    setMessage({ type: 'error', text: 'Erreur lors de la création de l\'utilisateur' });
+  } finally {
+    setCreating(false);
+  }
+};
 
   const handleEditUser = async (e) => {
     e.preventDefault();
