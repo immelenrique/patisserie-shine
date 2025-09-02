@@ -388,24 +388,41 @@ export const userService = {
     }
   },
 
- async createUser(userData) {
+async createUser(userData) {
   try {
-    // Récupérer la session actuelle
-    const { data: { session } } = await supabase.auth.getSession();
+    // 1. Récupérer la session de l'utilisateur connecté
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
-    if (!session || !session.access_token) {
+    if (sessionError || !session) {
+      console.error('Pas de session:', sessionError);
+      // Essayer de récupérer l'utilisateur actuel
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { 
+          user: null, 
+          error: 'Vous devez être connecté pour créer un utilisateur' 
+        };
+      }
+    }
+
+    // 2. Vérifier que nous avons bien un token
+    const token = session?.access_token;
+    if (!token) {
+      console.error('Pas de token dans la session');
       return { 
         user: null, 
-        error: 'Session expirée. Veuillez rafraîchir la page et vous reconnecter.' 
+        error: 'Token d\'authentification manquant. Reconnectez-vous.' 
       };
     }
 
-    // Appeler l'API route avec le bon token
+    console.log('Token présent, longueur:', token.length);
+
+    // 3. Appeler votre route API avec le token
     const response = await fetch('/api/admin/create-user', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}` // Token correct
+        'Authorization': `Bearer ${token}`
       },
       body: JSON.stringify({
         username: userData.username,
@@ -417,37 +434,40 @@ export const userService = {
       })
     });
 
-    // Lire la réponse
+    // 4. Traiter la réponse
     const data = await response.json();
 
-    // Gérer les erreurs HTTP
     if (!response.ok) {
+      console.error('Erreur HTTP:', response.status, data.error);
+      
       if (response.status === 401) {
-        // Token invalide ou expiré
+        // Token invalide, forcer reconnexion
+        await supabase.auth.signOut();
+        window.location.href = '/';
         return { 
           user: null, 
-          error: 'Session expirée. Veuillez vous reconnecter.' 
+          error: 'Session expirée. Reconnexion en cours...' 
         };
       }
       
-      // Autres erreurs
       return { 
         user: null, 
-        error: data.error || 'Erreur lors de la création' 
+        error: data.error || `Erreur ${response.status}` 
       };
     }
 
-    // Succès
+    // 5. Succès
+    console.log('Utilisateur créé avec succès');
     return { 
       user: data.user, 
       error: null 
     };
     
   } catch (error) {
-    // Erreur réseau ou autre
+    console.error('Erreur exception:', error);
     return { 
       user: null, 
-      error: 'Erreur de connexion au serveur. Vérifiez votre connexion.' 
+      error: 'Erreur de connexion au serveur' 
     };
   }
 },
@@ -3273,6 +3293,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
