@@ -390,7 +390,7 @@ export const userService = {
 
  async createUser(userData) {
     try {
-      const email = ${userData.username}@shine.local // CORRECTION: Un seul @
+      const email = `${userData.username}@shine.local`// CORRECTION: Un seul @
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
@@ -3243,6 +3243,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
