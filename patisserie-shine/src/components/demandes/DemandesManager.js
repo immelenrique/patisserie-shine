@@ -337,61 +337,138 @@ const handleCreateDemande = async (e) => {
         }
         
       } else if (demande.destination === 'Boutique') {
-        // STOCK BOUTIQUE
-        // Récupérer le prix de vente depuis prix_vente_produits si disponible
-        const { data: prixVenteData } = await supabase
-          .from('prix_vente_produits')
-          .select('prix')
-          .eq('produit_id', demande.produit_id)
-          .eq('actif', true)
-          .single();
+  // === STOCK BOUTIQUE ===
+  console.log('  🏪 Ajout au stock BOUTIQUE...');
+  
+  // Récupérer le prix de vente si disponible
+  const { data: prixVenteData } = await supabase
+    .from('prix_vente_produits')
+    .select('prix')
+    .eq('produit_id', demande.produit_id)
+    .eq('actif', true)
+    .maybeSingle();
 
-        // Vérifier si existe déjà dans stock_boutique
-        const { data: existingStockBoutique } = await supabase
-          .from('stock_boutique')
-          .select('*')
-          .eq('produit_id', demande.produit_id)
-          .single();
+  // Vérifier si existe déjà dans stock_boutique
+  const { data: existingStockBoutique, error: checkBoutiqueError } = await supabase
+    .from('stock_boutique')
+    .select('*')
+    .eq('produit_id', demande.produit_id)
+    .maybeSingle();
 
-        if (existingStockBoutique) {
-          // Mettre à jour le stock existant
-          const updateData = {
-            quantite_disponible: (existingStockBoutique.quantite_disponible || 0) + demande.quantite,
-            updated_at: new Date().toISOString()
-          };
-          
-          // Mettre à jour le prix_vente seulement s'il est trouvé et n'existe pas déjà
-          if (prixVenteData?.prix && !existingStockBoutique.prix_vente) {
-            updateData.prix_vente = prixVenteData.prix;
-          }
-          
-          await supabase
-            .from('stock_boutique')
-            .update(updateData)
-            .eq('id', existingStockBoutique.id);
-        } else {
-          // Créer un nouveau stock boutique
-          const insertData = {
-            produit_id: demande.produit_id,
-            quantite_disponible: demande.quantite,
-            quantite_vendue: 0,
-            quantite_utilisee: 0,
-            type_produit: 'vendable',
-            transfere_par: currentUser.id,
-            statut_stock: 'normal',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-          
-          // Ajouter le prix_vente si trouvé
-          if (prixVenteData?.prix) {
-            insertData.prix_vente = prixVenteData.prix;
-          }
-          
-          await supabase
-            .from('stock_boutique')
-            .insert(insertData);
-        }
+  if (checkBoutiqueError && checkBoutiqueError.code !== 'PGRST116') {
+    console.error('  ❌ Erreur vérification stock boutique:', checkBoutiqueError);
+    errors.push(`Erreur vérification stock boutique: ${checkBoutiqueError.message}`);
+    errorCount++;
+    continue;
+  }
+
+  if (existingStockBoutique) {
+    // Mettre à jour le stock existant
+    console.log('  📝 Stock boutique existant trouvé, mise à jour...');
+    const updateData = {
+      quantite_disponible: (existingStockBoutique.quantite_disponible || 0) + demande.quantite,
+      transfere_par: currentUser.id,
+      updated_at: new Date().toISOString()
+    };
+    
+    // IMPORTANT : S'assurer que type_produit est défini
+    if (!existingStockBoutique.type_produit) {
+      updateData.type_produit = 'vendable';
+    }
+    
+    // Mettre à jour le prix seulement s'il n'existe pas
+    if (prixVenteData?.prix && !existingStockBoutique.prix_vente) {
+      updateData.prix_vente = prixVenteData.prix;
+    }
+    
+    const { data: updatedBoutique, error: updateBoutiqueError } = await supabase
+      .from('stock_boutique')
+      .update(updateData)
+      .eq('id', existingStockBoutique.id)
+      .select()
+      .single();
+
+    if (updateBoutiqueError) {
+      console.error('  ❌ Erreur mise à jour stock boutique:', updateBoutiqueError);
+      errors.push(`Erreur mise à jour stock boutique: ${updateBoutiqueError.message}`);
+      errorCount++;
+      continue;
+    }
+    
+    console.log('  ✅ Stock boutique mis à jour:', updatedBoutique.quantite_disponible);
+  } else {
+    // Créer un nouveau stock boutique
+    console.log('  ➕ Création nouveau stock boutique...');
+    
+    // IMPORTANT : Toujours définir type_produit à 'vendable' par défaut
+    const insertData = {
+      produit_id: demande.produit_id,
+      quantite_disponible: demande.quantite,
+      quantite_vendue: 0,
+      quantite_utilisee: 0,
+      type_produit: 'vendable', // ✅ TOUJOURS DÉFINIR LE TYPE
+      transfere_par: currentUser.id,
+      statut_stock: 'normal',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    // Ajouter le nom du produit si disponible
+    if (demande.produit?.nom) {
+      insertData.nom_produit = demande.produit.nom;
+    }
+    
+    // Ajouter le prix si disponible
+    if (prixVenteData?.prix) {
+      insertData.prix_vente = prixVenteData.prix;
+      console.log('  💰 Prix de vente trouvé:', prixVenteData.prix);
+    } else {
+      console.log('  ⚠️ Pas de prix de vente trouvé pour ce produit');
+      // Optionnel : Mettre un prix par défaut ou demander à l'utilisateur
+      // insertData.prix_vente = 0; // Ou demander le prix
+    }
+    
+    const { data: newBoutique, error: insertBoutiqueError } = await supabase
+      .from('stock_boutique')
+      .insert(insertData)
+      .select()
+      .single();
+
+    if (insertBoutiqueError) {
+      console.error('  ❌ Erreur création stock boutique:', insertBoutiqueError);
+      errors.push(`Erreur création stock boutique: ${insertBoutiqueError.message}`);
+      errorCount++;
+      continue;
+    }
+    
+    console.log('  ✅ Stock boutique créé:', {
+      id: newBoutique.id,
+      produit: demande.produit?.nom,
+      quantite: newBoutique.quantite_disponible,
+      type: newBoutique.type_produit,
+      prix: newBoutique.prix_vente
+    });
+  }
+  
+  // Enregistrer dans entrees_boutique pour traçabilité
+  console.log('  📋 Enregistrement entrée boutique...');
+  const entreeData = {
+    produit_id: demande.produit_id,
+    quantite: demande.quantite,
+    source: 'Stock Principal',
+    type_entree: 'Demande',
+    ajoute_par: currentUser.id,
+    created_at: new Date().toISOString()
+  };
+  
+  if (prixVenteData?.prix) {
+    entreeData.prix_vente = prixVenteData.prix;
+  }
+  
+  await supabase
+    .from('entrees_boutique')
+    .insert(entreeData);
+}
         
         // Enregistrer dans entrees_boutique pour la traçabilité
         const entreeData = {
