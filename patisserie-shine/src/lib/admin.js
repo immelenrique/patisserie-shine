@@ -17,57 +17,106 @@ const supabaseAdmin = createClient(
 
 export const adminService = {
   // Créer un nouvel utilisateur (API Admin)
-  async createUser(userData) {
-    try {
-      // 1. Créer l'utilisateur dans auth.users
-      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        email: `${userData.username}@shine.local`,
-        password: userData.password,
-        email_confirm: true, // Auto-confirmer
-        user_metadata: {
-          username: userData.username,
-          nom_complet: userData.nom_complet,
-          role: userData.role
-        }
-      })
+ // Remplacez la fonction createUser dans /src/lib/supabase.js par celle-ci :
 
-      if (authError) throw authError
-
-      // 2. Créer le profil (normalement fait par trigger, mais on s'assure)
-      const { data: profileData, error: profileError } = await supabaseAdmin
-        .from('profiles')
-        .upsert({
-          id: authData.user.id,
-          username: userData.username,
-          nom_complet: userData.nom_complet,
-          role: userData.role,
-          telephone: userData.telephone,
-          actif: true
-        })
-        .select()
-        .single()
-
-      if (profileError) {
-        console.warn('Erreur création profil:', profileError)
-        // Le trigger devrait le gérer
-      }
-
+async createUser(userData) {
+  try {
+    console.log('🔄 Début création utilisateur:', userData.username);
+    
+    // Récupérer le token de session pour l'autorisation
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      console.error('❌ Pas de session active');
       return { 
-        user: authData.user, 
-        profile: profileData || {
-          id: authData.user.id,
-          username: userData.username,
-          nom_complet: userData.nom_complet,
-          role: userData.role
-        }, 
-        error: null 
-      }
-
-    } catch (error) {
-      console.error('Erreur création utilisateur admin:', error)
-      return { user: null, profile: null, error: error.message }
+        user: null, 
+        error: 'Vous devez être connecté en tant qu\'administrateur pour créer un utilisateur' 
+      };
     }
-  },
+
+    // Appeler l'API route qui utilise supabaseAdmin.auth.admin.createUser()
+    console.log('📡 Appel de l\'API /api/admin/create-user');
+    const response = await fetch('/api/admin/create-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({
+        username: userData.username,
+        nom: userData.nom,
+        telephone: userData.telephone || '',
+        role: userData.role,
+        password: userData.password,
+        force_password_change: userData.force_password_change !== false // true par défaut
+      })
+    });
+
+    // Récupérer la réponse
+    const data = await response.json();
+    console.log('📥 Réponse API:', response.status, data);
+
+    // Gérer les erreurs HTTP
+    if (!response.ok) {
+      console.error('❌ Erreur API:', data.error);
+      
+      // Messages d'erreur personnalisés selon le code de statut
+      if (response.status === 401) {
+        return { 
+          user: null, 
+          error: 'Non autorisé. Vous devez être administrateur.' 
+        };
+      }
+      
+      if (response.status === 400) {
+        // Erreurs de validation
+        return { 
+          user: null, 
+          error: data.error || 'Données invalides' 
+        };
+      }
+      
+      if (response.status === 409) {
+        // Conflit (utilisateur existe déjà)
+        return { 
+          user: null, 
+          error: data.error || 'Cet utilisateur existe déjà' 
+        };
+      }
+      
+      // Autres erreurs
+      return { 
+        user: null, 
+        error: data.error || 'Erreur lors de la création de l\'utilisateur' 
+      };
+    }
+
+    // Succès !
+    console.log('✅ Utilisateur créé avec succès:', data.user.username);
+    
+    // Retourner l'utilisateur créé
+    return { 
+      user: data.user, 
+      error: null 
+    };
+    
+  } catch (error) {
+    // Erreurs réseau ou autres erreurs inattendues
+    console.error('❌ Erreur inattendue dans createUser:', error);
+    
+    if (error.message === 'Failed to fetch') {
+      return { 
+        user: null, 
+        error: 'Erreur de connexion au serveur. Vérifiez votre connexion internet.' 
+      };
+    }
+    
+    return { 
+      user: null, 
+      error: error.message || 'Erreur inattendue lors de la création de l\'utilisateur' 
+    };
+  }
+},
 
   // Désactiver un utilisateur
   async deactivateUser(userId) {
