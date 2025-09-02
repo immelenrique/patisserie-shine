@@ -388,82 +388,132 @@ export const userService = {
     }
   },
 
-async createUser(userData) {
-  try {
-    // Récupérer la session actuelle
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    
-    if (sessionError) {
-      console.error('Erreur récupération session:', sessionError);
-      return { 
-        user: null, 
-        error: 'Erreur de session. Rafraîchissez la page.' 
-      };
-    }
 
-    if (!session || !session.access_token) {
-      console.error('Pas de session ou pas de token');
-      return { 
-        user: null, 
-        error: 'Session non trouvée. Rafraîchissez la page et réessayez.' 
-      };
-    }
-
-    // Log pour debug (à retirer en production finale)
-    console.log('Session trouvée, appel API avec token');
-
-    // Appeler l'API avec le token
-    const response = await fetch('/api/admin/create-user', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`
-      },
-      body: JSON.stringify({
-        username: userData.username,
-        nom: userData.nom,
-        telephone: userData.telephone || '',
-        role: userData.role,
-        password: userData.password,
-        force_password_change: true
-      })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('Erreur API:', response.status, data.error);
+  async createUser(userData) {
+    try {
+      console.log('🔄 Début création utilisateur:', userData.username);
       
-      // NE PAS DÉCONNECTER AUTOMATIQUEMENT
-      // Juste retourner l'erreur
+      // Vérification de la session
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (response.status === 401) {
+      if (sessionError) {
+        console.error('❌ Erreur récupération session:', sessionError);
         return { 
           user: null, 
-          error: 'Problème d\'autorisation. Vérifiez vos permissions ou rafraîchissez la page.' 
+          error: 'Erreur de session. Veuillez vous reconnecter.' 
+        };
+      }
+
+      if (!session || !session.access_token) {
+        console.error('❌ Pas de session active');
+        return { 
+          user: null, 
+          error: 'Vous devez être connecté en tant qu\'administrateur' 
+        };
+      }
+
+      console.log('✅ Session trouvée, appel API...');
+
+      // Appel à l'API route
+      const response = await fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          username: userData.username.trim(),
+          nom: userData.nom.trim(),
+          telephone: userData.telephone?.trim() || '',
+          role: userData.role,
+          password: userData.password,
+          force_password_change: userData.force_password_change !== false
+        })
+      });
+
+      // Récupération de la réponse
+      const data = await response.json();
+      console.log('📥 Réponse API:', response.status, data);
+
+      // Gestion des erreurs HTTP
+      if (!response.ok) {
+        console.error('❌ Erreur API:', data.error);
+        
+        // Messages d'erreur personnalisés selon le code
+        switch(response.status) {
+          case 401:
+            return { 
+              user: null, 
+              error: 'Non autorisé. Vérifiez vos permissions d\'administrateur.' 
+            };
+          
+          case 403:
+            return { 
+              user: null, 
+              error: 'Permissions insuffisantes. Seuls les administrateurs peuvent créer des utilisateurs.' 
+            };
+          
+          case 400:
+            // Erreurs de validation - utiliser le message du serveur
+            return { 
+              user: null, 
+              error: data.error || 'Données invalides. Vérifiez tous les champs.' 
+            };
+          
+          case 409:
+            // Conflit - utilisateur existe déjà
+            return { 
+              user: null, 
+              error: data.error || 'Cet utilisateur existe déjà' 
+            };
+          
+          case 500:
+            return { 
+              user: null, 
+              error: 'Erreur serveur. Vérifiez votre configuration Supabase.' 
+            };
+          
+          default:
+            return { 
+              user: null, 
+              error: data.error || 'Erreur lors de la création de l\'utilisateur' 
+            };
+        }
+      }
+
+      // Succès !
+      console.log('✅ Utilisateur créé avec succès:', data.user.username);
+      
+      return { 
+        user: data.user, 
+        error: null,
+        message: data.message 
+      };
+      
+    } catch (error) {
+      console.error('❌ Erreur exception:', error);
+      
+      // Gestion des erreurs réseau
+      if (!navigator.onLine) {
+        return { 
+          user: null, 
+          error: 'Pas de connexion internet. Vérifiez votre connexion.' 
+        };
+      }
+      
+      if (error.message === 'Failed to fetch') {
+        return { 
+          user: null, 
+          error: 'Impossible de contacter le serveur. Réessayez dans quelques instants.' 
         };
       }
       
       return { 
         user: null, 
-        error: data.error || 'Erreur lors de la création' 
+        error: 'Erreur inattendue. Veuillez réessayer.' 
       };
     }
-
-    console.log('✅ Utilisateur créé avec succès');
-    return { 
-      user: data.user, 
-      error: null 
-    };
-    
-  } catch (error) {
-    console.error('Erreur exception:', error);
-    return { 
-      user: null, 
-      error: 'Erreur de connexion au serveur' 
-    };
-  }
-},
+  },
   async updateUser(userId, updates) {
     try {
       const { data, error } = await supabase
@@ -3286,6 +3336,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
