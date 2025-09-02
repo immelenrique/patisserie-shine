@@ -116,24 +116,7 @@ if (permData) {
       
       setCurrentUser(profile);
       
-      // Charger permissions
-      const { data: permData } = await supabase
-        .from("user_permissions")
-        .select(`
-          permission_id,
-          permissions (
-            code,
-            nom,
-            type
-          )
-        `)
-        .eq("user_id", profile.id)
-        .eq("granted", true);
-      
-      if (permData) {
-        setCurrentUserPermissions(
-          permData.map(up => up.permissions).filter(Boolean)
-        );
+     
         console.log('=== PERMISSIONS DEBUG ===');
         console.log('User:', profile.username, '- Role:', profile.role);
         console.log('Permissions loaded:', permData.map(up => up.permissions?.code));
