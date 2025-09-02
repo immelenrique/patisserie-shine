@@ -73,36 +73,45 @@ export default function UserManagement({ currentUser }) {
   setMessage({ type: '', text: '' });
 
   try {
-    // Appeler directement l'API route au lieu de userService.createUser
-    const response = await fetch('/api/admin/create-user', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Utiliser le token de l'utilisateur connecté
-        'Authorization': `Bearer ${currentUser?.access_token || ''}`
-      },
-      body: JSON.stringify({
-        username: formData.username,
-        nom: formData.nom,
-        telephone: formData.telephone,
-        role: formData.role,
-        password: formData.password,
-        force_password_change: true
-      })
+    // S'assurer que la session est bien récupérée AVANT d'appeler createUser
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      // Si pas de session, essayer de se reconnecter
+      console.error('❌ Pas de session trouvée, reconnexion nécessaire');
+      setMessage({ type: 'error', text: 'Session expirée. Veuillez rafraîchir la page.' });
+      setCreating(false);
+      
+      // Optionnel : recharger la page pour forcer une nouvelle connexion
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+      return;
+    }
+
+    console.log('✅ Session trouvée, appel de createUser...');
+    
+    // Maintenant appeler createUser qui va utiliser cette session
+    const { user, error } = await userService.createUser({
+      username: formData.username,
+      nom: formData.nom,
+      telephone: formData.telephone,
+      role: formData.role,
+      password: formData.password
     });
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      setMessage({ type: 'error', text: data.error || 'Erreur lors de la création' });
+    if (error) {
+      console.error('❌ Erreur retournée:', error);
+      setMessage({ type: 'error', text: error });
     } else {
+      console.log('✅ Utilisateur créé:', user);
       setMessage({ type: 'success', text: `Utilisateur ${formData.username} créé avec succès !` });
       setShowAddModal(false);
       resetForm();
       loadUsers();
     }
   } catch (err) {
-    console.error('Erreur création:', err);
+    console.error('❌ Exception:', err);
     setMessage({ type: 'error', text: 'Erreur lors de la création de l\'utilisateur' });
   } finally {
     setCreating(false);
