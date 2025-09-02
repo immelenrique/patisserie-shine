@@ -79,59 +79,69 @@ useEffect(() => {
         return;
       }
       
-      const { data: permData, error: permError } = await supabase
-  .from("user_permissions")
-  .select(`
-    permission_id,
-    permissions (
-      code,
-      nom,
-      type
-    )
-  `)
-  .eq("user_id", profile.id)
-  .eq("granted", true);
-
-// AJOUTEZ CES LOGS
-console.log('=== LOADING PERMISSIONS ===');
-console.log('User ID:', profile.id);
-console.log('Query result:', { permData, permError });
-
-if (permData) {
-  const extracted = permData.map(up => up.permissions).filter(Boolean);
-  console.log('Extracted permissions:', extracted);
-  setCurrentUserPermissions(extracted);
-} else {
-  console.log('No permissions data returned');
-}
+      // RÉCUPÉRER LE PROFIL D'ABORD
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", session.user.id)
+        .single();
       
       if (ignore) return;
       
       if (profileError || !profile) {
-        console.error("❌ Profil introuvable");
+        console.error("❌ Profil introuvable:", profileError);
         await supabase.auth.signOut();
         setCurrentUser(null);
         return;
       }
       
-      setCurrentUser(profile);
+      // MAINTENANT ON PEUT CHARGER LES PERMISSIONS
+      const { data: permData, error: permError } = await supabase
+        .from("user_permissions")
+        .select(`
+          permission_id,
+          permissions (
+            code,
+            nom,
+            type
+          )
+        `)
+        .eq("user_id", profile.id)
+        .eq("granted", true);
       
-     
+      // LOGS DE DEBUG
+      console.log('=== LOADING PERMISSIONS ===');
+      console.log('User ID:', profile.id);
+      console.log('Query result:', { permData, permError });
+      
+      if (permData && permData.length > 0) {
+        const extracted = permData.map(up => up.permissions).filter(Boolean);
+        console.log('Extracted permissions:', extracted);
+        setCurrentUserPermissions(extracted);
+        
         console.log('=== PERMISSIONS DEBUG ===');
         console.log('User:', profile.username, '- Role:', profile.role);
         console.log('Permissions loaded:', permData.map(up => up.permissions?.code));
+      } else {
+        console.log('No permissions data returned');
+        setCurrentUserPermissions([]);
       }
+      
+      // Définir l'utilisateur courant
+      setCurrentUser(profile);
       
       // Vérifier changement mot de passe
       if (profile.force_password_change) {
         setPasswordChangeRequired(true);
         setShowPasswordModal(true);
       } else {
-        loadDashboardStats(); // Pas besoin d'await ici
+        loadDashboardStats(); // Charger les stats du dashboard
       }
+      
     } catch (error) {
       console.error("Erreur init auth:", error);
       setCurrentUser(null);
+      setCurrentUserPermissions([]);
     } finally {
       if (!ignore) {
         setLoading(false);
