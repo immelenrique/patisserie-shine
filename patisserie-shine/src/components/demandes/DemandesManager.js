@@ -504,7 +504,7 @@ const handleCreateDemande = async (e) => {
           commentaire: `Demande groupée #${demandeGroupeeId} validée`,
           created_at: new Date().toISOString()
         });
-    
+    }
 
     // Marquer toutes les demandes comme validées
     await supabase
@@ -560,7 +560,7 @@ const handleCreateDemande = async (e) => {
     console.error('Erreur:', err);
     alert('Erreur lors de la validation de la demande groupée');
   }
-}
+};
   const handleRejectGroupedDemande = async (demandeGroupeeId) => {
   if (!confirm('Êtes-vous sûr de vouloir refuser toute cette demande groupée ?')) return;
   
