@@ -283,7 +283,6 @@ const handleCreateDemande = async (e) => {
 
 const handleValidateGroupedDemande = async (demandeGroupeeId) => {
   // ============ PROTECTION ANTI-DOUBLE CLIC ============
-  // Vérifier si cette demande est déjà en cours de validation
   if (validationsEnCours.has(demandeGroupeeId)) {
     alert('⚠️ Cette demande est déjà en cours de validation. Veuillez patienter...');
     return;
@@ -294,7 +293,7 @@ const handleValidateGroupedDemande = async (demandeGroupeeId) => {
   // Ajouter la demande aux validations en cours
   setValidationsEnCours(prev => new Set(prev).add(demandeGroupeeId));
 
-  // Créer un indicateur de progression
+  // Fonctions pour l'indicateur de progression
   const showProgress = (message) => {
     const existingProgress = document.getElementById('validation-progress');
     if (existingProgress) {
@@ -317,7 +316,6 @@ const handleValidateGroupedDemande = async (demandeGroupeeId) => {
     showProgress('🔒 Verrouillage de la demande...');
 
     // ============ VÉRIFICATION DU STATUT EN BASE ============
-    // Vérifier une dernière fois que la demande n'a pas été validée entre temps
     const { data: demandeActuelle, error: checkError } = await supabase
       .from('demandes_groupees')
       .select('statut, valideur_id, date_validation')
@@ -329,7 +327,6 @@ const handleValidateGroupedDemande = async (demandeGroupeeId) => {
     }
 
     if (demandeActuelle.statut !== 'en_attente') {
-      // La demande a déjà été traitée
       if (demandeActuelle.statut === 'validee') {
         alert(`⚠️ Cette demande a déjà été validée le ${new Date(demandeActuelle.date_validation).toLocaleString('fr-FR')}`);
       } else if (demandeActuelle.statut === 'refusee') {
@@ -340,25 +337,9 @@ const handleValidateGroupedDemande = async (demandeGroupeeId) => {
       return;
     }
 
-    // ============ VERROUILLAGE OPTIMISTE EN BASE ============
-    // Marquer immédiatement la demande comme "en_traitement"
-    const { error: lockError } = await supabase
-      .from('demandes_groupees')
-      .update({
-        statut: 'en_traitement',
-        valideur_id: currentUser.id,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', demandeGroupeeId)
-      .eq('statut', 'en_attente'); // Condition importante : seulement si encore en attente
-
-    if (lockError) {
-      throw new Error('Impossible de verrouiller la demande. Elle est peut-être déjà en cours de traitement.');
-    }
-
     showProgress('📋 Récupération des demandes...');
-
-    // Récupérer toutes les demandes du groupe
+    
+    // ============ RÉCUPÉRATION DES DEMANDES ============
     const { data: demandesGroupe, error: fetchError } = await supabase
       .from('demandes')
       .select(`
@@ -369,23 +350,19 @@ const handleValidateGroupedDemande = async (demandeGroupeeId) => {
       .eq('statut', 'en_attente');
 
     if (fetchError) {
-      // En cas d'erreur, remettre le statut en_attente
-      await supabase
-        .from('demandes_groupees')
-        .update({ statut: 'en_attente', valideur_id: null })
-        .eq('id', demandeGroupeeId);
-      throw fetchError;
+      throw new Error('Erreur lors de la récupération des demandes: ' + fetchError.message);
     }
 
     showProgress('🔍 Vérification des stocks...');
 
-    // Vérification du stock disponible
+    // ============ VÉRIFICATION DES STOCKS ============
     const stockInsuffisant = [];
+    
     for (const demande of demandesGroupe) {
       if (!demande.produit) {
         stockInsuffisant.push({
           nom: 'Produit inconnu (ID: ' + demande.produit_id + ')',
-          raison: 'Produit introuvable'
+          raison: 'Produit introuvable dans la base de données'
         });
         continue;
       }
@@ -395,27 +372,33 @@ const handleValidateGroupedDemande = async (demandeGroupeeId) => {
           nom: demande.produit.nom,
           demande: demande.quantite,
           disponible: demande.produit.quantite_restante,
-          manque: demande.quantite - demande.produit.quantite_restante
+          manque: demande.quantite - demande.produit.quantite_restante,
+          unite: demande.produit.unite?.label || 'unité'
         });
       }
     }
     
     if (stockInsuffisant.length > 0) {
-      // Remettre en_attente si stock insuffisant
-      await supabase
-        .from('demandes_groupees')
-        .update({ statut: 'en_attente', valideur_id: null })
-        .eq('id', demandeGroupeeId);
-
-      let messageErreur = '❌ STOCK INSUFFISANT:\n\n';
-      stockInsuffisant.forEach(p => {
-        messageErreur += p.raison ? `• ${p.nom}: ${p.raison}\n` : 
-          `• ${p.nom}: Manque ${p.manque} unités\n`;
+      let messageErreur = '❌ IMPOSSIBLE DE VALIDER - STOCK INSUFFISANT :\n\n';
+      stockInsuffisant.forEach(produit => {
+        if (produit.raison) {
+          messageErreur += `• ${produit.nom} : ${produit.raison}\n`;
+        } else {
+          messageErreur += `• ${produit.nom} :\n`;
+          messageErreur += `  - Demandé : ${produit.demande} ${produit.unite}\n`;
+          messageErreur += `  - Stock disponible : ${produit.disponible} ${produit.unite}\n`;
+          messageErreur += `  - Manquant : ${produit.manque} ${produit.unite}\n\n`;
+        }
       });
+      messageErreur += '\n💡 Actions possibles :\n';
+      messageErreur += '1. Réapprovisionner le stock principal\n';
+      messageErreur += '2. Modifier les quantités de la demande\n';
+      messageErreur += '3. Refuser la demande et en créer une nouvelle';
+      
       throw new Error(messageErreur);
     }
-
-    // ============ TRAITEMENT PAR BATCH (comme avant) ============
+    
+    // ============ TRAITEMENT PAR BATCH ============
     const BATCH_SIZE = 5;
     const totalDemandes = demandesGroupe.length;
     let processedCount = 0;
@@ -427,23 +410,123 @@ const handleValidateGroupedDemande = async (demandeGroupeeId) => {
     }
 
     for (const [batchIndex, batch] of batches.entries()) {
-      showProgress(`⚙️ Traitement ${processedCount}/${totalDemandes} produits...`);
+      showProgress(`⚙️ Traitement batch ${batchIndex + 1}/${batches.length} (${processedCount}/${totalDemandes} produits)`);
 
       const batchPromises = batch.map(async (demande) => {
         try {
-          // Traitement de chaque demande (stock, mouvement, etc.)
-          // ... (code de traitement existant)
-          
+          // 1. Réduire le stock principal
+          const { error: stockError } = await supabase.rpc('decrement_stock', {
+            p_produit_id: demande.produit_id,
+            p_quantite: demande.quantite
+          });
+
+          if (stockError) {
+            throw new Error(`Stock: ${stockError.message}`);
+          }
+
+          // 2. Gérer le stock de destination
+          if (demande.destination === 'Production' || demande.destination === 'Atelier') {
+            const { data: existingStock } = await supabase
+              .from('stock_atelier')
+              .select('*')
+              .eq('produit_id', demande.produit_id)
+              .maybeSingle();
+
+            if (existingStock) {
+              await supabase
+                .from('stock_atelier')
+                .update({
+                  quantite_disponible: existingStock.quantite_disponible + demande.quantite,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', existingStock.id);
+            } else {
+              await supabase
+                .from('stock_atelier')
+                .insert({
+                  produit_id: demande.produit_id,
+                  quantite_disponible: demande.quantite,
+                  transfere_par: currentUser.id,
+                  created_at: new Date().toISOString()
+                });
+            }
+
+          } else if (demande.destination === 'Boutique') {
+            const { data: existingStockBoutique } = await supabase
+              .from('stock_boutique')
+              .select('*')
+              .eq('produit_id', demande.produit_id)
+              .maybeSingle();
+
+            if (existingStockBoutique) {
+              await supabase
+                .from('stock_boutique')
+                .update({
+                  quantite_disponible: (existingStockBoutique.quantite_disponible || 0) + demande.quantite,
+                  type_produit: existingStockBoutique.type_produit || 'vendable',
+                  transfere_par: currentUser.id,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', existingStockBoutique.id);
+            } else {
+              await supabase
+                .from('stock_boutique')
+                .insert({
+                  produit_id: demande.produit_id,
+                  nom_produit: demande.produit?.nom || `Produit ${demande.produit_id}`,
+                  quantite_disponible: demande.quantite,
+                  quantite_vendue: 0,
+                  quantite_utilisee: 0,
+                  type_produit: 'vendable',
+                  transfere_par: currentUser.id,
+                  created_at: new Date().toISOString()
+                });
+            }
+
+            // Enregistrer entrée boutique
+            await supabase.from('entrees_boutique').insert({
+              produit_id: demande.produit_id,
+              quantite: demande.quantite,
+              source: 'Stock Principal',
+              type_entree: 'Demande',
+              ajoute_par: currentUser.id,
+              created_at: new Date().toISOString()
+            });
+          }
+
+          // 3. Enregistrer le mouvement de stock
+          await supabase
+            .from('mouvements_stock')
+            .insert({
+              produit_id: demande.produit_id,
+              type_mouvement: 'transfert',
+              quantite: demande.quantite,
+              source: 'Stock Principal',
+              destination: demande.destination,
+              utilisateur_id: currentUser.id,
+              reference_id: demande.id,
+              reference_type: 'demande',
+              commentaire: `Demande groupée #${demandeGroupeeId} validée`,
+              created_at: new Date().toISOString()
+            });
+
           processedCount++;
-          return { success: true };
+          return { success: true, produit: demande.produit?.nom };
+
         } catch (error) {
-          errors.push({ produit: demande.produit?.nom, erreur: error.message });
-          return { success: false };
+          console.error(`Erreur pour ${demande.produit?.nom}:`, error);
+          errors.push({
+            produit: demande.produit?.nom || `ID: ${demande.produit_id}`,
+            erreur: error.message
+          });
+          return { success: false, produit: demande.produit?.nom, error: error.message };
         }
       });
 
+      // Attendre que tout le batch soit traité
       await Promise.all(batchPromises);
       
+      // Petite pause entre les batchs pour éviter la surcharge
       if (batchIndex < batches.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 300));
       }
@@ -451,11 +534,7 @@ const handleValidateGroupedDemande = async (demandeGroupeeId) => {
 
     showProgress('📝 Finalisation...');
 
-    // ============ FINALISATION ATOMIQUE ============
-    // Utiliser une transaction pour s'assurer que tout est mis à jour ensemble
-    const statutFinal = errors.length > 0 ? 'partiellement_validee' : 'validee';
-    
-    // Mettre à jour toutes les demandes
+    // ============ MISE À JOUR DES STATUTS ============
     await supabase
       .from('demandes')
       .update({
@@ -465,7 +544,8 @@ const handleValidateGroupedDemande = async (demandeGroupeeId) => {
       })
       .eq('demande_groupee_id', demandeGroupeeId);
 
-    // Finaliser la demande groupée
+    const statutFinal = errors.length > 0 ? 'partiellement_validee' : 'validee';
+    
     await supabase
       .from('demandes_groupees')
       .update({
@@ -476,34 +556,50 @@ const handleValidateGroupedDemande = async (demandeGroupeeId) => {
       })
       .eq('id', demandeGroupeeId);
 
-    // Notification...
-    // (code de notification existant)
+    // ============ NOTIFICATION ============
+    const { data: demandeInfo } = await supabase
+      .from('demandes_groupees')
+      .select('demandeur_id, nombre_produits, destination')
+      .eq('id', demandeGroupeeId)
+      .single();
+
+    if (demandeInfo?.demandeur_id && demandeInfo.demandeur_id !== currentUser.id) {
+      await supabase
+        .from('notifications')
+        .insert({
+          destinataire_id: demandeInfo.demandeur_id,
+          emetteur_id: currentUser.id,
+          type: 'demande_validee',
+          message: `Votre demande a été validée par ${currentUser.nom || currentUser.username}`,
+          details: errors.length > 0 
+            ? `${processedCount}/${totalDemandes} produit(s) traités avec succès`
+            : `${demandeInfo.nombre_produits} produit(s) ajoutés au stock ${demandeInfo.destination}`,
+          lien: `/demandes#${demandeGroupeeId}`,
+          lu: false,
+          priorite: 'normale',
+          created_at: new Date().toISOString()
+        });
+    }
 
     await loadData();
     hideProgress();
     
-    alert(errors.length > 0 
-      ? `⚠️ Validation terminée avec ${errors.length} erreur(s)` 
-      : '✅ Demande validée avec succès !');
+    // ============ MESSAGE DE RÉSULTAT ============
+    if (errors.length > 0) {
+      let message = `⚠️ Validation terminée avec des erreurs\n\n`;
+      message += `✅ ${processedCount}/${totalDemandes} produits traités avec succès\n\n`;
+      message += `❌ Erreurs rencontrées :\n`;
+      errors.forEach(e => {
+        message += `• ${e.produit}: ${e.erreur}\n`;
+      });
+      alert(message);
+    } else {
+      alert(`✅ Demande groupée validée avec succès !\n\n${processedCount} produits ont été transférés vers le stock ${demandeInfo.destination}.`);
+    }
 
   } catch (err) {
     hideProgress();
-    console.error('Erreur:', err);
-    
-    // ============ ROLLBACK EN CAS D'ERREUR ============
-    try {
-      await supabase
-        .from('demandes_groupees')
-        .update({ 
-          statut: 'en_attente', 
-          valideur_id: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', demandeGroupeeId);
-    } catch (rollbackError) {
-      console.error('Erreur lors du rollback:', rollbackError);
-    }
-    
+    console.error('Erreur globale:', err);
     alert('❌ ' + err.message);
     
   } finally {
@@ -515,7 +611,6 @@ const handleValidateGroupedDemande = async (demandeGroupeeId) => {
     });
   }
 };
-
 const handleCancelValidatedDemande = async (demandeGroupeeId) => {
   // Vérifier que l'utilisateur est admin
   if (currentUser.role !== 'admin') {
@@ -986,14 +1081,18 @@ const handleCancelValidatedDemande = async (demandeGroupeeId) => {
   {demande.statut === 'en_attente' && peutValider && (
     <div className="flex space-x-2">
       <button 
-        onClick={() => demande.type === 'groupee' 
-          ? handleValidateGroupedDemande(demande.id)
-          : handleValidateDemande(demande.id)
-        }
-        className="text-green-600 hover:text-green-900"
-        title="Valider la demande"
-      >
-        <Check className="h-4 w-4" />
+         onClick={() => handleValidateGroupedDemande(demande.id)}
+  disabled={validationsEnCours.has(demande.id)}
+  className={`text-green-600 hover:text-green-900 ${
+    validationsEnCours.has(demande.id) ? 'opacity-50 cursor-not-allowed' : ''
+  }`}
+  title={validationsEnCours.has(demande.id) ? "Validation en cours..." : "Valider la demande"}
+>
+  {validationsEnCours.has(demande.id) ? (
+    <div className="animate-spin h-4 w-4 border-2 border-green-600 border-t-transparent rounded-full" />
+  ) : (
+    <Check className="h-4 w-4" />
+  )}
       </button>
       <button 
         onClick={() => demande.type === 'groupee'
