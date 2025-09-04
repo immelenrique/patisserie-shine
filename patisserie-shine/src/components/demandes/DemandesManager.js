@@ -1018,7 +1018,7 @@ const handleCancelValidatedDemande = async (demandeGroupeeId) => {
   )}
   {demande.statut === 'annulee' && (
     <span className="text-gray-600 text-sm">⊘ Annulée</span>
-  )}
+  )}</td>
                     </tr>
                   );
                 })
