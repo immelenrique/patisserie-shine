@@ -1,3 +1,4 @@
+// src/components/ui/StatusBadge.js
 export function StatusBadge({ status }) {
   const variants = {
     'en_attente': 'bg-yellow-100 text-yellow-800',
@@ -6,6 +7,7 @@ export function StatusBadge({ status }) {
     'termine': 'bg-blue-100 text-blue-800',
     'en_cours': 'bg-orange-100 text-orange-800',
     'annule': 'bg-gray-100 text-gray-800',
+    'annulee': 'bg-gray-100 text-gray-800',  // AJOUT du statut annulée
     'rupture': 'bg-red-100 text-red-800',
     'critique': 'bg-red-100 text-red-800',
     'faible': 'bg-yellow-100 text-yellow-800',
@@ -19,6 +21,7 @@ export function StatusBadge({ status }) {
     'termine': 'Terminé',
     'en_cours': 'En cours',
     'annule': 'Annulé',
+    'annulee': 'Annulée',  // AJOUT du label pour annulée
     'rupture': 'Rupture',
     'critique': 'Critique',
     'faible': 'Faible',
