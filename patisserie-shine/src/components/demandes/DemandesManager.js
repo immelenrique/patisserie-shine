@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { demandeService, productService, utils, supabase } from '../../lib/supabase';
-import { Plus, ShoppingCart, Check, X, Clock, Package, ArrowRight, Warehouse, Store, DollarSign, Trash2, Search, Factory } from 'lucide-react';
+import { Plus, ShoppingCart, Check, X, Clock, Package, ArrowRight, Warehouse, Store, DollarSign, Trash2, Search, Factory,RotateCcw   } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
 import { notificationService } from '../../services/notificationService';
 
@@ -969,30 +969,56 @@ const handleCancelValidatedDemande = async (demandeGroupeeId) => {
                       <td className="px-6 py-4">
                         <StatusBadge status={demande.statut} />
                       </td>
-                      <td className="px-6 py-4">
-                        {demande.statut === 'en_attente' && peutValider && (
-                          <div className="flex space-x-2">
-                            <button 
-                              onClick={() => demande.type === 'groupee' 
-                                ? handleValidateGroupedDemande(demande.id)
-                                : handleValidateDemande(demande.id)
-                              }
-                              className="text-green-600 hover:text-green-900"
-                            >
-                              <Check className="h-4 w-4" />
-                            </button>
-                            <button 
-                              onClick={() => demande.type === 'groupee'
-                                ? handleRejectGroupedDemande(demande.id)
-                                : handleRejectDemande(demande.id)
-                              }
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        )}
-                      </td>
+                     
+<td className="px-6 py-4">
+  {/* Actions pour les demandes EN ATTENTE */}
+  {demande.statut === 'en_attente' && peutValider && (
+    <div className="flex space-x-2">
+      <button 
+        onClick={() => demande.type === 'groupee' 
+          ? handleValidateGroupedDemande(demande.id)
+          : handleValidateDemande(demande.id)
+        }
+        className="text-green-600 hover:text-green-900"
+        title="Valider la demande"
+      >
+        <Check className="h-4 w-4" />
+      </button>
+      <button 
+        onClick={() => demande.type === 'groupee'
+          ? handleRejectGroupedDemande(demande.id)
+          : handleRejectDemande(demande.id)
+        }
+        className="text-red-600 hover:text-red-900"
+        title="Refuser la demande"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  )}
+
+  {/* NOUVEAU : Bouton d'annulation pour admin sur demandes validées */}
+  {demande.statut === 'validee' && currentUser.role === 'admin' && demande.type === 'groupee' && (
+    <button 
+      onClick={() => handleCancelValidatedDemande(demande.id)}
+      className="bg-red-600 text-white px-3 py-1 rounded text-xs hover:bg-red-700 flex items-center"
+      title="Annuler cette demande validée"
+    >
+      <RotateCcw className="h-3 w-3 mr-1" />
+      Annuler
+    </button>
+  )}
+
+  {/* Statut sans action */}
+  {demande.statut === 'validee' && (currentUser.role !== 'admin' || demande.type !== 'groupee') && (
+    <span className="text-green-600 text-sm">✓ Validée</span>
+  )}
+  {demande.statut === 'refusee' && (
+    <span className="text-red-600 text-sm">✗ Refusée</span>
+  )}
+  {demande.statut === 'annulee' && (
+    <span className="text-gray-600 text-sm">⊘ Annulée</span>
+  )}
                     </tr>
                   );
                 })
