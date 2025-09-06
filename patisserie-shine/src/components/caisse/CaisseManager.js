@@ -591,7 +591,7 @@ export default function CaisseManager({ currentUser }) {
       {/* NOUVEAU - Contenu Tableau de Bord */}
       {activeTab === 'dashboard' && (
         <div className="bg-gray-50 -m-6 p-6">
-          <CashierDashboard />
+          <CashierDashboard currentUser={currentUser} />
         </div>
       )}
 
