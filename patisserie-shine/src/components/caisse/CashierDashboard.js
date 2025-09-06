@@ -62,7 +62,7 @@ const SalesChart = ({ data, loading }) => {
 };
 
 // Composant principal
-export default function CashierDashboard() {
+export default function CashierDashboard({ currentUser: propsUser }) {
   // États
   const [currentUser, setCurrentUser] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -105,16 +105,13 @@ export default function CashierDashboard() {
       setError(null);
 
       // Récupérer l'utilisateur actuel
-      const { user, error: userError } = await authService.getCurrentUser();
-      if (userError) {
-        throw new Error(userError);
-      }
+      const user = propsUser || await authService.getCurrentUser().then(r => r.user);
 
-      if (!user) {
-        throw new Error('Session expirée. Veuillez vous reconnecter.');
-      }
+if (!user) {
+  throw new Error('Session expirée. Veuillez vous reconnecter.');
+}
 
-      setCurrentUser(user);
+setCurrentUser(user);
 
       // Si admin, charger la liste des caissiers
       if (user.role === 'admin') {
