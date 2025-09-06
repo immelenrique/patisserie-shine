@@ -90,36 +90,40 @@ export default function DemandesManager({ currentUser }) {
   };
 
   // Ajouter un produit à la sélection
-  const addProductToSelection = (product) => {
-    const isAlreadySelected = selectedProducts.find(p => p.id === product.id);
-    if (isAlreadySelected) {
-      alert('Ce produit est déjà sélectionné');
-      return;
-    }
+ const addProductToSelection = (product) => {
+  const isAlreadySelected = selectedProducts.find(p => p.id === product.id);
+  if (isAlreadySelected) {
+    alert('Ce produit est déjà sélectionné');
+    return;
+  }
 
-    const newProduct = {
-      id: product.id,
-      nom: product.nom,
-      quantite_disponible: product.quantite_restante,
-      unite: product.unite,
-      quantite_demandee: 1
-    };
-
-    setSelectedProducts([...selectedProducts, newProduct]);
-    setSearchTerm('');
-    setShowProductSearch(false);
+  const newProduct = {
+    id: product.id,
+    nom: product.nom,
+    quantite_disponible: product.quantite_restante,
+    unite: product.unite,
+    quantite_demandee: '' // IMPORTANT: Champ vide au lieu de 1
   };
+
+  setSelectedProducts([...selectedProducts, newProduct]);
+  setSearchTerm('');
+  setShowProductSearch(false);
+};
 
   // Modifier la quantité d'un produit sélectionné
   const updateProductQuantity = (productId, newQuantity) => {
-    setSelectedProducts(prev => 
-      prev.map(p => 
-        p.id === productId 
-          ? { ...p, quantite_demandee: Math.max(1, parseInt(newQuantity) || 1) }
-          : p
-      )
-    );
-  };
+  setSelectedProducts(prev => 
+    prev.map(p => 
+      p.id === productId 
+        ? { 
+            ...p, 
+            // Permettre le champ vide pour forcer la saisie
+            quantite_demandee: newQuantity === '' ? '' : newQuantity
+          }
+        : p
+    )
+  );
+};
 
   // Supprimer un produit de la sélection
   const removeProductFromSelection = (productId) => {
@@ -141,33 +145,52 @@ export default function DemandesManager({ currentUser }) {
 
   // Créer la demande multi-produits
  
-// Puis remplacez votre handleCreateDemande par celle-ci :
+// handleCreateDemande:
 const handleCreateDemande = async (e) => {
   e.preventDefault();
   
   if (selectedProducts.length === 0) {
-    alert('Veuillez sélectionner au moins un produit');
+    setError('Veuillez sélectionner au moins un produit');
+    return;
+  }
+  
+  // Vérifier les champs vides
+  const emptyProducts = selectedProducts.filter(p => 
+    p.quantite_demandee === '' || 
+    p.quantite_demandee === null || 
+    p.quantite_demandee === undefined
+  );
+  
+  if (emptyProducts.length > 0) {
+    setError(`Veuillez saisir les quantités pour : ${emptyProducts.map(p => p.nom).join(', ')}`);
+    // Mettre le focus sur le premier champ vide
+    const firstEmptyProduct = emptyProducts[0];
+    const input = document.querySelector(`input[data-product-id="${firstEmptyProduct.id}"]`);
+    if (input) input.focus();
     return;
   }
   
   // Vérifier que toutes les quantités sont valides
-  const invalidProducts = selectedProducts.filter(p => 
-      !p.quantite_demandee || p.quantite_demandee < 1 || p.quantite_demandee > Math.floor(p.quantite_disponible)
-  );
+  const invalidProducts = selectedProducts.filter(p => {
+    const qte = parseFloat(p.quantite_demandee);
+    return isNaN(qte) || qte < 1 || qte > Math.floor(p.quantite_disponible);
+  });
   
   if (invalidProducts.length > 0) {
-    alert(`Quantités invalides pour : ${invalidProducts.map(p => p.nom).join(', ')}`);
+    setError(`Quantités invalides pour : ${invalidProducts.map(p => p.nom).join(', ')}`);
     return;
   }
+  
+  setSubmitting(true);
   
   try {
     setError('');
     
-    // Créer directement dans Supabase si le service n'existe pas
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
       setError('Vous devez être connecté');
+      setSubmitting(false);
       return;
     }
     
@@ -176,97 +199,84 @@ const handleCreateDemande = async (e) => {
       .from('demandes_groupees')
       .insert({
         destination: formData.destination,
-        commentaire: formData.commentaire || '',
+        commentaire: formData.commentaire,
         demandeur_id: user.id,
         statut: 'en_attente',
-        nombre_produits: selectedProducts.length,
-        created_at: new Date().toISOString()
+        nombre_produits: selectedProducts.length
       })
       .select()
       .single();
-      
+    
     if (groupError) {
       console.error('Erreur création demande groupée:', groupError);
-      setError('Erreur lors de la création de la demande: ' + groupError.message);
+      setError('Erreur lors de la création de la demande');
+      setSubmitting(false);
       return;
     }
     
-    // 2. Créer les demandes individuelles
-    const demandesIndividuelles = selectedProducts.map(p => ({
-      produit_id: p.id,
-      quantite: p.quantite_demandee,
+    // 2. Créer les demandes individuelles liées à la demande groupée
+    const demandes = selectedProducts.map(product => ({
+      produit_id: product.id,
+      quantite: parseFloat(product.quantite_demandee),
       destination: formData.destination,
       statut: 'en_attente',
       demandeur_id: user.id,
-      demande_groupee_id: demandeGroupee.id,
-      created_at: new Date().toISOString()
+      demande_groupee_id: demandeGroupee.id
     }));
     
     const { error: demandesError } = await supabase
       .from('demandes')
-      .insert(demandesIndividuelles);
-      
+      .insert(demandes);
+    
     if (demandesError) {
-      // Rollback : supprimer la demande groupée
+      console.error('Erreur création demandes:', demandesError);
+      // Supprimer la demande groupée en cas d'erreur
       await supabase
         .from('demandes_groupees')
         .delete()
         .eq('id', demandeGroupee.id);
       
-      console.error('Erreur création demandes individuelles:', demandesError);
-      setError('Erreur lors de la création des demandes: ' + demandesError.message);
+      setError('Erreur lors de la création des demandes');
+      setSubmitting(false);
       return;
     }
     
-    // 3. NOUVEAU : Notifier les administrateurs
-    try {
-      // Récupérer tous les admins actifs
-      const { data: admins } = await supabase
-        .from('profiles')
-        .select('id')
-        .or('role.eq.admin,username.eq.proprietaire')
-        .eq('actif', true);
+    // 3. Créer une notification pour les admins
+    const { data: admins } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('role', 'admin')
+      .eq('actif', true);
+    
+    if (admins && admins.length > 0) {
+      const notifications = admins.map(admin => ({
+        destinataire_id: admin.id,
+        emetteur_id: user.id,
+        type: 'demande_nouvelle',
+        message: `Nouvelle demande groupée de ${selectedProducts.length} produit(s) pour ${formData.destination}`,
+        details: `Demandeur: ${currentUser?.nom || currentUser?.username}`,
+        lien: `/demandes#${demandeGroupee.id}`,
+        priorite: 'normale'
+      }));
       
-      if (admins && admins.length > 0) {
-        // Créer une notification pour chaque admin
-        const notifications = admins.map(admin => ({
-          destinataire_id: admin.id,
-          emetteur_id: user.id,
-          type: 'demande_nouvelle',
-          message: `Nouvelle demande de ${currentUser?.nom || currentUser?.username || 'Un employé'}`,
-          details: `${selectedProducts.length} produit(s) pour ${formData.destination}`,
-          lien: `/demandes#${demandeGroupee.id}`,
-          lu: false,
-          priorite: 'normale',
-          created_at: new Date().toISOString()
-        }));
-        
-        const { error: notifError } = await supabase
-          .from('notifications')
-          .insert(notifications);
-        
-        if (notifError) {
-          console.error('Erreur envoi notifications:', notifError);
-          // Ne pas bloquer si les notifications échouent
-        } else {
-          console.log(`${admins.length} administrateur(s) notifié(s)`);
-        }
-      }
-    } catch (notifErr) {
-      console.error('Erreur notifications:', notifErr);
-      // Ne pas bloquer le processus si les notifications échouent
+      await supabase.from('notifications').insert(notifications);
     }
     
     // Succès
-    await loadData();
+    alert(`Demande créée avec succès !\n${selectedProducts.length} produit(s) demandé(s) pour ${formData.destination}`);
+    
+    // Réinitialiser le formulaire
     resetForm();
     setShowAddModal(false);
     
-    alert(`✅ Demande créée avec succès !\n\n${selectedProducts.length} produit(s) demandé(s) vers ${formData.destination}\n\nLes administrateurs ont été notifiés.`);
+    // Recharger les demandes
+    await loadGroupedDemandes();
     
   } catch (err) {
-    console.error('Erreur:', err);
+    console.error('Erreur complète:', err);
     setError('Erreur lors de la création de la demande');
+  } finally {
+    setSubmitting(false);
   }
 };
 
@@ -280,6 +290,20 @@ const handleCreateDemande = async (e) => {
     setShowProductSearch(false);
     setError('');
   };
+
+const validateQuantity = (value, max) => {
+  if (value === '') return { valid: false, message: 'Quantité requise' };
+  
+  const num = parseFloat(value);
+  if (isNaN(num)) return { valid: false, message: 'Valeur invalide' };
+  if (num < 1) return { valid: false, message: 'Minimum: 1' };
+  if (num > max) return { valid: false, message: `Maximum: ${max}` };
+  
+  // Vérifier si c'est un entier pour les quantités
+  if (!Number.isInteger(num)) return { valid: false, message: 'Nombre entier requis' };
+  
+  return { valid: true, message: '' };
+};
 
 const handleValidateGroupedDemande = async (demandeGroupeeId) => {
   // ============ PROTECTION ANTI-DOUBLE CLIC ============
@@ -1232,42 +1256,82 @@ const handleCancelValidatedDemande = async (demandeGroupeeId) => {
             </div>
 
             {/* Produits sélectionnés */}
-            {selectedProducts.length > 0 && (
-              <div className="border rounded-lg p-4 space-y-3">
-                {selectedProducts.map((product) => (
-                  <div key={product.id} className="flex items-center justify-between bg-gray-50 rounded p-3">
-                    <div className="flex-1">
-                      <div className="font-medium">{product.nom}</div>
-                      <div className="text-xs text-gray-500">
-                        Max: {product.quantite_disponible} {product.unite?.label}
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center space-x-3">
-                      <input
-                        type="number"
-                        step="1"
-                        min="1"
-                        max={Math.floor(product.quantite_disponible)}
-                        value={product.quantite_demandee}
-                        onChange={(e) => updateProductQuantity(product.id, e.target.value)}
-                        className="w-20 px-2 py-1 border rounded"
-                      />
-                      <span className="text-xs">{product.unite?.label}</span>
-                      
-                      <button
-                        type="button"
-                        onClick={() => removeProductFromSelection(product.id)}
-                        className="text-red-500 hover:text-red-700"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+           {selectedProducts.length > 0 && (
+  <div className="space-y-2 max-h-60 overflow-y-auto border rounded-lg p-3">
+    {selectedProducts.map((product) => (
+      <div key={product.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+        <div className="flex-1">
+          <div className="font-medium text-sm">{product.nom}</div>
+          <div className="text-xs text-gray-500">
+            Stock disponible: {product.quantite_disponible} {product.unite?.label}
+          </div>
+        </div>
+        
+        <div className="flex items-center space-x-3">
+          <div className="relative">
+            <input
+              type="number"
+              step="1"
+              min="1"
+              max={Math.floor(product.quantite_disponible)}
+              value={product.quantite_demandee}
+              onChange={(e) => {
+                const value = e.target.value;
+                // Permettre la suppression complète pour ressaisir
+                if (value === '') {
+                  updateProductQuantity(product.id, '');
+                } else {
+                  const numValue = parseInt(value);
+                  if (!isNaN(numValue) && numValue >= 0) {
+                    updateProductQuantity(product.id, value);
+                  }
+                }
+              }}
+              onBlur={(e) => {
+                const value = e.target.value;
+                if (value !== '') {
+                  const numValue = parseInt(value);
+                  // Valider au blur
+                  if (isNaN(numValue) || numValue < 1) {
+                    updateProductQuantity(product.id, '');
+                    setError(`La quantité doit être au minimum 1`);
+                    setTimeout(() => setError(''), 3000);
+                  } else if (numValue > Math.floor(product.quantite_disponible)) {
+                    updateProductQuantity(product.id, Math.floor(product.quantite_disponible).toString());
+                    setError(`Quantité ajustée au maximum disponible: ${Math.floor(product.quantite_disponible)}`);
+                    setTimeout(() => setError(''), 3000);
+                  }
+                }
+              }}
+              placeholder="Saisir quantité"
+              className={`w-24 px-2 py-1 border rounded transition-colors ${
+                product.quantite_demandee === '' 
+                  ? 'border-orange-400 bg-orange-50' 
+                  : 'border-gray-300'
+              } focus:outline-none focus:ring-2 focus:ring-orange-500`}
+              autoFocus={selectedProducts[selectedProducts.length - 1].id === product.id}
+            />
+            {product.quantite_demandee === '' && (
+              <div className="absolute -bottom-5 left-0 text-xs text-orange-600">
+                Requis
               </div>
             )}
           </div>
+          <span className="text-xs text-gray-600">{product.unite?.label}</span>
+          
+          <button
+            type="button"
+            onClick={() => removeProductFromSelection(product.id)}
+            className="text-red-500 hover:text-red-700 transition-colors"
+            title="Retirer ce produit"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+    ))}
+  </div>
+)}
 
           {/* Boutons */}
           <div className="flex space-x-4">
