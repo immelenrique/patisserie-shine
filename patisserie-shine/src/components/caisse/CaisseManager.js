@@ -160,6 +160,9 @@ export default function CaisseManager({ currentUser }) {
 
   const retirerDuPanier = (id) => {
     setPanier(panier.filter(item => item.id !== id));
+    if (editingItemId === id) {
+      cancelEditingQuantity();
+    }
   };
 
   const viderPanier = () => {
@@ -217,6 +220,12 @@ export default function CaisseManager({ currentUser }) {
       };
 
       setLastReceipt(recu);
+      
+      // Impression automatique silencieuse
+      setTimeout(() => {
+        imprimerRecuSilencieux(recu);
+      }, 100);
+      
       setShowReceiptModal(true);
 
       // Réinitialiser
@@ -233,7 +242,155 @@ export default function CaisseManager({ currentUser }) {
     }
   };
 
-  // Imprimer le reçu
+  // Impression silencieuse
+  const imprimerRecuSilencieux = (receipt = lastReceipt) => {
+    if (!receipt) return;
+
+    try {
+      // Créer un iframe caché
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'absolute';
+      iframe.style.width = '0px';
+      iframe.style.height = '0px';
+      iframe.style.border = 'none';
+      iframe.style.visibility = 'hidden';
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentWindow.document;
+      
+      // Contenu optimisé pour imprimante thermique
+      iframeDoc.open();
+      iframeDoc.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <style>
+              @page {
+                size: 80mm auto;
+                margin: 0;
+              }
+              @media print {
+                body { margin: 0; }
+              }
+              body {
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                margin: 0;
+                padding: 5mm;
+                width: 70mm;
+              }
+              .header {
+                text-align: center;
+                margin-bottom: 10px;
+                border-bottom: 1px dashed #000;
+                padding-bottom: 5px;
+              }
+              .header h1 {
+                margin: 0;
+                font-size: 16px;
+                font-weight: bold;
+              }
+              .items {
+                margin: 10px 0;
+              }
+              .item {
+                display: flex;
+                justify-content: space-between;
+                margin: 3px 0;
+                font-size: 11px;
+              }
+              .separator {
+                border-top: 1px dashed #000;
+                margin: 5px 0;
+              }
+              .total-line {
+                display: flex;
+                justify-content: space-between;
+                margin: 3px 0;
+                font-size: 11px;
+              }
+              .total-line.main {
+                font-weight: bold;
+                font-size: 14px;
+              }
+              .footer {
+                text-align: center;
+                margin-top: 10px;
+                font-size: 10px;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="receipt">
+              <div class="header">
+                <h1>${receipt.boutique}</h1>
+                <div>Reçu N° ${receipt.numero}</div>
+                <div>${receipt.date}</div>
+              </div>
+              
+              <div class="items">
+                ${receipt.items.map(item => `
+                  <div class="item">
+                    <span>${item.nom} x${item.quantite}</span>
+                    <span>${utils.formatCFA(item.prix * item.quantite)}</span>
+                  </div>
+                `).join('')}
+              </div>
+              
+              <div class="separator"></div>
+              
+              <div class="totals">
+                <div class="total-line main">
+                  <span>TOTAL</span>
+                  <span>${utils.formatCFA(receipt.total)}</span>
+                </div>
+                <div class="total-line">
+                  <span>Reçu</span>
+                  <span>${utils.formatCFA(receipt.montant_donne)}</span>
+                </div>
+                <div class="total-line">
+                  <span>Rendu</span>
+                  <span>${utils.formatCFA(receipt.monnaie_rendue)}</span>
+                </div>
+              </div>
+              
+              <div class="separator"></div>
+              
+              <div class="footer">
+                <div>Vendeur: ${receipt.vendeur}</div>
+                <div>Merci de votre visite!</div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `);
+      iframeDoc.close();
+
+      // Attendre et imprimer
+      setTimeout(() => {
+        try {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+          
+          // Nettoyer après impression
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+          }, 1000);
+        } catch (error) {
+          console.error('Erreur impression:', error);
+          document.body.removeChild(iframe);
+        }
+      }, 250);
+      
+    } catch (error) {
+      console.error('Erreur création iframe:', error);
+      // Fallback vers impression normale
+      imprimerRecu();
+    }
+  };
+
+  // Imprimer le reçu (méthode classique comme fallback)
   const imprimerRecu = () => {
     if (!lastReceipt) return;
 
@@ -264,7 +421,6 @@ export default function CaisseManager({ currentUser }) {
 
   const effectuerCloture = async () => {
     try {
-      // Calculer le total des ventes du jour
       const aujourdhui = new Date().toISOString().split('T')[0];
       
       const { data: ventes, error } = await supabase
@@ -279,14 +435,12 @@ export default function CaisseManager({ currentUser }) {
       const montantTotal = ventes.reduce((sum, v) => sum + (v.total || 0), 0);
       const nombreVentes = ventes.length;
       
-      // Demander le montant en caisse
-      const montantDeclare = prompt(`Montant théorique: ${montantTotal} FCFA\nEntrez le montant réel en caisse:`);
+      const montantDeclare = prompt(`Montant théorique: ${utils.formatCFA(montantTotal)}\nEntrez le montant réel en caisse:`);
       
       if (!montantDeclare) return;
       
       const ecart = parseFloat(montantDeclare) - montantTotal;
       
-      // Enregistrer la clôture
       const { error: clotureError } = await supabase
         .from('arrets_caisse')
         .insert({
@@ -302,7 +456,7 @@ export default function CaisseManager({ currentUser }) {
       
       if (clotureError) throw clotureError;
       
-      alert(`Clôture effectuée!\nÉcart: ${ecart} FCFA ${ecart === 0 ? '✓' : ecart > 0 ? '(excédent)' : '(manque)'}`);
+      alert(`Clôture effectuée!\n\nMontant théorique: ${utils.formatCFA(montantTotal)}\nMontant déclaré: ${utils.formatCFA(parseFloat(montantDeclare))}\nÉcart: ${utils.formatCFA(ecart)} ${ecart === 0 ? '✓' : ecart > 0 ? '(excédent)' : '(manque)'}`);
       
     } catch (error) {
       console.error('Erreur clôture:', error);
@@ -611,81 +765,80 @@ export default function CaisseManager({ currentUser }) {
                         </div>
                       ))}
                     </div>
-                  </div>
-                )}
 
-                {panier.length > 0 && (
-                  <div className="mt-6 space-y-4">
-                    {/* Total */}
-                    <div className="border-t pt-4">
-                      <div className="flex justify-between items-center text-lg font-bold">
-                        <span>Total:</span>
-                        <span className="text-green-600">{utils.formatCFA(totalPanier)}</span>
-                      </div>
-                    </div>
-
-                    {/* Montant donné */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Montant donné par le client
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="number"
-                          step="25"
-                          min="0"
-                          value={montantDonne}
-                          onChange={(e) => setMontantDonne(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                          placeholder="0"
-                        />
-                        <CreditCard className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      </div>
-                      
-                      {/* Boutons montants rapides */}
-                      <div className="mt-2 grid grid-cols-3 gap-2">
-                        {[500, 1000, 2000, 5000, 10000, 20000].map((montant) => (
-                          <button
-                            key={montant}
-                            onClick={() => setMontantDonne(montant.toString())}
-                            className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200 transition-colors"
-                          >
-                            {utils.formatCFA(montant)}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Monnaie à rendre */}
-                    {montantDonne && (
-                      <div className={`p-3 rounded-lg ${
-                        monnaieARendre >= 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
-                      }`}>
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium">Monnaie à rendre:</span>
-                          <span className={`font-bold text-lg ${
-                            monnaieARendre >= 0 ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {utils.formatCFA(Math.abs(monnaieARendre))}
-                          </span>
+                    {/* Total et paiement */}
+                    <div className="mt-6 space-y-4">
+                      {/* Total */}
+                      <div className="border-t pt-4">
+                        <div className="flex justify-between items-center text-lg font-bold">
+                          <span>Total:</span>
+                          <span className="text-green-600">{utils.formatCFA(totalPanier)}</span>
                         </div>
-                        {monnaieARendre < 0 && (
-                          <p className="text-red-600 text-sm mt-1">
-                            Montant insuffisant !
-                          </p>
-                        )}
                       </div>
-                    )}
 
-                    {/* Bouton finaliser */}
-                    <button
-                      onClick={finaliserVente}
-                      disabled={panier.length === 0 || montantDonneNum < totalPanier}
-                      className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold flex items-center justify-center"
-                    >
-                      <Calculator className="w-4 h-4 mr-2" />
-                      Finaliser la Vente
-                    </button>
+                      {/* Montant donné */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Montant donné par le client
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="25"
+                            min="0"
+                            value={montantDonne}
+                            onChange={(e) => setMontantDonne(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                            placeholder="0"
+                          />
+                          <CreditCard className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        </div>
+                        
+                        {/* Boutons montants rapides */}
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          {[500, 1000, 2000, 5000, 10000, 20000].map((montant) => (
+                            <button
+                              key={montant}
+                              onClick={() => setMontantDonne(montant.toString())}
+                              className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200 transition-colors"
+                            >
+                              {utils.formatCFA(montant)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Monnaie à rendre */}
+                      {montantDonne && (
+                        <div className={`p-3 rounded-lg ${
+                          monnaieARendre >= 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+                        }`}>
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium">Monnaie à rendre:</span>
+                            <span className={`font-bold text-lg ${
+                              monnaieARendre >= 0 ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {utils.formatCFA(Math.abs(monnaieARendre))}
+                            </span>
+                          </div>
+                          {monnaieARendre < 0 && (
+                            <p className="text-red-600 text-sm mt-1">
+                              Montant insuffisant !
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Bouton finaliser */}
+                      <button
+                        onClick={finaliserVente}
+                        disabled={panier.length === 0 || montantDonneNum < totalPanier}
+                        className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold flex items-center justify-center"
+                      >
+                        <Calculator className="w-4 h-4 mr-2" />
+                        Finaliser la Vente
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -694,22 +847,208 @@ export default function CaisseManager({ currentUser }) {
         </div>
       )}
 
-      {/* Reste du code pour l'onglet ventes et le modal reçu... */}
+      {/* Onglet Ventes du jour */}
       {activeTab === 'ventes' && (
-        // ... Code existant pour l'onglet ventes ...
         <div className="space-y-6">
-          {/* Votre code existant pour les ventes */}
+          {/* Statistiques du jour */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card className="p-6">
+              <div className="flex items-center">
+                <Receipt className="w-8 h-8 text-blue-600" />
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-500">Ventes aujourd'hui</p>
+                  <p className="text-2xl font-bold text-gray-900">{ventesJour.length}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-6">
+              <div className="flex items-center">
+                <CreditCard className="w-8 h-8 text-green-600" />
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-500">Chiffre d'affaires</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {utils.formatCFA(ventesJour.reduce((sum, v) => sum + (v.total || 0), 0))}
+                  </p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-6">
+              <div className="flex items-center">
+                <ShoppingCart className="w-8 h-8 text-orange-600" />
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-500">Articles vendus</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {ventesJour.reduce((sum, v) => sum + (v.items?.reduce((s, i) => s + i.quantite, 0) || 0), 0)}
+                  </p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-6">
+              <div className="flex items-center">
+                <Calculator className="w-8 h-8 text-purple-600" />
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-500">Ticket moyen</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {ventesJour.length > 0 ? 
+                      utils.formatCFA(ventesJour.reduce((sum, v) => sum + (v.total || 0), 0) / ventesJour.length) : 
+                      utils.formatCFA(0)
+                    }
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Liste des ventes */}
+          <Card>
+            <div className="p-6 border-b">
+              <h3 className="text-lg font-semibold">Détail des Ventes du Jour</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">N° Ticket</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Heure</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Articles</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Donné</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rendu</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendeur</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {ventesJour.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" className="text-center py-8 text-gray-500">
+                        <Receipt className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                        Aucune vente aujourd'hui
+                      </td>
+                    </tr>
+                  ) : (
+                    ventesJour.map((vente) => (
+                      <tr key={vente.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 font-medium">{vente.numero_ticket}</td>
+                        <td className="px-6 py-4">{new Date(vente.created_at).toLocaleTimeString('fr-FR')}</td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm">
+                            {vente.items?.map((item, idx) => (
+                              <div key={idx}>{item.nom_produit || item.nom} ×{item.quantite}</div>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 font-semibold text-green-600">
+                          {utils.formatCFA(vente.total)}
+                        </td>
+                        <td className="px-6 py-4">{utils.formatCFA(vente.montant_donne)}</td>
+                        <td className="px-6 py-4">{utils.formatCFA(vente.monnaie_rendue)}</td>
+                        <td className="px-6 py-4">{vente.vendeur?.nom || currentUser.nom}</td>
+                        <td className="px-6 py-4">
+                          <button
+                            onClick={() => {
+                              setLastReceipt({
+                                numero: vente.numero_ticket,
+                                date: new Date(vente.created_at).toLocaleString('fr-FR'),
+                                items: vente.items,
+                                total: vente.total,
+                                montant_donne: vente.montant_donne,
+                                monnaie_rendue: vente.monnaie_rendue,
+                                vendeur: vente.vendeur?.nom || currentUser.nom,
+                                boutique: 'Pâtisserie Shine'
+                              });
+                              setShowReceiptModal(true);
+                            }}
+                            className="text-orange-600 hover:text-orange-800"
+                            title="Voir le reçu"
+                          >
+                            <Printer className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
         </div>
       )}
 
-      {/* Modal Reçu - Code existant */}
+      {/* Modal Reçu */}
       <Modal 
         isOpen={showReceiptModal} 
         onClose={() => setShowReceiptModal(false)} 
         title="Reçu de Vente" 
         size="md"
       >
-        {/* Votre code existant pour le reçu */}
+        {lastReceipt && (
+          <div className="space-y-4">
+            <div className="bg-white border-2 border-dashed border-gray-300 p-6 font-mono text-sm">
+              <div className="text-center mb-4">
+                <h3 className="text-lg font-bold">{lastReceipt.boutique}</h3>
+                <p>Reçu N° {lastReceipt.numero}</p>
+                <p>{lastReceipt.date}</p>
+              </div>
+              
+              <div className="border-t border-dashed border-gray-400 my-4"></div>
+              
+              {lastReceipt.items.map((item, index) => (
+                <div key={index} className="flex justify-between mb-2">
+                  <span>{item.nom || item.nom_produit} ×{item.quantite}</span>
+                  <span>{utils.formatCFA(item.prix * item.quantite)}</span>
+                </div>
+              ))}
+              
+              <div className="border-t border-dashed border-gray-400 my-4"></div>
+              
+              <div className="text-center font-bold">
+                <div className="flex justify-between mb-2">
+                  <span>TOTAL:</span>
+                  <span>{utils.formatCFA(lastReceipt.total)}</span>
+                </div>
+                <div className="flex justify-between mb-2">
+                  <span>Montant donné:</span>
+                  <span>{utils.formatCFA(lastReceipt.montant_donne)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Monnaie rendue:</span>
+                  <span>{utils.formatCFA(lastReceipt.monnaie_rendue)}</span>
+                </div>
+              </div>
+              
+              <div className="border-t border-dashed border-gray-400 my-4"></div>
+              
+              <div className="text-center">
+                <p>Vendeur: {lastReceipt.vendeur}</p>
+                <p className="mt-2">Merci de votre visite !</p>
+              </div>
+            </div>
+            
+            <div className="flex space-x-4">
+              <button
+                onClick={() => imprimerRecuSilencieux(lastReceipt)}
+                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 flex items-center justify-center"
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Imprimer (Direct)
+              </button>
+              <button
+                onClick={imprimerRecu}
+                className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 flex items-center justify-center"
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Imprimer (Standard)
+              </button>
+              <button
+                onClick={() => setShowReceiptModal(false)}
+                className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
