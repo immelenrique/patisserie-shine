@@ -530,34 +530,57 @@ export default function DemandesManager({ currentUser }) {
 
       showProgress('📝 Finalisation...');
 
-      // Mise à jour des statuts
-      await supabase
-        .from('demandes')
-        .update({
-          statut: 'validee',
-          valideur_id: currentUser.id,
-          date_validation: new Date().toISOString()
-        })
-        .eq('demande_groupee_id', demandeGroupeeId);
+// ÉTAPE 1 : Passer la demande groupée en "en_traitement"
+const { error: traitementError } = await supabase
+  .from('demandes_groupees')
+  .update({
+    statut: 'en_traitement',
+    updated_at: new Date().toISOString()
+  })
+  .eq('id', demandeGroupeeId);
 
-      const statutFinal = errors.length > 0 ? 'partiellement_validee' : 'validee';
-      
-      const { data: updateData, error: groupUpdateError } = await supabase
-        .from('demandes_groupees')
-        .update({
-          statut: statutFinal,
-          valideur_id: currentUser.id,
-          date_validation: new Date().toISOString(),
-          details_validation: errors.length > 0 ? { erreurs: errors } : null
-        })
-        .eq('id', demandeGroupeeId)
-        .select()
-        .single();
+if (traitementError) {
+  console.error('Erreur passage en traitement:', traitementError);
+  throw new Error(`Erreur lors du passage en traitement: ${traitementError.message}`);
+}
 
-      if (groupUpdateError) {
-        console.error('❌ Erreur update demande groupée:', groupUpdateError);
-        throw new Error(`Impossible de mettre à jour la demande groupée: ${groupUpdateError.message}`);
-      }
+// ÉTAPE 2 : Mettre à jour les demandes individuelles
+const { error: demandesUpdateError } = await supabase
+  .from('demandes')
+  .update({
+    statut: 'validee',
+    valideur_id: currentUser.id,
+    date_validation: new Date().toISOString()
+  })
+  .eq('demande_groupee_id', demandeGroupeeId);
+
+if (demandesUpdateError) {
+  console.error('Erreur mise à jour demandes:', demandesUpdateError);
+  throw new Error(`Erreur lors de la mise à jour des demandes: ${demandesUpdateError.message}`);
+}
+
+// ÉTAPE 3 : Passer la demande groupée au statut final
+const statutFinal = errors.length > 0 ? 'partiellement_validee' : 'validee';
+
+const { data: updateData, error: groupUpdateError } = await supabase
+  .from('demandes_groupees')
+  .update({
+    statut: statutFinal,
+    valideur_id: currentUser.id,
+    date_validation: new Date().toISOString(),
+    details_validation: errors.length > 0 ? { erreurs: errors } : null,
+    updated_at: new Date().toISOString()
+  })
+  .eq('id', demandeGroupeeId)
+  .select()
+  .single();
+
+if (groupUpdateError) {
+  console.error('❌ Erreur update demande groupée:', groupUpdateError);
+  throw new Error(`Impossible de mettre à jour la demande groupée: ${groupUpdateError.message}`);
+}
+
+console.log('✅ Demande groupée mise à jour avec succès:', updateData);
 
       // Notification
       const { data: demandeInfo } = await supabase
