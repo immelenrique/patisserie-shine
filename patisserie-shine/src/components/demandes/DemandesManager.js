@@ -74,6 +74,9 @@ export default function DemandesManager({ currentUser }) {
   // Fonction de nettoyage à exécuter une fois pour corriger les demandes bloquées
 // À ajouter temporairement dans DemandesManager.js et exécuter via un bouton admin
 
+// Fonction de nettoyage à exécuter une fois pour corriger les demandes bloquées
+// À ajouter temporairement dans DemandesManager.js et exécuter via un bouton admin
+
 const cleanupStuckDemandes = async () => {
   if (currentUser.role !== 'admin') {
     alert('⛔ Cette fonction est réservée aux administrateurs');
@@ -100,8 +103,8 @@ const cleanupStuckDemandes = async () => {
     let correctionCount = 0;
     const problemes = [];
 
-    // 2. Pour chaque demande groupée validée, vérifier les demandes individuelles
-    for (const demandeGroupee of demandesGroupeesValidees) {
+    // 2. Pour chaque demande groupée, vérifier les incohérences
+    for (const demandeGroupee of demandesGroupeesValidees || []) {
       const { data: demandesIndividuelles, error: error2 } = await supabase
         .from('demandes')
         .select('id, statut, produit_id')
@@ -140,6 +143,52 @@ const cleanupStuckDemandes = async () => {
         } else {
           correctionCount += demandesEnAttente.length;
           console.log(`✅ Corrigé ${demandesEnAttente.length} demandes pour le groupe ${demandeGroupee.id}`);
+        }
+      }
+    }
+    
+    // 2.5 NOUVEAU : Corriger les groupes en attente avec des demandes validées
+    const { data: groupesEnAttente, error: errorGroupesAttente } = await supabase
+      .from('demandes_groupees')
+      .select('id')
+      .eq('statut', 'en_attente');
+    
+    if (!errorGroupesAttente && groupesEnAttente) {
+      for (const groupe of groupesEnAttente) {
+        const { data: demandesValidees } = await supabase
+          .from('demandes')
+          .select('id, date_validation')
+          .eq('demande_groupee_id', groupe.id)
+          .eq('statut', 'validee');
+        
+        if (demandesValidees && demandesValidees.length > 0) {
+          // Si toutes les demandes du groupe sont validées, valider le groupe
+          const { data: toutesLesDemandes } = await supabase
+            .from('demandes')
+            .select('statut')
+            .eq('demande_groupee_id', groupe.id);
+          
+          const toutesValidees = toutesLesDemandes?.every(d => d.statut === 'validee');
+          const dateValidation = demandesValidees[0].date_validation || new Date().toISOString();
+          
+          if (toutesValidees) {
+            await supabase
+              .from('demandes_groupees')
+              .update({
+                statut: 'validee',
+                date_validation: dateValidation,
+                commentaire: 'Corrigé automatiquement - groupe en attente avec toutes demandes validées',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', groupe.id);
+            
+            correctionCount++;
+            console.log(`✅ Groupe ${groupe.id} validé automatiquement`);
+            problemes.push({
+              groupeId: groupe.id,
+              correction: 'Groupe validé car toutes ses demandes étaient validées'
+            });
+          }
         }
       }
     }
@@ -272,7 +321,6 @@ const diagnosticDemandes = async () => {
     return { hasIssues: true, error: error.message, issues: [] };
   }
 };
-
   // Fonction pour charger les détails d'une demande groupée
   const loadGroupedDetails = async (demandeGroupeeId) => {
     setLoadingDetails(true);
