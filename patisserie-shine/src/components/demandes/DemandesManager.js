@@ -172,22 +172,29 @@ const cleanupStuckDemandes = async () => {
           const dateValidation = demandesValidees[0].date_validation || new Date().toISOString();
           
           if (toutesValidees) {
-            await supabase
+            const updateData = {
+              statut: 'validee',
+              date_validation: dateValidation,
+              updated_at: new Date().toISOString()
+            };
+            
+            // Ajouter le commentaire seulement si la colonne existe
+            // Pour éviter l'erreur 400, on fait une mise à jour sans commentaire
+            const { error: updateError } = await supabase
               .from('demandes_groupees')
-              .update({
-                statut: 'validee',
-                date_validation: dateValidation,
-                commentaire: 'Corrigé automatiquement - groupe en attente avec toutes demandes validées',
-                updated_at: new Date().toISOString()
-              })
+              .update(updateData)
               .eq('id', groupe.id);
             
-            correctionCount++;
-            console.log(`✅ Groupe ${groupe.id} validé automatiquement`);
-            problemes.push({
-              groupeId: groupe.id,
-              correction: 'Groupe validé car toutes ses demandes étaient validées'
-            });
+            if (updateError) {
+              console.error(`Erreur mise à jour groupe ${groupe.id}:`, updateError);
+            } else {
+              correctionCount++;
+              console.log(`✅ Groupe ${groupe.id} validé automatiquement`);
+              problemes.push({
+                groupeId: groupe.id,
+                correction: 'Groupe validé car toutes ses demandes étaient validées'
+              });
+            }
           }
         }
       }
