@@ -25,6 +25,7 @@ import { statsService } from '../lib/supabase';
 import { supabase, authService, userService } from '../lib/supabase';
 import { permissionsService } from '../services/permissionsService';
 import NotificationCenter from '../components/notifications/NotificationCenter';
+import CashierDashboard from '../components/caisse/CashierDashboard';
 
 
 import { 
@@ -489,6 +490,7 @@ console.log('Available:', availableTabs.map(t => t.label));
         {activeTab === 'equipe' && <TeamManager currentUser={currentUser} />}
         {activeTab === 'users' && <UserManagement currentUser={currentUser} />}
         {activeTab === 'permissions' && <PermissionsManager currentUser={currentUser} />}
+        {activeTab === 'caisse' && <CashierDashboard />} 
       </main>
 
       {/* Modal changement mot de passe */}
