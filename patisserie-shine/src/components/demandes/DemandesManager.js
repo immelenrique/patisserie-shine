@@ -1332,7 +1332,7 @@ const handleCancelValidatedDemande = async (demandeGroupeeId) => {
     ))}
   </div>
 )}
-
+</div> 
           {/* Boutons */}
           <div className="flex space-x-4">
             <button 
