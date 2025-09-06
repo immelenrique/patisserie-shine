@@ -1177,11 +1177,12 @@ const handleCancelValidatedDemande = async (demandeGroupeeId) => {
     );
   }
 
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Demandes de Matières Premières</h2>
-         <div className="flex gap-2">
+ return (
+  <div className="space-y-6">
+    <div className="flex justify-between items-center">
+      <h2 className="text-2xl font-bold">Demandes de Matières Premières</h2>
+      
+      <div className="flex gap-2">
         {/* BOUTON DE NETTOYAGE ADMIN - TEMPORAIRE */}
         {currentUser.role === 'admin' && (
           <div className="flex gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
@@ -1214,6 +1215,8 @@ const handleCancelValidatedDemande = async (demandeGroupeeId) => {
             </span>
           </div>
         )}
+        
+        {/* Bouton nouvelle demande existant */}
         <button 
           onClick={() => {
             setShowAddModal(true);
@@ -1225,6 +1228,7 @@ const handleCancelValidatedDemande = async (demandeGroupeeId) => {
           Nouvelle Demande Multi-produits
         </button>
       </div>
+    </div>
 
       {/* Message si pas de produits */}
       {products.length === 0 && !loading && (
