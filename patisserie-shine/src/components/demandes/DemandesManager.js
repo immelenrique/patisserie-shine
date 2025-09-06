@@ -1181,6 +1181,39 @@ const handleCancelValidatedDemande = async (demandeGroupeeId) => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Demandes de Matières Premières</h2>
+         <div className="flex gap-2">
+        {/* BOUTON DE NETTOYAGE ADMIN - TEMPORAIRE */}
+        {currentUser.role === 'admin' && (
+          <div className="flex gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+            <button 
+              onClick={async () => {
+                const diagnostic = await diagnosticDemandes();
+                if (diagnostic.hasIssues) {
+                  console.log('Incohérences trouvées:', diagnostic.issues);
+                  alert(`⚠️ ${diagnostic.issues?.length || 0} incohérence(s) détectée(s).\n\nVérifiez la console pour plus de détails.`);
+                } else {
+                  alert('✅ Aucune incohérence détectée !');
+                }
+              }}
+              className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 flex items-center"
+              title="Vérifier l'intégrité des données"
+            >
+              🔍 Diagnostic
+            </button>
+            
+            <button 
+              onClick={cleanupStuckDemandes}
+              className="bg-orange-600 text-white px-3 py-1 rounded text-sm hover:bg-orange-700 flex items-center"
+              title="Nettoyer les demandes bloquées"
+            >
+              🧹 Nettoyer
+            </button>
+            
+            <span className="text-xs text-red-600 self-center">
+              (Outils Admin)
+            </span>
+          </div>
+        )}
         <button 
           onClick={() => {
             setShowAddModal(true);
