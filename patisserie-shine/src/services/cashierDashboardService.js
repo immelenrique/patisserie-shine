@@ -46,15 +46,19 @@ export const cashierDashboardService = {
     }
     
     try {
-      // Validation des paramètres
-      if (!date || !viewMode || !currentUserId || !userRole) {
-        throw new Error('Paramètres manquants');
+      // Validation des paramètres - plus flexible
+      if (!date || !viewMode) {
+        console.warn('Paramètres manquants, utilisation des valeurs par défaut');
+        // Utiliser des valeurs par défaut si nécessaire
+        const today = new Date().toISOString().split('T')[0];
+        params.date = date || today;
+        params.viewMode = viewMode || 'day';
       }
 
       // Déterminer la plage de dates
-      const dateRange = this.getDateRange(date, viewMode);
+      const dateRange = this.getDateRange(params.date, params.viewMode);
       
-      // Construction de la requête optimisée avec pagination
+      // Construction de la requête optimisée SANS mode_paiement
       let query = supabase
         .from('ventes')
         .select(`
@@ -66,7 +70,6 @@ export const cashierDashboardService = {
           vendeur_id,
           statut,
           created_at,
-          mode_paiement,
           lignes_vente!inner (
             id,
             produit_id,
@@ -86,17 +89,19 @@ export const cashierDashboardService = {
         .eq('statut', 'validee')
         .order('created_at', { ascending: false });
 
-      // Appliquer les filtres selon le rôle
-      if (userRole === 'employe_boutique') {
-        // Un employé ne voit que ses propres ventes
-        query = query.eq('vendeur_id', currentUserId);
-      } else if (userRole === 'admin' && cashierId && cashierId !== 'all') {
-        // Un admin peut filtrer par caissier
-        query = query.eq('vendeur_id', cashierId);
+      // Appliquer les filtres selon le rôle SI l'utilisateur est connecté
+      if (currentUserId && userRole) {
+        if (userRole === 'employe_boutique') {
+          // Un employé ne voit que ses propres ventes
+          query = query.eq('vendeur_id', currentUserId);
+        } else if (userRole === 'admin' && cashierId && cashierId !== 'all') {
+          // Un admin peut filtrer par caissier
+          query = query.eq('vendeur_id', cashierId);
+        }
       }
 
       // Limiter le nombre de résultats pour les performances
-      if (viewMode === 'month') {
+      if (params.viewMode === 'month') {
         query = query.limit(1000); // Max 1000 ventes pour un mois
       }
 
@@ -162,7 +167,7 @@ export const cashierDashboardService = {
     try {
       const dateRange = this.getDateRange(date, viewMode);
       
-      // Requête optimisée avec agrégation côté base de données
+      // Requête optimisée SANS mode_paiement
       const { data: ventes, error } = await supabase
         .from('ventes')
         .select(`
@@ -392,16 +397,16 @@ export const cashierDashboardService = {
   },
 
   /**
-   * Calcule les statistiques globales
+   * Calcule les statistiques globales SANS mode_paiement
    */
   calculateStats(ventes) {
     const stats = {
       totalVentes: 0,
       nombreVentes: ventes.length,
       ticketMoyen: 0,
-      totalCash: 0,
-      totalMobile: 0,
-      totalCard: 0,
+      totalCash: 0,      // On considère tout comme cash par défaut
+      totalMobile: 0,    // Sera 0 car pas de colonne mode_paiement
+      totalCard: 0,      // Sera 0 car pas de colonne mode_paiement
       produitsVendus: 0,
       montantMax: 0,
       montantMin: ventes.length > 0 ? Number.MAX_VALUE : 0
@@ -415,27 +420,17 @@ export const cashierDashboardService = {
       stats.montantMax = Math.max(stats.montantMax, montant);
       stats.montantMin = Math.min(stats.montantMin, montant);
       
-      // Mode de paiement (à adapter selon votre structure)
-      const modePaiement = vente.mode_paiement || 'cash';
-      switch (modePaiement.toLowerCase()) {
-        case 'cash':
-        case 'especes':
-          stats.totalCash += montant;
-          break;
-        case 'mobile':
-        case 'wave':
-        case 'orange':
-        case 'mtn':
-        case 'moov':
-          stats.totalMobile += montant;
-          break;
-        case 'card':
-        case 'carte':
-          stats.totalCard += montant;
-          break;
-        default:
-          stats.totalCash += montant; // Par défaut
-      }
+      // TOUT est considéré comme Cash car pas de colonne mode_paiement
+      stats.totalCash += montant;
+      
+      // Analyser montant donné vs monnaie rendue pour déduire le mode de paiement
+      // Si montant_donne = total exact, possibilité de paiement mobile/carte
+      // Sinon, c'est probablement du cash
+      const montantDonne = parseFloat(vente.montant_donne || 0);
+      const monnaieRendue = parseFloat(vente.monnaie_rendue || 0);
+      
+      // Heuristique simple : si pas de monnaie rendue et montant exact, peut être mobile
+      // Mais sans certitude, on garde tout en cash
       
       // Compter les produits
       if (vente.lignes_vente && Array.isArray(vente.lignes_vente)) {
@@ -524,7 +519,7 @@ export const cashierDashboardService = {
   },
 
   /**
-   * Récupère les dernières ventes formatées
+   * Récupère les dernières ventes formatées SANS mode_paiement
    */
   getRecentSales(ventes, limit = 10) {
     return ventes
@@ -534,38 +529,30 @@ export const cashierDashboardService = {
         const articlesCount = vente.lignes_vente 
           ? vente.lignes_vente.reduce((sum, ligne) => sum + parseFloat(ligne.quantite || 0), 0)
           : 0;
+        
+        // Déduire le mode de paiement basé sur montant_donne et monnaie_rendue
+        const montantDonne = parseFloat(vente.montant_donne || 0);
+        const monnaieRendue = parseFloat(vente.monnaie_rendue || 0);
+        const total = parseFloat(vente.total || 0);
+        
+        // Si monnaie rendue = 0 et montant donné = total, probable paiement exact (mobile/carte)
+        // Sinon, c'est du cash
+        let paiement = 'Cash';
+        if (monnaieRendue === 0 && montantDonne === total && montantDonne > 0) {
+          // Possibilité de paiement mobile ou carte, mais on ne peut pas être sûr
+          paiement = 'Exact'; // Paiement exact, peut être mobile
+        }
           
         return {
           id: vente.numero_ticket || `V${vente.id}`,
           heure: `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`,
-          montant: parseFloat(vente.total || 0),
+          montant: total,
           articles: Math.round(articlesCount),
-          paiement: this.formatPaymentType(vente.mode_paiement),
+          paiement: paiement,
           vendeur: vente.vendeur?.nom || vente.vendeur?.username || 'Non défini',
-          monnaieRendue: parseFloat(vente.monnaie_rendue || 0)
+          monnaieRendue: monnaieRendue
         };
       });
-  },
-
-  /**
-   * Formate le type de paiement pour l'affichage
-   */
-  formatPaymentType(type) {
-    if (!type) return 'Cash';
-    
-    const mapping = {
-      'cash': 'Cash',
-      'especes': 'Cash',
-      'mobile': 'Mobile',
-      'wave': 'Wave',
-      'orange': 'Orange Money',
-      'mtn': 'MTN Money',
-      'moov': 'Moov Money',
-      'card': 'Carte',
-      'carte': 'Carte'
-    };
-    
-    return mapping[type.toLowerCase()] || type;
   },
 
   /**
@@ -578,7 +565,7 @@ export const cashierDashboardService = {
       const previousStart = new Date(dateRange.startDate - duration);
       const previousEnd = new Date(dateRange.startDate - 1);
       
-      // Requête pour la période précédente
+      // Requête pour la période précédente SANS mode_paiement
       let query = supabase
         .from('ventes')
         .select('total')
@@ -586,7 +573,7 @@ export const cashierDashboardService = {
         .lte('created_at', previousEnd.toISOString())
         .eq('statut', 'validee');
 
-      if (userRole === 'employe_boutique') {
+      if (userRole === 'employe_boutique' && currentUserId) {
         query = query.eq('vendeur_id', currentUserId);
       } else if (cashierId && cashierId !== 'all') {
         query = query.eq('vendeur_id', cashierId);
