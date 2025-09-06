@@ -71,6 +71,196 @@ export default function DemandesManager({ currentUser }) {
       setLoading(false);
     }
   };
+  // Fonction de nettoyage à exécuter une fois pour corriger les demandes bloquées
+// À ajouter temporairement dans DemandesManager.js et exécuter via un bouton admin
+
+const cleanupStuckDemandes = async () => {
+  if (currentUser.role !== 'admin') {
+    alert('⛔ Cette fonction est réservée aux administrateurs');
+    return;
+  }
+
+  if (!confirm('Cette action va vérifier et corriger les demandes avec des statuts incohérents. Continuer ?')) {
+    return;
+  }
+
+  try {
+    console.log('🔍 Début de la vérification des demandes...');
+    
+    // 1. Récupérer toutes les demandes groupées validées
+    const { data: demandesGroupeesValidees, error: error1 } = await supabase
+      .from('demandes_groupees')
+      .select('id, statut, date_validation')
+      .in('statut', ['validee', 'partiellement_validee']);
+
+    if (error1) {
+      throw new Error('Erreur lors de la récupération des demandes groupées: ' + error1.message);
+    }
+
+    let correctionCount = 0;
+    const problemes = [];
+
+    // 2. Pour chaque demande groupée validée, vérifier les demandes individuelles
+    for (const demandeGroupee of demandesGroupeesValidees) {
+      const { data: demandesIndividuelles, error: error2 } = await supabase
+        .from('demandes')
+        .select('id, statut, produit_id')
+        .eq('demande_groupee_id', demandeGroupee.id);
+
+      if (error2) {
+        console.error(`Erreur pour demande groupée ${demandeGroupee.id}:`, error2);
+        continue;
+      }
+
+      // Identifier les demandes encore en attente alors que le groupe est validé
+      const demandesEnAttente = demandesIndividuelles.filter(d => d.statut === 'en_attente');
+      
+      if (demandesEnAttente.length > 0) {
+        problemes.push({
+          groupeId: demandeGroupee.id,
+          nombreEnAttente: demandesEnAttente.length,
+          dateValidation: demandeGroupee.date_validation
+        });
+
+        // Corriger ces demandes
+        const demandeIds = demandesEnAttente.map(d => d.id);
+        
+        const { error: updateError } = await supabase
+          .from('demandes')
+          .update({
+            statut: 'validee',
+            date_validation: demandeGroupee.date_validation || new Date().toISOString(),
+            commentaire: 'Corrigé automatiquement - statut incohérent détecté',
+            updated_at: new Date().toISOString()
+          })
+          .in('id', demandeIds);
+
+        if (updateError) {
+          console.error('Erreur lors de la correction:', updateError);
+        } else {
+          correctionCount += demandesEnAttente.length;
+          console.log(`✅ Corrigé ${demandesEnAttente.length} demandes pour le groupe ${demandeGroupee.id}`);
+        }
+      }
+    }
+
+    // 3. Vérifier aussi les demandes orphelines (sans groupe ou avec groupe inexistant)
+    const { data: demandesOrphelines, error: error3 } = await supabase
+      .from('demandes')
+      .select('id, demande_groupee_id, statut')
+      .eq('statut', 'en_attente')
+      .not('demande_groupee_id', 'is', null);
+
+    if (!error3 && demandesOrphelines) {
+      for (const demande of demandesOrphelines) {
+        // Vérifier si le groupe existe
+        const { data: groupe, error: errorGroupe } = await supabase
+          .from('demandes_groupees')
+          .select('id, statut')
+          .eq('id', demande.demande_groupee_id)
+          .single();
+
+        if (errorGroupe || !groupe) {
+          // Groupe n'existe pas, marquer la demande comme annulée
+          await supabase
+            .from('demandes')
+            .update({
+              statut: 'annulee',
+              commentaire: 'Annulée automatiquement - demande groupée introuvable',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', demande.id);
+          
+          correctionCount++;
+          console.log(`⚠️ Demande orpheline ${demande.id} annulée`);
+        }
+      }
+    }
+
+    // 4. Rapport final
+    let rapport = '📊 RAPPORT DE NETTOYAGE\n\n';
+    rapport += `✅ ${correctionCount} demandes corrigées\n\n`;
+    
+    if (problemes.length > 0) {
+      rapport += 'Groupes avec incohérences détectées :\n';
+      problemes.forEach(p => {
+        rapport += `• Groupe #${p.groupeId}: ${p.nombreEnAttente} demandes étaient bloquées\n`;
+      });
+    } else {
+      rapport += 'Aucune incohérence détectée ! ✨';
+    }
+
+    alert(rapport);
+    
+    // Recharger les données
+    await loadData();
+    
+  } catch (error) {
+    console.error('Erreur lors du nettoyage:', error);
+    alert('❌ Erreur lors du nettoyage: ' + error.message);
+  }
+};
+
+// Fonction pour vérifier l'intégrité des données (diagnostic sans modification)
+const diagnosticDemandes = async () => {
+  try {
+    console.log('🔍 Diagnostic des demandes en cours...');
+    
+    const { data: stats, error } = await supabase
+      .rpc('get_demandes_stats');
+    
+    if (error) {
+      // Si la fonction RPC n'existe pas, faire manuellement
+      const { data: demandes } = await supabase
+        .from('demandes')
+        .select('statut, demande_groupee_id');
+      
+      const { data: groupes } = await supabase
+        .from('demandes_groupees')
+        .select('id, statut');
+      
+      const stats = {
+        totalDemandes: demandes?.length || 0,
+        enAttente: demandes?.filter(d => d.statut === 'en_attente').length || 0,
+        validees: demandes?.filter(d => d.statut === 'validee').length || 0,
+        refusees: demandes?.filter(d => d.statut === 'refusee').length || 0,
+        totalGroupes: groupes?.length || 0,
+        groupesValidees: groupes?.filter(g => g.statut === 'validee').length || 0
+      };
+      
+      console.table(stats);
+      
+      // Détecter les incohérences
+      const incoherences = [];
+      
+      for (const groupe of groupes || []) {
+        if (groupe.statut === 'validee') {
+          const demandesGroupe = demandes?.filter(d => d.demande_groupee_id === groupe.id) || [];
+          const enAttente = demandesGroupe.filter(d => d.statut === 'en_attente').length;
+          
+          if (enAttente > 0) {
+            incoherences.push({
+              groupeId: groupe.id,
+              statut: 'Groupe validé mais ' + enAttente + ' demandes en attente'
+            });
+          }
+        }
+      }
+      
+      if (incoherences.length > 0) {
+        console.warn('⚠️ Incohérences détectées:', incoherences);
+        return { hasIssues: true, issues: incoherences };
+      } else {
+        console.log('✅ Aucune incohérence détectée');
+        return { hasIssues: false };
+      }
+    }
+    
+  } catch (error) {
+    console.error('Erreur diagnostic:', error);
+    return { hasIssues: true, error: error.message };
+  }
+};
 
   // Fonction pour charger les détails d'une demande groupée
   const loadGroupedDetails = async (demandeGroupeeId) => {
