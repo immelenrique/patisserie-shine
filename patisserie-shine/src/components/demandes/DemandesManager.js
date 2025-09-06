@@ -16,6 +16,8 @@ export default function DemandesManager({ currentUser }) {
   const [selectedGroupedDemande, setSelectedGroupedDemande] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [validationsEnCours, setValidationsEnCours] = useState(new Set());
+  const [submitting, setSubmitting] = useState(false);
+
 
   // État pour la demande multi-produits
   const [formData, setFormData] = useState({
@@ -1335,13 +1337,16 @@ const handleCancelValidatedDemande = async (demandeGroupeeId) => {
 </div> 
           {/* Boutons */}
           <div className="flex space-x-4">
-            <button 
-              type="submit" 
-              disabled={selectedProducts.length === 0}
-              className="flex-1 bg-orange-600 text-white py-2 rounded-lg hover:bg-orange-700 disabled:bg-gray-300"
-            >
-              Créer la demande
-            </button>
+           <button disabled={selectedProducts.length === 0 || submitting}>
+  {submitting ? (
+    <>
+      <div className="animate-spin..."></div>
+      Création en cours...
+    </>
+  ) : (
+    'Créer la demande'
+  )}
+</button>
             <button 
               type="button" 
               onClick={() => {
