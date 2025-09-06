@@ -9,6 +9,7 @@ import {
   Clock, 
   Calendar,
   User,
+  Users,
   Filter,
   Download,
   Receipt,
@@ -16,7 +17,8 @@ import {
   AlertCircle,
   RefreshCw,
   Eye,
-  Loader2
+  Loader2,
+  Trophy
 } from 'lucide-react';
 import { Card, StatCard } from '../ui';
 import { cashierDashboardService } from '../../services/cashierDashboardService';
