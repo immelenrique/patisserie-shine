@@ -808,20 +808,63 @@ const handleValidateGroupedDemande = async (demandeGroupeeId) => {
                       : 'partiellement_validee';
     
     // Mettre à jour la demande groupée
-    await supabase
-      .from('demandes_groupees')
-      .update({
-        statut: statutFinal,
-        valideur_id: currentUser.id,
-        date_validation: new Date().toISOString(),
-        details_validation: {
-          total: totalDemandes,
-          validees: processedCount,
-          erreurs: errors.length,
-          details_erreurs: errors
-        }
-      })
-      .eq('id', demandeGroupeeId);
+   // ============ MISE À JOUR DES STATUTS ============
+// D'abord mettre à jour les demandes individuelles
+const { error: demandesUpdateError } = await supabase
+  .from('demandes')
+  .update({
+    statut: 'validee',
+    valideur_id: currentUser.id,
+    date_validation: new Date().toISOString()
+  })
+  .eq('demande_groupee_id', demandeGroupeeId);
+
+if (demandesUpdateError) {
+  console.error('Erreur mise à jour demandes:', demandesUpdateError);
+  throw new Error(`Erreur lors de la mise à jour des demandes: ${demandesUpdateError.message}`);
+}
+
+// Ensuite mettre à jour la demande groupée
+const statutFinal = errors.length > 0 ? 'partiellement_validee' : 'validee';
+
+const { data: updateData, error: groupUpdateError } = await supabase
+  .from('demandes_groupees')
+  .update({
+    statut: statutFinal,
+    valideur_id: currentUser.id,
+    date_validation: new Date().toISOString(),
+    details_validation: errors.length > 0 ? { erreurs: errors } : null
+  })
+  .eq('id', demandeGroupeeId)
+  .select()
+  .single();
+
+// GESTION D'ERREUR CRITIQUE
+if (groupUpdateError) {
+  console.error('❌ ERREUR CRITIQUE - Update demande groupée:', {
+    error: groupUpdateError,
+    id: demandeGroupeeId,
+    statut_voulu: statutFinal,
+    user: currentUser.id
+  });
+  
+  // Log pour debug
+  console.log('Détails erreur:', {
+    code: groupUpdateError.code,
+    message: groupUpdateError.message,
+    details: groupUpdateError.details,
+    hint: groupUpdateError.hint
+  });
+  
+  throw new Error(`Impossible de mettre à jour la demande groupée: ${groupUpdateError.message}`);
+}
+
+if (!updateData) {
+  console.error('❌ Aucune donnée retournée après update');
+  throw new Error('La mise à jour a échoué silencieusement');
+}
+
+console.log('✅ Demande groupée mise à jour avec succès:', updateData);
 
     // Remettre en attente les demandes qui étaient "en_traitement" mais pas traitées
     // (ne devrait pas arriver mais par sécurité)
