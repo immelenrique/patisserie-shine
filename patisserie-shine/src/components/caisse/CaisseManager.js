@@ -1,9 +1,26 @@
+// src/components/caisse/CaisseManager.js
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { caisseService, stockBoutiqueService, utils, supabase } from '../../lib/supabase';
-import { ShoppingCart, Plus, Minus, Trash2, Calculator, CreditCard, Printer, Receipt, Calendar, BarChart3, X, Lock, Edit2, Check } from 'lucide-react';
+import { 
+  ShoppingCart, 
+  Plus, 
+  Minus, 
+  Trash2, 
+  Calculator, 
+  CreditCard, 
+  Printer, 
+  Receipt, 
+  Calendar, 
+  BarChart3, 
+  X, 
+  Lock,
+  TrendingUp,
+  Users
+} from 'lucide-react';
 import { Card, Modal } from '../ui';
+import CashierDashboard from './CashierDashboard'; // Import du nouveau dashboard
 
 export default function CaisseManager({ currentUser }) {
   const [produitsBoutique, setProduitsBoutique] = useState([]);
@@ -16,23 +33,13 @@ export default function CaisseManager({ currentUser }) {
   const [ventesJour, setVentesJour] = useState([]);
   const [activeTab, setActiveTab] = useState('caisse');
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Nouveaux états pour la saisie directe
-  const [editingItemId, setEditingItemId] = useState(null);
-  const [tempQuantity, setTempQuantity] = useState('');
-  const inputRef = useRef(null);
 
   useEffect(() => {
-    loadData();
-  }, []);
-
-  // Focus sur l'input quand on passe en mode édition
-  useEffect(() => {
-    if (editingItemId && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
+    // Charger les données seulement pour les onglets caisse et ventes
+    if (activeTab !== 'dashboard') {
+      loadData();
     }
-  }, [editingItemId]);
+  }, [activeTab]);
 
   const loadData = async () => {
     setLoading(true);
@@ -93,8 +100,6 @@ export default function CaisseManager({ currentUser }) {
     }
 
     const produit = produitsBoutique.find(p => p.produit_id === id);
-    if (!produit) return;
-    
     if (nouvelleQuantite > produit.stock_reel) {
       alert(`Stock insuffisant ! Maximum disponible : ${produit.stock_reel}`);
       return;
@@ -107,70 +112,12 @@ export default function CaisseManager({ currentUser }) {
     ));
   };
 
-  // Nouvelles fonctions pour la saisie directe
-  const startEditingQuantity = (itemId, currentQuantity) => {
-    setEditingItemId(itemId);
-    setTempQuantity(currentQuantity.toString());
-  };
-
-  const validateQuantityInput = () => {
-    const newQuantity = parseInt(tempQuantity);
-    const item = panier.find(p => p.id === editingItemId);
-    const produit = produitsBoutique.find(p => p.produit_id === editingItemId);
-    
-    if (!item || !produit) {
-      cancelEditingQuantity();
-      return;
-    }
-    
-    if (isNaN(newQuantity) || newQuantity < 0) {
-      alert('Quantité invalide');
-      cancelEditingQuantity();
-      return;
-    }
-    
-    if (newQuantity === 0) {
-      retirerDuPanier(editingItemId);
-      cancelEditingQuantity();
-      return;
-    }
-    
-    if (newQuantity > produit.stock_reel) {
-      alert(`Stock insuffisant ! Maximum disponible : ${produit.stock_reel}`);
-      setTempQuantity(produit.stock_reel.toString());
-      return;
-    }
-    
-    modifierQuantite(editingItemId, newQuantity);
-    cancelEditingQuantity();
-  };
-
-  const cancelEditingQuantity = () => {
-    setEditingItemId(null);
-    setTempQuantity('');
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      validateQuantityInput();
-    } else if (e.key === 'Escape') {
-      cancelEditingQuantity();
-    }
-  };
-
   const retirerDuPanier = (id) => {
     setPanier(panier.filter(item => item.id !== id));
-    if (editingItemId === id) {
-      cancelEditingQuantity();
-    }
   };
 
   const viderPanier = () => {
-    if (confirm('Êtes-vous sûr de vouloir vider le panier ?')) {
-      setPanier([]);
-      setEditingItemId(null);
-      setTempQuantity('');
-    }
+    setPanier([]);
   };
 
   // Calculs
@@ -220,19 +167,11 @@ export default function CaisseManager({ currentUser }) {
       };
 
       setLastReceipt(recu);
-      
-      // Impression automatique silencieuse
-      setTimeout(() => {
-        imprimerRecuSilencieux(recu);
-      }, 100);
-      
       setShowReceiptModal(true);
 
       // Réinitialiser
       setPanier([]);
       setMontantDonne('');
-      setEditingItemId(null);
-      setTempQuantity('');
       
       // Recharger les données
       loadData();
@@ -242,299 +181,53 @@ export default function CaisseManager({ currentUser }) {
     }
   };
 
-  // Impression silencieuse
-  const imprimerRecuSilencieux = (receipt = lastReceipt) => {
-    if (!receipt) return;
-
-    try {
-      // Créer un iframe caché
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'absolute';
-      iframe.style.width = '0px';
-      iframe.style.height = '0px';
-      iframe.style.border = 'none';
-      iframe.style.visibility = 'hidden';
-      document.body.appendChild(iframe);
-
-      const iframeDoc = iframe.contentWindow.document;
-      
-      // Contenu optimisé pour imprimante thermique
-      iframeDoc.open();
-      iframeDoc.write(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8">
-            <style>
-              @page {
-                size: 80mm auto;
-                margin: 0;
-              }
-              @media print {
-                body { margin: 0; }
-              }
-              body {
-                font-family: 'Courier New', monospace;
-                font-size: 12px;
-                margin: 0;
-                padding: 5mm;
-                width: 70mm;
-              }
-              .header {
-                text-align: center;
-                margin-bottom: 10px;
-                border-bottom: 1px dashed #000;
-                padding-bottom: 5px;
-              }
-              .header h1 {
-                margin: 0;
-                font-size: 16px;
-                font-weight: bold;
-              }
-              .items {
-                margin: 10px 0;
-              }
-              .item {
-                display: flex;
-                justify-content: space-between;
-                margin: 3px 0;
-                font-size: 11px;
-              }
-              .separator {
-                border-top: 1px dashed #000;
-                margin: 5px 0;
-              }
-              .total-line {
-                display: flex;
-                justify-content: space-between;
-                margin: 3px 0;
-                font-size: 11px;
-              }
-              .total-line.main {
-                font-weight: bold;
-                font-size: 14px;
-              }
-              .footer {
-                text-align: center;
-                margin-top: 10px;
-                font-size: 10px;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="receipt">
-              <div class="header">
-                <h1>${receipt.boutique}</h1>
-                <div>Reçu N° ${receipt.numero}</div>
-                <div>${receipt.date}</div>
-              </div>
-              
-              <div class="items">
-                ${receipt.items.map(item => `
-                  <div class="item">
-                    <span>${item.nom} x${item.quantite}</span>
-                    <span>${utils.formatCFA(item.prix * item.quantite)}</span>
-                  </div>
-                `).join('')}
-              </div>
-              
-              <div class="separator"></div>
-              
-              <div class="totals">
-                <div class="total-line main">
-                  <span>TOTAL</span>
-                  <span>${utils.formatCFA(receipt.total)}</span>
-                </div>
-                <div class="total-line">
-                  <span>Reçu</span>
-                  <span>${utils.formatCFA(receipt.montant_donne)}</span>
-                </div>
-                <div class="total-line">
-                  <span>Rendu</span>
-                  <span>${utils.formatCFA(receipt.monnaie_rendue)}</span>
-                </div>
-              </div>
-              
-              <div class="separator"></div>
-              
-              <div class="footer">
-                <div>Vendeur: ${receipt.vendeur}</div>
-                <div>Merci de votre visite!</div>
-              </div>
-            </div>
-          </body>
-        </html>
-      `);
-      iframeDoc.close();
-
-      // Attendre et imprimer
-      setTimeout(() => {
-        try {
-          iframe.contentWindow.focus();
-          iframe.contentWindow.print();
-          
-          // Nettoyer après impression
-          setTimeout(() => {
-            document.body.removeChild(iframe);
-          }, 1000);
-        } catch (error) {
-          console.error('Erreur impression:', error);
-          document.body.removeChild(iframe);
-        }
-      }, 250);
-      
-    } catch (error) {
-      console.error('Erreur création iframe:', error);
-      // Fallback vers impression normale
-      imprimerRecu();
-    }
-  };
-
-  // Imprimer le reçu (méthode classique comme fallback)
+  // Imprimer le reçu
   const imprimerRecu = () => {
-    if (!lastReceipt) return;
-
-    const contenuRecu = genererContenuRecu(lastReceipt);
-    const fenetreImpression = window.open('', '_blank');
-    
-    fenetreImpression.document.write(`
-      <html>
-        <head>
-          <title>Reçu ${lastReceipt.numero}</title>
-          <style>
-            body { font-family: monospace; font-size: 12px; margin: 0; padding: 20px; }
-            .recu { max-width: 300px; margin: 0 auto; }
-            .center { text-align: center; }
-            .ligne { border-bottom: 1px dashed #000; margin: 10px 0; }
-            .total { font-weight: bold; font-size: 14px; }
-            @media print { body { margin: 0; padding: 10px; } }
-          </style>
-        </head>
-        <body onload="window.print(); window.close();">
-          ${contenuRecu}
-        </body>
-      </html>
-    `);
-    
-    fenetreImpression.document.close();
+    window.print();
   };
 
-  const effectuerCloture = async () => {
-    try {
-      const aujourdhui = new Date().toISOString().split('T')[0];
-      
-      const { data: ventes, error } = await supabase
-        .from('ventes')
-        .select('*')
-        .gte('created_at', aujourdhui + 'T00:00:00')
-        .lte('created_at', aujourdhui + 'T23:59:59')
-        .eq('vendeur_id', currentUser.id);
-      
-      if (error) throw error;
-      
-      const montantTotal = ventes.reduce((sum, v) => sum + (v.total || 0), 0);
-      const nombreVentes = ventes.length;
-      
-      const montantDeclare = prompt(`Montant théorique: ${utils.formatCFA(montantTotal)}\nEntrez le montant réel en caisse:`);
-      
-      if (!montantDeclare) return;
-      
-      const ecart = parseFloat(montantDeclare) - montantTotal;
-      
-      const { error: clotureError } = await supabase
-        .from('arrets_caisse')
-        .insert({
-          vendeur_id: currentUser.id,
-          date_arret: aujourdhui,
-          montant_theorique: montantTotal,
-          montant_declare: parseFloat(montantDeclare),
-          ecart: ecart,
-          nombre_ventes: nombreVentes,
-          details_ventes: { ventes: ventes.map(v => v.id) },
-          statut: 'termine'
-        });
-      
-      if (clotureError) throw clotureError;
-      
-      alert(`Clôture effectuée!\n\nMontant théorique: ${utils.formatCFA(montantTotal)}\nMontant déclaré: ${utils.formatCFA(parseFloat(montantDeclare))}\nÉcart: ${utils.formatCFA(ecart)} ${ecart === 0 ? '✓' : ecart > 0 ? '(excédent)' : '(manque)'}`);
-      
-    } catch (error) {
-      console.error('Erreur clôture:', error);
-      alert('Erreur lors de la clôture');
-    }
-  };
-
-  const genererContenuRecu = (recu) => {
-    return `
-      <div class="recu">
-        <div class="center">
-          <h2>${recu.boutique}</h2>
-          <p>Reçu N° ${recu.numero}</p>
-          <p>${recu.date}</p>
-        </div>
-        <div class="ligne"></div>
-        ${recu.items.map(item => `
-          <div style="display: flex; justify-content: space-between; margin: 5px 0;">
-            <span>${item.nom} x${item.quantite}</span>
-            <span>${utils.formatCFA(item.prix * item.quantite)}</span>
-          </div>
-        `).join('')}
-        <div class="ligne"></div>
-        <div class="total center">
-          <p>TOTAL: ${utils.formatCFA(recu.total)}</p>
-          <p>Montant donné: ${utils.formatCFA(recu.montant_donne)}</p>
-          <p>Monnaie rendue: ${utils.formatCFA(recu.monnaie_rendue)}</p>
-        </div>
-        <div class="ligne"></div>
-        <div class="center">
-          <p>Vendeur: ${recu.vendeur}</p>
-          <p>Merci de votre visite !</p>
-        </div>
-      </div>
-    `;
-  };
-
-  // Filtrer les produits
-  const produitsFiltres = produitsBoutique.filter(produit =>
-    produit.nom_produit.toLowerCase().includes(searchTerm.toLowerCase())
+  // Filtrer les produits selon la recherche
+  const produitsFiltres = produitsBoutique.filter(p =>
+    p.nom_produit.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (loading) {
+  // Calculer les statistiques du jour
+  const statsJour = {
+    totalVentes: ventesJour.reduce((sum, v) => sum + (v.total || 0), 0),
+    nombreVentes: ventesJour.length,
+    ticketMoyen: ventesJour.length > 0 ? 
+      ventesJour.reduce((sum, v) => sum + (v.total || 0), 0) / ventesJour.length : 0
+  };
+
+  if (loading && activeTab !== 'dashboard') {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="spinner"></div>
-        <span className="ml-2">Chargement de la caisse...</span>
-      </div>
+      <Card className="p-8">
+        <div className="flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600"></div>
+        </div>
+      </Card>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Bouton de clôture en haut */}
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Gestion de la Caisse</h2>
-        <button
-          onClick={effectuerCloture}
-          className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center"
-        >
-          <Lock className="w-4 h-4 mr-2" />
-          Clôturer la Caisse
-        </button>
-      </div>
-
-      {/* En-tête existant */}
-      <div className="flex justify-between items-center">
+      {/* En-tête */}
+      <div className="flex justify-between items-center bg-white p-6 rounded-lg shadow-sm">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center">
             <CreditCard className="w-8 h-8 text-orange-600 mr-3" />
-            Caisse
+            Module Caisse
           </h1>
-          <p className="text-gray-600">Point de vente - Gestion des transactions</p>
+          <p className="text-gray-600">
+            {activeTab === 'caisse' && 'Point de vente - Enregistrement des transactions'}
+            {activeTab === 'ventes' && 'Liste des ventes effectuées aujourd\'hui'}
+            {activeTab === 'dashboard' && 'Tableau de bord et analyse des performances'}
+          </p>
         </div>
         <div className="flex items-center space-x-4">
           <div className="text-right">
             <p className="text-sm text-gray-500">Vendeur</p>
-            <p className="font-semibold">{currentUser.nom}</p>
+            <p className="font-semibold">{currentUser?.nom || currentUser?.username}</p>
           </div>
           <div className="text-right">
             <p className="text-sm text-gray-500">Session</p>
@@ -543,40 +236,68 @@ export default function CaisseManager({ currentUser }) {
         </div>
       </div>
 
-      {error && (
+      {error && activeTab !== 'dashboard' && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <span className="text-red-800">{error}</span>
         </div>
       )}
 
-      {/* Onglets */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
+      {/* Onglets améliorés */}
+      <div className="border-b border-gray-200 bg-white rounded-t-lg">
+        <nav className="-mb-px flex space-x-8 px-6">
+          {/* Onglet Point de Vente */}
           <button
             onClick={() => setActiveTab('caisse')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
               activeTab === 'caisse'
                 ? 'border-orange-500 text-orange-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
             <ShoppingCart className="w-4 h-4 inline mr-2" />
-            Caisse
+            Point de Vente
           </button>
+
+          {/* Onglet Ventes du Jour */}
           <button
             onClick={() => setActiveTab('ventes')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
               activeTab === 'ventes'
                 ? 'border-orange-500 text-orange-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             }`}
           >
-            <BarChart3 className="w-4 h-4 inline mr-2" />
+            <Receipt className="w-4 h-4 inline mr-2" />
             Ventes du Jour
+            {ventesJour.length > 0 && (
+              <span className="ml-2 bg-orange-100 text-orange-600 text-xs px-2 py-0.5 rounded-full">
+                {ventesJour.length}
+              </span>
+            )}
+          </button>
+
+          {/* NOUVEAU - Onglet Tableau de Bord */}
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'dashboard'
+                ? 'border-orange-500 text-orange-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <TrendingUp className="w-4 h-4 inline mr-2" />
+            Tableau de Bord
+            {currentUser?.role === 'admin' && (
+              <span className="ml-2 bg-blue-100 text-blue-600 text-xs px-2 py-0.5 rounded-full">
+                <Users className="w-3 h-3 inline mr-1" />
+                Vue Admin
+              </span>
+            )}
           </button>
         </nav>
       </div>
 
+      {/* Contenu Point de Vente */}
       {activeTab === 'caisse' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Produits disponibles */}
@@ -600,33 +321,27 @@ export default function CaisseManager({ currentUser }) {
               <div className="p-4">
                 {produitsFiltres.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
-                    <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                    {produitsBoutique.length === 0 ? 
-                      "Aucun produit disponible à la vente" :
-                      "Aucun produit trouvé pour votre recherche"
-                    }
+                    {searchTerm ? 'Aucun produit trouvé' : 'Aucun produit disponible'}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {produitsFiltres.map((produit) => (
-                      <div key={produit.produit_id} className="border rounded-lg p-4 hover:bg-gray-50">
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-medium text-gray-900">{produit.nom_produit}</h4>
-                          <span className="text-lg font-bold text-green-600">
-                            {utils.formatCFA(produit.prix_vente)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-gray-500">
-                            Stock: {utils.formatNumber(produit.stock_reel, 1)} {produit.unite}
-                          </span>
-                          <button
-                            onClick={() => ajouterAuPanier(produit)}
-                            className="bg-orange-500 text-white px-3 py-1 rounded-lg hover:bg-orange-600 transition-colors text-sm flex items-center"
-                          >
-                            <Plus className="w-4 h-4 mr-1" />
-                            Ajouter
-                          </button>
+                      <div
+                        key={produit.produit_id}
+                        className="border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                        onClick={() => ajouterAuPanier(produit)}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <h4 className="font-semibold">{produit.nom_produit}</h4>
+                            <p className="text-sm text-gray-500">Stock: {produit.stock_reel}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-green-600">{utils.formatCFA(produit.prix_vente)}</p>
+                            <button className="mt-2 bg-orange-100 text-orange-600 px-3 py-1 rounded hover:bg-orange-200 transition">
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -636,206 +351,113 @@ export default function CaisseManager({ currentUser }) {
             </Card>
           </div>
 
-          {/* Panier et paiement AMÉLIORÉ */}
+          {/* Panier */}
           <div>
             <Card>
-              <div className="p-6 border-b bg-gradient-to-r from-orange-50 to-amber-50">
+              <div className="p-6 border-b">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold">Panier ({panier.length})</h3>
+                  <h3 className="text-lg font-semibold">Panier</h3>
                   {panier.length > 0 && (
                     <button
                       onClick={viderPanier}
-                      className="text-red-600 hover:text-red-800 text-sm flex items-center"
+                      className="text-red-600 hover:text-red-700 text-sm"
                     >
-                      <Trash2 className="w-4 h-4 mr-1" />
                       Vider
                     </button>
                   )}
                 </div>
               </div>
-              
+
               <div className="p-4">
                 {panier.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
-                    <ShoppingCart className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    <p className="text-sm">Panier vide</p>
+                    <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                    Panier vide
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {/* Articles du panier avec saisie directe */}
-                    <div className="max-h-64 overflow-y-auto space-y-2">
-                      {panier.map((item) => (
-                        <div key={item.id} className="bg-gray-50 rounded-lg p-3 hover:bg-gray-100 transition-colors">
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex-1">
-                              <h5 className="font-medium text-gray-900">{item.nom}</h5>
-                              <p className="text-sm text-gray-500">
-                                {utils.formatCFA(item.prix)} / {item.unite || 'unité'}
-                              </p>
-                            </div>
-                            <button
-                              onClick={() => retirerDuPanier(item.id)}
-                              className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-100 transition-colors"
-                              title="Retirer du panier"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
+                    {panier.map((item) => (
+                      <div key={item.id} className="border-b pb-3">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <p className="font-medium">{item.nom}</p>
+                            <p className="text-sm text-gray-500">
+                              {utils.formatCFA(item.prix)} × {item.quantite}
+                            </p>
                           </div>
-                          
-                          {/* Contrôles de quantité améliorés */}
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-2">
-                              {/* Bouton décrémenter */}
-                              <button
-                                onClick={() => modifierQuantite(item.id, item.quantite - 1)}
-                                disabled={item.quantite <= 1 || editingItemId === item.id}
-                                className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
-                                  item.quantite <= 1 || editingItemId === item.id
-                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                    : 'bg-orange-100 text-orange-600 hover:bg-orange-200'
-                                }`}
-                              >
-                                <Minus className="w-3 h-3" />
-                              </button>
-
-                              {/* Zone de quantité éditable */}
-                              {editingItemId === item.id ? (
-                                <div className="flex items-center space-x-1">
-                                  <input
-                                    ref={inputRef}
-                                    type="number"
-                                    value={tempQuantity}
-                                    onChange={(e) => setTempQuantity(e.target.value)}
-                                    onKeyDown={handleKeyDown}
-                                    onBlur={validateQuantityInput}
-                                    className="w-14 px-1 py-1 border-2 border-orange-400 rounded text-center text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                                    min="1"
-                                    max={item.stockDisponible}
-                                  />
-                                  <button
-                                    onClick={validateQuantityInput}
-                                    className="p-1 text-green-600 hover:bg-green-50 rounded"
-                                    title="Valider"
-                                  >
-                                    <Check className="h-3 w-3" />
-                                  </button>
-                                  <button
-                                    onClick={cancelEditingQuantity}
-                                    className="p-1 text-red-600 hover:bg-red-50 rounded"
-                                    title="Annuler"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => startEditingQuantity(item.id, item.quantite)}
-                                  className="flex items-center space-x-1 px-2 py-1 bg-white hover:bg-gray-50 border border-gray-300 rounded transition-colors"
-                                  title="Cliquer pour modifier directement"
-                                >
-                                  <span className="font-semibold text-sm">{item.quantite}</span>
-                                  <Edit2 className="h-3 w-3 text-gray-400" />
-                                </button>
-                              )}
-
-                              {/* Bouton incrémenter */}
-                              <button
-                                onClick={() => modifierQuantite(item.id, item.quantite + 1)}
-                                disabled={item.quantite >= item.stockDisponible || editingItemId === item.id}
-                                className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
-                                  item.quantite >= item.stockDisponible || editingItemId === item.id
-                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                    : 'bg-orange-100 text-orange-600 hover:bg-orange-200'
-                                }`}
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
-                            </div>
-                            
-                            {/* Sous-total */}
-                            <div className="text-right">
-                              <span className="font-semibold text-gray-900">
-                                {utils.formatCFA(item.prix * item.quantite)}
-                              </span>
-                              <p className="text-xs text-gray-500">
-                                Stock: {item.stockDisponible - item.quantite} restants
-                              </p>
-                            </div>
-                          </div>
+                          <p className="font-semibold">
+                            {utils.formatCFA(item.prix * item.quantite)}
+                          </p>
                         </div>
-                      ))}
-                    </div>
-
-                    {/* Total et paiement */}
-                    <div className="mt-6 space-y-4">
-                      {/* Total */}
-                      <div className="border-t pt-4">
-                        <div className="flex justify-between items-center text-lg font-bold">
-                          <span>Total:</span>
-                          <span className="text-green-600">{utils.formatCFA(totalPanier)}</span>
-                        </div>
-                      </div>
-
-                      {/* Montant donné */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Montant donné par le client
-                        </label>
-                        <div className="relative">
+                        <div className="flex items-center space-x-2 mt-2">
+                          <button
+                            onClick={() => modifierQuantite(item.id, item.quantite - 1)}
+                            className="p-1 bg-gray-100 rounded hover:bg-gray-200"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
                           <input
                             type="number"
-                            step="25"
-                            min="0"
-                            value={montantDonne}
-                            onChange={(e) => setMontantDonne(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                            placeholder="0"
+                            value={item.quantite}
+                            onChange={(e) => modifierQuantite(item.id, parseInt(e.target.value) || 0)}
+                            className="w-16 text-center border rounded"
+                            min="1"
+                            max={item.stockDisponible}
                           />
-                          <CreditCard className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                        </div>
-                        
-                        {/* Boutons montants rapides */}
-                        <div className="mt-2 grid grid-cols-3 gap-2">
-                          {[500, 1000, 2000, 5000, 10000, 20000].map((montant) => (
-                            <button
-                              key={montant}
-                              onClick={() => setMontantDonne(montant.toString())}
-                              className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200 transition-colors"
-                            >
-                              {utils.formatCFA(montant)}
-                            </button>
-                          ))}
+                          <button
+                            onClick={() => modifierQuantite(item.id, item.quantite + 1)}
+                            className="p-1 bg-gray-100 rounded hover:bg-gray-200"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => retirerDuPanier(item.id)}
+                            className="p-1 bg-red-100 text-red-600 rounded hover:bg-red-200 ml-auto"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
+                    ))}
 
-                      {/* Monnaie à rendre */}
-                      {montantDonne && (
-                        <div className={`p-3 rounded-lg ${
-                          monnaieARendre >= 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
-                        }`}>
-                          <div className="flex justify-between items-center">
-                            <span className="font-medium">Monnaie à rendre:</span>
-                            <span className={`font-bold text-lg ${
-                              monnaieARendre >= 0 ? 'text-green-600' : 'text-red-600'
-                            }`}>
+                    {/* Total et paiement */}
+                    <div className="space-y-3 pt-3">
+                      <div className="flex justify-between text-lg font-semibold">
+                        <span>Total</span>
+                        <span className="text-green-600">{utils.formatCFA(totalPanier)}</span>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Montant donné
+                        </label>
+                        <input
+                          type="number"
+                          value={montantDonne}
+                          onChange={(e) => setMontantDonne(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                          placeholder="0"
+                          min={totalPanier}
+                        />
+                      </div>
+
+                      {montantDonneNum > 0 && (
+                        <div className="bg-gray-50 p-3 rounded">
+                          <div className="flex justify-between">
+                            <span>Monnaie à rendre</span>
+                            <span className={`font-semibold ${monnaieARendre >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
                               {utils.formatCFA(Math.abs(monnaieARendre))}
                             </span>
                           </div>
-                          {monnaieARendre < 0 && (
-                            <p className="text-red-600 text-sm mt-1">
-                              Montant insuffisant !
-                            </p>
-                          )}
                         </div>
                       )}
 
-                      {/* Bouton finaliser */}
                       <button
                         onClick={finaliserVente}
                         disabled={panier.length === 0 || montantDonneNum < totalPanier}
-                        className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold flex items-center justify-center"
+                        className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
                       >
-                        <Calculator className="w-4 h-4 mr-2" />
+                        <Calculator className="w-5 h-5 inline mr-2" />
                         Finaliser la Vente
                       </button>
                     </div>
@@ -847,53 +469,45 @@ export default function CaisseManager({ currentUser }) {
         </div>
       )}
 
-      {/* Onglet Ventes du jour */}
+      {/* Contenu Ventes du Jour */}
       {activeTab === 'ventes' && (
         <div className="space-y-6">
-          {/* Statistiques du jour */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="p-6">
-              <div className="flex items-center">
-                <Receipt className="w-8 h-8 text-blue-600" />
-                <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-500">Ventes aujourd'hui</p>
-                  <p className="text-2xl font-bold text-gray-900">{ventesJour.length}</p>
+          {/* Statistiques rapides */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Total du Jour</p>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {utils.formatCFA(statsJour.totalVentes)}
+                    </p>
+                  </div>
+                  <BarChart3 className="w-8 h-8 text-green-500" />
                 </div>
               </div>
             </Card>
-            <Card className="p-6">
-              <div className="flex items-center">
-                <CreditCard className="w-8 h-8 text-green-600" />
-                <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-500">Chiffre d'affaires</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {utils.formatCFA(ventesJour.reduce((sum, v) => sum + (v.total || 0), 0))}
-                  </p>
+            <Card>
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Nombre de Ventes</p>
+                    <p className="text-2xl font-bold text-gray-900">{statsJour.nombreVentes}</p>
+                  </div>
+                  <ShoppingCart className="w-8 h-8 text-blue-500" />
                 </div>
               </div>
             </Card>
-            <Card className="p-6">
-              <div className="flex items-center">
-                <ShoppingCart className="w-8 h-8 text-orange-600" />
-                <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-500">Articles vendus</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {ventesJour.reduce((sum, v) => sum + (v.items?.reduce((s, i) => s + i.quantite, 0) || 0), 0)}
-                  </p>
-                </div>
-              </div>
-            </Card>
-            <Card className="p-6">
-              <div className="flex items-center">
-                <Calculator className="w-8 h-8 text-purple-600" />
-                <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-500">Ticket moyen</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {ventesJour.length > 0 ? 
-                      utils.formatCFA(ventesJour.reduce((sum, v) => sum + (v.total || 0), 0) / ventesJour.length) : 
-                      utils.formatCFA(0)
-                    }
-                  </p>
+            <Card>
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Ticket Moyen</p>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {utils.formatCFA(statsJour.ticketMoyen)}
+                    </p>
+                  </div>
+                  <Calculator className="w-8 h-8 text-orange-500" />
                 </div>
               </div>
             </Card>
@@ -943,7 +557,7 @@ export default function CaisseManager({ currentUser }) {
                         </td>
                         <td className="px-6 py-4">{utils.formatCFA(vente.montant_donne)}</td>
                         <td className="px-6 py-4">{utils.formatCFA(vente.monnaie_rendue)}</td>
-                        <td className="px-6 py-4">{vente.vendeur?.nom || currentUser.nom}</td>
+                        <td className="px-6 py-4">{vente.vendeur?.nom}</td>
                         <td className="px-6 py-4">
                           <button
                             onClick={() => {
@@ -954,13 +568,12 @@ export default function CaisseManager({ currentUser }) {
                                 total: vente.total,
                                 montant_donne: vente.montant_donne,
                                 monnaie_rendue: vente.monnaie_rendue,
-                                vendeur: vente.vendeur?.nom || currentUser.nom,
+                                vendeur: vente.vendeur?.nom,
                                 boutique: 'Pâtisserie Shine'
                               });
                               setShowReceiptModal(true);
                             }}
-                            className="text-orange-600 hover:text-orange-800"
-                            title="Voir le reçu"
+                            className="text-blue-600 hover:text-blue-800"
                           >
                             <Printer className="w-4 h-4" />
                           </button>
@@ -975,81 +588,68 @@ export default function CaisseManager({ currentUser }) {
         </div>
       )}
 
-      {/* Modal Reçu */}
-      <Modal 
-        isOpen={showReceiptModal} 
-        onClose={() => setShowReceiptModal(false)} 
-        title="Reçu de Vente" 
-        size="md"
-      >
-        {lastReceipt && (
-          <div className="space-y-4">
-            <div className="bg-white border-2 border-dashed border-gray-300 p-6 font-mono text-sm">
-              <div className="text-center mb-4">
-                <h3 className="text-lg font-bold">{lastReceipt.boutique}</h3>
-                <p>Reçu N° {lastReceipt.numero}</p>
-                <p>{lastReceipt.date}</p>
-              </div>
-              
-              <div className="border-t border-dashed border-gray-400 my-4"></div>
-              
-              {lastReceipt.items.map((item, index) => (
-                <div key={index} className="flex justify-between mb-2">
-                  <span>{item.nom || item.nom_produit} ×{item.quantite}</span>
+      {/* NOUVEAU - Contenu Tableau de Bord */}
+      {activeTab === 'dashboard' && (
+        <div className="bg-gray-50 -m-6 p-6">
+          <CashierDashboard />
+        </div>
+      )}
+
+      {/* Modal de reçu */}
+      {showReceiptModal && lastReceipt && (
+        <Modal
+          isOpen={showReceiptModal}
+          onClose={() => setShowReceiptModal(false)}
+          title="Reçu de Vente"
+        >
+          <div className="p-6 bg-white" id="receipt-content">
+            <div className="text-center mb-4">
+              <h2 className="text-xl font-bold">{lastReceipt.boutique}</h2>
+              <p className="text-sm text-gray-500">Ticket N° {lastReceipt.numero}</p>
+              <p className="text-sm text-gray-500">{lastReceipt.date}</p>
+            </div>
+
+            <div className="border-t border-b py-4 my-4">
+              {lastReceipt.items?.map((item, idx) => (
+                <div key={idx} className="flex justify-between py-1">
+                  <span>{item.nom} ×{item.quantite}</span>
                   <span>{utils.formatCFA(item.prix * item.quantite)}</span>
                 </div>
               ))}
-              
-              <div className="border-t border-dashed border-gray-400 my-4"></div>
-              
-              <div className="text-center font-bold">
-                <div className="flex justify-between mb-2">
-                  <span>TOTAL:</span>
-                  <span>{utils.formatCFA(lastReceipt.total)}</span>
-                </div>
-                <div className="flex justify-between mb-2">
-                  <span>Montant donné:</span>
-                  <span>{utils.formatCFA(lastReceipt.montant_donne)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Monnaie rendue:</span>
-                  <span>{utils.formatCFA(lastReceipt.monnaie_rendue)}</span>
-                </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between font-semibold">
+                <span>Total</span>
+                <span>{utils.formatCFA(lastReceipt.total)}</span>
               </div>
-              
-              <div className="border-t border-dashed border-gray-400 my-4"></div>
-              
-              <div className="text-center">
-                <p>Vendeur: {lastReceipt.vendeur}</p>
-                <p className="mt-2">Merci de votre visite !</p>
+              <div className="flex justify-between">
+                <span>Montant donné</span>
+                <span>{utils.formatCFA(lastReceipt.montant_donne)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Monnaie rendue</span>
+                <span>{utils.formatCFA(lastReceipt.monnaie_rendue)}</span>
               </div>
             </div>
-            
-            <div className="flex space-x-4">
-              <button
-                onClick={() => imprimerRecuSilencieux(lastReceipt)}
-                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 flex items-center justify-center"
-              >
-                <Printer className="w-4 h-4 mr-2" />
-                Imprimer (Direct)
-              </button>
+
+            <div className="mt-4 pt-4 border-t text-center text-sm text-gray-500">
+              <p>Servi par : {lastReceipt.vendeur}</p>
+              <p className="mt-2">Merci de votre visite !</p>
+            </div>
+
+            <div className="mt-6 flex justify-center">
               <button
                 onClick={imprimerRecu}
-                className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 flex items-center justify-center"
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
               >
-                <Printer className="w-4 h-4 mr-2" />
-                Imprimer (Standard)
-              </button>
-              <button
-                onClick={() => setShowReceiptModal(false)}
-                className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-lg hover:bg-gray-300"
-              >
-                Fermer
+                <Printer className="w-4 h-4 inline mr-2" />
+                Imprimer
               </button>
             </div>
           </div>
-        )}
-      </Modal>
+        </Modal>
+      )}
     </div>
   );
 }
