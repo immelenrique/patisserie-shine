@@ -490,7 +490,9 @@ console.log('Available:', availableTabs.map(t => t.label));
         {activeTab === 'equipe' && <TeamManager currentUser={currentUser} />}
         {activeTab === 'users' && <UserManagement currentUser={currentUser} />}
         {activeTab === 'permissions' && <PermissionsManager currentUser={currentUser} />}
-        {activeTab === 'caisse' && <CashierDashboard />} 
+        {activeTab === 'caisse' && hasPermission('view_caisse') && (
+    <CashierDashboard /> 
+  )}
       </main>
 
       {/* Modal changement mot de passe */}
