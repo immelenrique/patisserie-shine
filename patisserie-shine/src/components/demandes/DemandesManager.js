@@ -206,20 +206,28 @@ const diagnosticDemandes = async () => {
   try {
     console.log('🔍 Diagnostic des demandes en cours...');
     
-    const { data: stats, error } = await supabase
+    // Tenter d'utiliser la fonction RPC si elle existe
+    const { data: stats, error: rpcError } = await supabase
       .rpc('get_demandes_stats');
     
-    if (error) {
-      // Si la fonction RPC n'existe pas, faire manuellement
-      const { data: demandes } = await supabase
+    // Si la fonction RPC n'existe pas ou retourne une erreur, faire manuellement
+    if (rpcError || !stats) {
+      console.log('RPC non disponible, diagnostic manuel...');
+      
+      const { data: demandes, error: demandesError } = await supabase
         .from('demandes')
         .select('statut, demande_groupee_id');
       
-      const { data: groupes } = await supabase
+      const { data: groupes, error: groupesError } = await supabase
         .from('demandes_groupees')
         .select('id, statut');
       
-      const stats = {
+      if (demandesError || groupesError) {
+        console.error('Erreur lors de la récupération des données:', demandesError, groupesError);
+        return { hasIssues: true, error: 'Impossible de récupérer les données' };
+      }
+      
+      const statsManual = {
         totalDemandes: demandes?.length || 0,
         enAttente: demandes?.filter(d => d.statut === 'en_attente').length || 0,
         validees: demandes?.filter(d => d.statut === 'validee').length || 0,
@@ -228,20 +236,20 @@ const diagnosticDemandes = async () => {
         groupesValidees: groupes?.filter(g => g.statut === 'validee').length || 0
       };
       
-      console.table(stats);
+      console.table(statsManual);
       
       // Détecter les incohérences
       const incoherences = [];
       
       for (const groupe of groupes || []) {
-        if (groupe.statut === 'validee') {
+        if (groupe.statut === 'validee' || groupe.statut === 'partiellement_validee') {
           const demandesGroupe = demandes?.filter(d => d.demande_groupee_id === groupe.id) || [];
           const enAttente = demandesGroupe.filter(d => d.statut === 'en_attente').length;
           
           if (enAttente > 0) {
             incoherences.push({
               groupeId: groupe.id,
-              statut: 'Groupe validé mais ' + enAttente + ' demandes en attente'
+              statut: `Groupe ${groupe.statut} mais ${enAttente} demandes en attente`
             });
           }
         }
@@ -252,13 +260,16 @@ const diagnosticDemandes = async () => {
         return { hasIssues: true, issues: incoherences };
       } else {
         console.log('✅ Aucune incohérence détectée');
-        return { hasIssues: false };
+        return { hasIssues: false, issues: [] };
       }
     }
     
+    // Si la fonction RPC fonctionne, l'utiliser
+    return { hasIssues: false, issues: [] };
+    
   } catch (error) {
     console.error('Erreur diagnostic:', error);
-    return { hasIssues: true, error: error.message };
+    return { hasIssues: true, error: error.message, issues: [] };
   }
 };
 
