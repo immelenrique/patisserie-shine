@@ -486,13 +486,11 @@ export default function CashierDashboard() {
                     <div className="text-right">
                       <p className="font-semibold text-gray-900">{utils.formatCFA(vente.montant)}</p>
                       <span className={`text-xs px-2 py-1 rounded-full ${
-                        vente.paiement === 'Cash' 
-                          ? 'bg-green-100 text-green-700' 
-                          : vente.paiement === 'Mobile'
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'bg-purple-100 text-purple-700'
+                        vente.paiement === 'Exact' 
+                          ? 'bg-blue-100 text-blue-700' 
+                          : 'bg-green-100 text-green-700'
                       }`}>
-                        {vente.paiement}
+                        {vente.paiement === 'Exact' ? 'Paiement exact' : 'Espèces'}
                       </span>
                     </div>
                   </div>
