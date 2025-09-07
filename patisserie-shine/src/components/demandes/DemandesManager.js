@@ -5,7 +5,7 @@ import { demandeService, utils, supabase } from '../../lib/supabase';
 import { 
   Plus, ShoppingCart, Check, X, Clock, Package, 
   Warehouse, Store, Trash2, Search, Factory, 
-  FileCheck, FileX, Eye, Archive
+  FileCheck, FileX, Eye, Archive,RotateCcw
 } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
 
@@ -628,6 +628,235 @@ export default function DemandesManager({ currentUser }) {
     });
   }
 };
+  const handleCancelValidatedDemande = async (demandeGroupeeId) => {
+  // Vérifier que l'utilisateur est admin
+  if (currentUser.role !== 'admin') {
+    alert('⛔ Seuls les administrateurs peuvent annuler une demande validée.');
+    return;
+  }
+
+  // Confirmation avec avertissement sérieux
+  const firstConfirm = confirm(
+    '⚠️ ATTENTION - ANNULATION DE DEMANDE VALIDÉE\n\n' +
+    'Vous êtes sur le point d\'annuler une demande déjà validée.\n\n' +
+    'Cette action va :\n' +
+    '• Restaurer le stock principal\n' +
+    '• Retirer les produits du stock de destination\n' +
+    '• Créer un mouvement de restauration\n\n' +
+    'Êtes-vous sûr de vouloir continuer ?'
+  );
+
+  if (!firstConfirm) return;
+
+  // Double confirmation pour une action critique
+  const raison = prompt(
+    'CONFIRMATION FINALE\n\n' +
+    'Veuillez indiquer la raison de l\'annulation (obligatoire) :'
+  );
+
+  if (!raison || raison.trim() === '') {
+    alert('L\'annulation a été abandonnée. Une raison est obligatoire.');
+    return;
+  }
+
+  try {
+    // 1. Récupérer toutes les demandes de ce groupe
+    const { data: demandesGroupe, error: fetchError } = await supabase
+      .from('demandes')
+      .select(`
+        *,
+        produit:produits(id, nom, quantite_restante, unite:unites(label))
+      `)
+      .eq('demande_groupee_id', demandeGroupeeId)
+      .eq('statut', 'validee');
+
+    if (fetchError) {
+      alert('Erreur lors de la récupération des demandes: ' + fetchError.message);
+      return;
+    }
+
+    if (!demandesGroupe || demandesGroupe.length === 0) {
+      alert('Aucune demande validée trouvée pour cette demande groupée.');
+      return;
+    }
+
+    // 2. Récupérer les informations de la demande groupée
+    const { data: demandeGroupeeInfo } = await supabase
+      .from('demandes_groupees')
+      .select('destination, demandeur_id, nombre_produits')
+      .eq('id', demandeGroupeeId)
+      .single();
+
+    console.log('🔄 Début de l\'annulation de la demande groupée #' + demandeGroupeeId);
+    
+    const erreurs = [];
+    const succesRestauration = [];
+
+    // 3. Pour chaque demande, restaurer les stocks
+    for (const demande of demandesGroupe) {
+      try {
+        console.log(`  Restauration de ${demande.quantite} ${demande.produit?.nom}...`);
+
+        // 3.1 Restaurer le stock principal
+        const { data: produitActuel } = await supabase
+          .from('produits')
+          .select('quantite_restante')
+          .eq('id', demande.produit_id)
+          .single();
+
+        if (produitActuel) {
+          const nouvelleQuantite = (produitActuel.quantite_restante || 0) + demande.quantite;
+          
+          const { error: restoreError } = await supabase
+            .from('produits')
+            .update({
+              quantite_restante: nouvelleQuantite,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', demande.produit_id);
+
+          if (restoreError) {
+            erreurs.push(`Erreur restauration stock principal pour ${demande.produit?.nom}: ${restoreError.message}`);
+            continue;
+          }
+        }
+
+        // 3.2 Retirer du stock de destination
+        const destination = demande.destination || demandeGroupeeInfo?.destination;
+        
+        if (destination === 'Boutique') {
+          // Retirer du stock boutique
+          const { data: stockBoutique } = await supabase
+            .from('stock_boutique')
+            .select('id, quantite_disponible')
+            .eq('produit_id', demande.produit_id)
+            .single();
+
+          if (stockBoutique) {
+            const nouvelleQuantiteBoutique = Math.max(0, (stockBoutique.quantite_disponible || 0) - demande.quantite);
+            
+            await supabase
+              .from('stock_boutique')
+              .update({
+                quantite_disponible: nouvelleQuantiteBoutique,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', stockBoutique.id);
+          }
+
+        } else if (destination === 'Production' || destination === 'Atelier') {
+          // Retirer du stock atelier
+          const { data: stockAtelier } = await supabase
+            .from('stock_atelier')
+            .select('id, quantite_disponible')
+            .eq('produit_id', demande.produit_id)
+            .single();
+
+          if (stockAtelier) {
+            const nouvelleQuantiteAtelier = Math.max(0, (stockAtelier.quantite_disponible || 0) - demande.quantite);
+            
+            await supabase
+              .from('stock_atelier')
+              .update({
+                quantite_disponible: nouvelleQuantiteAtelier,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', stockAtelier.id);
+          }
+        }
+
+        // 3.3 Créer un mouvement de restauration
+        await supabase
+          .from('mouvements_stock')
+          .insert({
+            produit_id: demande.produit_id,
+            type_mouvement: 'restauration_annulation',
+            quantite: demande.quantite,
+            source: destination || 'Production',
+            destination: 'Stock Principal',
+            utilisateur_id: currentUser.id,
+            reference_id: demande.id,
+            reference_type: 'annulation_demande',
+            raison: raison,
+            commentaire: `Annulation demande groupée #${demandeGroupeeId}: ${raison}`,
+            created_at: new Date().toISOString()
+          });
+
+        succesRestauration.push(`${demande.produit?.nom}: ${demande.quantite} ${demande.produit?.unite?.label || ''} restauré`);
+
+      } catch (error) {
+        console.error(`Erreur restauration ${demande.produit?.nom}:`, error);
+        erreurs.push(`${demande.produit?.nom}: ${error.message}`);
+      }
+    }
+
+    // 4. Mettre à jour le statut des demandes individuelles
+    await supabase
+      .from('demandes')
+      .update({
+        statut: 'annulee',
+        date_validation: new Date().toISOString()
+      })
+      .eq('demande_groupee_id', demandeGroupeeId);
+
+    // 5. Mettre à jour le statut de la demande groupée
+    await supabase
+      .from('demandes_groupees')
+      .update({
+        statut: 'annulee',
+        details_validation: {
+          annulation: {
+            date: new Date().toISOString(),
+            par: currentUser.id,
+            raison: raison,
+            erreurs: erreurs.length > 0 ? erreurs : undefined
+          }
+        }
+      })
+      .eq('id', demandeGroupeeId);
+
+    // 6. Notifier le demandeur
+    if (demandeGroupeeInfo?.demandeur_id && demandeGroupeeInfo.demandeur_id !== currentUser.id) {
+      await supabase
+        .from('notifications')
+        .insert({
+          destinataire_id: demandeGroupeeInfo.demandeur_id,
+          emetteur_id: currentUser.id,
+          type: 'demande_modifiee',
+          message: `Votre demande validée a été annulée par ${currentUser.nom || currentUser.username}`,
+          details: `Raison: ${raison}`,
+          lien: `/demandes#${demandeGroupeeId}`,
+          lu: false,
+          priorite: 'haute',
+          created_at: new Date().toISOString()
+        });
+    }
+
+    // 7. Afficher le résultat
+    let messageResultat = '✅ ANNULATION TERMINÉE\n\n';
+    
+    if (succesRestauration.length > 0) {
+      messageResultat += 'Restaurations réussies :\n';
+      succesRestauration.forEach(s => messageResultat += `• ${s}\n`);
+    }
+    
+    if (erreurs.length > 0) {
+      messageResultat += '\n⚠️ Erreurs rencontrées :\n';
+      erreurs.forEach(e => messageResultat += `• ${e}\n`);
+    }
+
+    messageResultat += `\nRaison de l'annulation : ${raison}`;
+
+    alert(messageResultat);
+
+    // 8. Recharger les données
+    await loadData();
+
+  } catch (err) {
+    console.error('Erreur lors de l\'annulation:', err);
+    alert('❌ Erreur critique lors de l\'annulation de la demande: ' + err.message);
+  }
+};
 
   // ============ REFUS DE DEMANDE ============
   const handleRejectGroupedDemande = async (demandeGroupeeId) => {
@@ -802,6 +1031,15 @@ export default function DemandesManager({ currentUser }) {
                         </button>
                       </>
                     )}
+                      {demande.statut === 'validee' && currentUser.role === 'admin' && (
+      <button 
+        onClick={() => handleCancelValidatedDemande(demande.id)}
+        className="text-orange-600 hover:text-orange-900"
+        title="Annuler cette demande validée"
+      >
+        <RotateCcw className="h-4 w-4" />
+      </button>
+    )}
                   </div>
                 </td>
               </tr>
