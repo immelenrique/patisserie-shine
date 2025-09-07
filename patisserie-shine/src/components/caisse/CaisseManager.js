@@ -190,197 +190,94 @@ export default function CaisseManager({ currentUser }) {
 };
 
   // Imprimer le reçu
- const imprimerRecu = (recu) => {
-  if (!recu) return;
+ const imprimerRecu = () => {
+  if (!lastReceipt) return;
 
-  // Détecter si c'est une tablette/mobile
-  const isMobile = /iPad|iPhone|Android/i.test(navigator.userAgent);
-  
-  if (isMobile) {
-    // Version tablette/mobile : impression directe sans popup
-    const styleImpression = document.createElement('style');
-    styleImpression.innerHTML = `
-      @media print {
-        body * {
-          visibility: hidden;
-        }
-        #ticket-impression, #ticket-impression * {
-          visibility: visible;
-        }
-        #ticket-impression {
-          position: absolute;
-          left: 0;
-          top: 0;
-          width: 80mm;
-          font-family: 'Courier New', monospace;
-          font-size: 12px;
-        }
-      }
-    `;
-    document.head.appendChild(styleImpression);
-
-    const ticketDiv = document.createElement('div');
-    ticketDiv.id = 'ticket-impression';
-    ticketDiv.innerHTML = `
-      <div style="text-align: center; font-weight: bold; font-size: 16px;">
-        PÂTISSERIE SHINE
-      </div>
-      <div style="text-align: center; font-size: 10px; margin: 5px 0;">
-        Tel: 07 07 07 07 07
-      </div>
-      <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
-      
-      <div style="text-align: center;">
-        <div>Ticket N° ${recu.numero}</div>
-        <div style="font-size: 10px;">${recu.date}</div>
+  // Méthode 1 : Impression dans la même fenêtre (plus fiable)
+  const contenuRecu = `
+    <div style="font-family: monospace; max-width: 300px; margin: 0 auto; padding: 20px;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h3>${lastReceipt.boutique}</h3>
+        <p>Reçu N° ${lastReceipt.numero}</p>
+        <p>${lastReceipt.date}</p>
       </div>
       
-      <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
+      <div style="border-top: 1px dashed #000; margin: 10px 0;"></div>
       
-      ${recu.items.map(item => `
-        <div style="margin: 5px 0;">
-          <div>${item.nom || item.nom_produit}</div>
-          <div style="display: flex; justify-content: space-between; padding-left: 10px;">
-            <span>${item.quantite} x ${item.prix} CFA</span>
-            <span>${item.prix * item.quantite} CFA</span>
-          </div>
+      ${lastReceipt.items.map(item => `
+        <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+          <span>${item.nom || item.nom_produit} ×${item.quantite}</span>
+          <span>${utils.formatCFA(item.prix * item.quantite)}</span>
         </div>
       `).join('')}
       
-      <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
+      <div style="border-top: 1px dashed #000; margin: 10px 0;"></div>
       
-      <div style="font-weight: bold; font-size: 14px; display: flex; justify-content: space-between;">
-        <span>TOTAL</span>
-        <span>${recu.total} CFA</span>
-      </div>
-      <div style="display: flex; justify-content: space-between;">
-        <span>Espèces</span>
-        <span>${recu.montant_donne} CFA</span>
-      </div>
-      <div style="font-weight: bold; display: flex; justify-content: space-between;">
-        <span>Monnaie</span>
-        <span>${recu.monnaie_rendue} CFA</span>
+      <div style="font-weight: bold;">
+        <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+          <span>TOTAL:</span>
+          <span>${utils.formatCFA(lastReceipt.total)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+          <span>Montant donné:</span>
+          <span>${utils.formatCFA(lastReceipt.montant_donne)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+          <span>Monnaie rendue:</span>
+          <span>${utils.formatCFA(lastReceipt.monnaie_rendue)}</span>
+        </div>
       </div>
       
-      <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
+      <div style="border-top: 1px dashed #000; margin: 10px 0;"></div>
       
       <div style="text-align: center;">
-        <div>Servi par: ${recu.vendeur}</div>
-        <div style="margin-top: 10px; font-weight: bold;">MERCI DE VOTRE VISITE</div>
-        <div style="font-size: 10px;">À bientôt !</div>
+        <p>Vendeur: ${lastReceipt.vendeur}</p>
+        <p style="margin-top: 10px;">Merci de votre visite !</p>
       </div>
-    `;
-    
-    document.body.appendChild(ticketDiv);
-    
-    // Lancer l'impression
-    window.print();
-    
+    </div>
+  `;
+
+  // Créer un iframe caché pour l'impression
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'absolute';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = 'none';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(`
+    <html>
+      <head>
+        <title>Reçu ${lastReceipt.numero}</title>
+        <style>
+          @media print {
+            body { margin: 0; padding: 10px; }
+          }
+        </style>
+      </head>
+      <body>
+        ${contenuRecu}
+      </body>
+    </html>
+  `);
+  doc.close();
+
+  // Attendre que le contenu soit chargé puis imprimer
+  iframe.contentWindow.focus();
+  setTimeout(() => {
+    try {
+      iframe.contentWindow.print();
+    } catch (e) {
+      console.error('Erreur impression:', e);
+      alert('Impossible d\'imprimer. Utilisez Ctrl+P ou Cmd+P pour imprimer manuellement.');
+    }
     // Nettoyer après impression
     setTimeout(() => {
-      document.body.removeChild(ticketDiv);
-      document.head.removeChild(styleImpression);
-    }, 1000);
-    
-  } else {
-    // Version PC : utiliser une fenêtre popup
-    const contenuHTML = `
-      <html>
-        <head>
-          <title>Ticket ${recu.numero}</title>
-          <style>
-            @page { 
-              size: 80mm auto;
-              margin: 5mm;
-            }
-            body { 
-              font-family: 'Courier New', monospace; 
-              font-size: 12px; 
-              width: 70mm;
-              margin: 0 auto;
-              padding: 10px;
-            }
-            .center { text-align: center; }
-            .bold { font-weight: bold; }
-            .ligne { 
-              border-bottom: 1px dashed #000; 
-              margin: 10px 0; 
-            }
-            .item-line {
-              display: flex;
-              justify-content: space-between;
-              margin: 5px 0;
-            }
-            .item-detail {
-              padding-left: 10px;
-              margin-bottom: 8px;
-            }
-            @media print { 
-              body { margin: 0; padding: 5px; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="center bold" style="font-size: 16px;">PÂTISSERIE SHINE</div>
-          <div class="center" style="font-size: 10px;">Tel: 07 07 07 07 07</div>
-          <div class="ligne"></div>
-          
-          <div class="center">
-            <div>Ticket N° ${recu.numero}</div>
-            <div style="font-size: 10px;">${recu.date}</div>
-          </div>
-          
-          <div class="ligne"></div>
-          
-          ${recu.items.map(item => `
-            <div>
-              <div>${item.nom || item.nom_produit}</div>
-              <div class="item-detail">
-                <div class="item-line">
-                  <span>${item.quantite} x ${item.prix} CFA</span>
-                  <span>${item.prix * item.quantite} CFA</span>
-                </div>
-              </div>
-            </div>
-          `).join('')}
-          
-          <div class="ligne"></div>
-          
-          <div class="item-line bold" style="font-size: 14px;">
-            <span>TOTAL</span>
-            <span>${recu.total} CFA</span>
-          </div>
-          <div class="item-line">
-            <span>Espèces</span>
-            <span>${recu.montant_donne} CFA</span>
-          </div>
-          <div class="item-line bold">
-            <span>Monnaie</span>
-            <span>${recu.monnaie_rendue} CFA</span>
-          </div>
-          
-          <div class="ligne"></div>
-          
-          <div class="center">
-            <div>Servi par: ${recu.vendeur}</div>
-            <div style="margin-top: 10px; font-weight: bold;">MERCI DE VOTRE VISITE</div>
-            <div style="font-size: 10px;">À bientôt !</div>
-          </div>
-        </body>
-      </html>
-    `;
-
-    const fenetreImpression = window.open('', '_blank', 'width=400,height=600');
-    fenetreImpression.document.write(contenuHTML);
-    fenetreImpression.document.close();
-    fenetreImpression.focus();
-    
-    // Attendre un peu que le contenu soit chargé
-    setTimeout(() => {
-      fenetreImpression.print();
-      fenetreImpression.close();
-    }, 250);
-  }
+      document.body.removeChild(iframe);
+    }, 100);
+  }, 250);
 };
 
   // Filtrer les produits selon la recherche
