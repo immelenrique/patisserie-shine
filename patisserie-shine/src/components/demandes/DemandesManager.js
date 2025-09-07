@@ -321,192 +321,313 @@ export default function DemandesManager({ currentUser }) {
 
   // ============ VALIDATION DE DEMANDE ============
   const handleValidateGroupedDemande = async (demandeGroupeeId) => {
-    if (validationsEnCours.has(demandeGroupeeId)) {
-      alert('⏳ Une validation est déjà en cours pour cette demande. Veuillez patienter...');
+  if (validationsEnCours.has(demandeGroupeeId)) {
+    alert('⏳ Une validation est déjà en cours pour cette demande. Veuillez patienter...');
+    return;
+  }
+
+  if (!confirm('Êtes-vous sûr de vouloir valider toute cette demande groupée ?')) return;
+
+  setValidationsEnCours(prev => new Set(prev).add(demandeGroupeeId));
+
+  const showProgress = (message) => {
+    const existingProgress = document.getElementById('validation-progress');
+    if (existingProgress) {
+      existingProgress.textContent = message;
+    } else {
+      const progressDiv = document.createElement('div');
+      progressDiv.id = 'validation-progress';
+      progressDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 9999;';
+      progressDiv.textContent = message;
+      document.body.appendChild(progressDiv);
+    }
+  };
+
+  const hideProgress = () => {
+    const progressDiv = document.getElementById('validation-progress');
+    if (progressDiv) progressDiv.remove();
+  };
+
+  try {
+    showProgress('🔒 Vérification...');
+
+    // Vérifier le statut actuel
+    const { data: demandeActuelle, error: checkError } = await supabase
+      .from('demandes_groupees')
+      .select('statut')
+      .eq('id', demandeGroupeeId)
+      .single();
+
+    if (checkError || demandeActuelle.statut !== 'en_attente') {
+      alert('Cette demande ne peut pas être validée');
       return;
     }
 
-    if (!confirm('Êtes-vous sûr de vouloir valider toute cette demande groupée ?')) return;
+    showProgress('📋 Traitement...');
 
-    setValidationsEnCours(prev => new Set(prev).add(demandeGroupeeId));
+    // Récupérer les demandes avec les infos complètes
+    const { data: demandesGroupe, error: fetchError } = await supabase
+      .from('demandes')
+      .select(`
+        *,
+        produit:produits(id, nom, quantite_restante, unite:unites(label))
+      `)
+      .eq('demande_groupee_id', demandeGroupeeId)
+      .eq('statut', 'en_attente');
 
-    const showProgress = (message) => {
-      const existingProgress = document.getElementById('validation-progress');
-      if (existingProgress) {
-        existingProgress.textContent = message;
-      } else {
-        const progressDiv = document.createElement('div');
-        progressDiv.id = 'validation-progress';
-        progressDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 9999;';
-        progressDiv.textContent = message;
-        document.body.appendChild(progressDiv);
-      }
-    };
+    if (fetchError || !demandesGroupe || demandesGroupe.length === 0) {
+      throw new Error('Aucune demande en attente trouvée');
+    }
 
-    const hideProgress = () => {
-      const progressDiv = document.getElementById('validation-progress');
-      if (progressDiv) progressDiv.remove();
-    };
+    // Récupérer la destination de la demande groupée
+    const { data: demandeGroupeeInfo } = await supabase
+      .from('demandes_groupees')
+      .select('destination')
+      .eq('id', demandeGroupeeId)
+      .single();
 
-    try {
-      showProgress('🔒 Vérification...');
+    showProgress('🔍 Vérification des stocks...');
 
-      // Vérifier le statut actuel
-      const { data: demandeActuelle, error: checkError } = await supabase
-        .from('demandes_groupees')
-        .select('statut')
-        .eq('id', demandeGroupeeId)
-        .single();
-
-      if (checkError || demandeActuelle.statut !== 'en_attente') {
-        alert('Cette demande ne peut pas être validée');
-        return;
-      }
-
-      showProgress('📋 Traitement...');
-
-      // Récupérer les demandes
-      const { data: demandesGroupe, error: fetchError } = await supabase
-        .from('demandes')
-        .select(`
-          *,
-          produit:produits(id, nom, quantite_restante, unite:unites(label))
-        `)
-        .eq('demande_groupee_id', demandeGroupeeId)
-        .eq('statut', 'en_attente');
-
-      if (fetchError || !demandesGroupe || demandesGroupe.length === 0) {
-        throw new Error('Aucune demande en attente trouvée');
-      }
-
-      showProgress('🔍 Vérification des stocks...');
-
-      // Vérifier les stocks
-      const stockInsuffisant = [];
-      for (const demande of demandesGroupe) {
-        if (!demande.produit || demande.produit.quantite_restante < demande.quantite) {
-          stockInsuffisant.push({
-            produit: demande.produit?.nom || 'Produit inconnu',
-            demande: demande.quantite,
-            disponible: demande.produit?.quantite_restante || 0
-          });
-        }
-      }
-
-      if (stockInsuffisant.length > 0) {
-        let message = '⚠️ Stock insuffisant :\n';
-        stockInsuffisant.forEach(item => {
-          message += `• ${item.produit}: demandé ${item.demande}, disponible ${item.disponible}\n`;
+    // Vérifier les stocks disponibles
+    const stockInsuffisant = [];
+    for (const demande of demandesGroupe) {
+      if (!demande.produit || demande.produit.quantite_restante < demande.quantite) {
+        stockInsuffisant.push({
+          produit: demande.produit?.nom || 'Produit inconnu',
+          demande: demande.quantite,
+          disponible: demande.produit?.quantite_restante || 0
         });
-        throw new Error(message);
       }
+    }
 
-      showProgress('⚙️ Validation en cours...');
+    if (stockInsuffisant.length > 0) {
+      let message = '⚠️ Stock insuffisant :\n';
+      stockInsuffisant.forEach(item => {
+        message += `• ${item.produit}: demandé ${item.demande}, disponible ${item.disponible}\n`;
+      });
+      throw new Error(message);
+    }
 
-      const errors = [];
-      let processedCount = 0;
+    showProgress('⚙️ Validation en cours...');
 
-      // Traiter chaque demande
-      for (const demande of demandesGroupe) {
-        try {
-          // Réduire le stock
-          const { error: stockError } = await supabase.rpc('decrement_stock', {
-            p_produit_id: demande.produit_id,
-            p_quantite: demande.quantite
-          });
+    const errors = [];
+    let processedCount = 0;
 
-          if (stockError) throw stockError;
+    // Traiter chaque demande
+    for (const demande of demandesGroupe) {
+      try {
+        // 1. Réduire le stock principal
+        const { error: stockError } = await supabase.rpc('decrement_stock', {
+          p_produit_id: demande.produit_id,
+          p_quantite: demande.quantite
+        });
 
-          // Gérer le stock de destination
-          if (demande.destination === 'Production' || demande.destination === 'Atelier') {
-            const { data: existingStock } = await supabase
+        if (stockError) throw stockError;
+
+        // 2. Gérer le stock de destination selon le type
+        const destination = demande.destination || demandeGroupeeInfo?.destination;
+        
+        if (destination === 'Production' || destination === 'Atelier') {
+          // Gérer le stock atelier
+          const { data: existingStock } = await supabase
+            .from('stock_atelier')
+            .select('*')
+            .eq('produit_id', demande.produit_id)
+            .maybeSingle();
+
+          if (existingStock) {
+            await supabase
               .from('stock_atelier')
-              .select('*')
-              .eq('produit_id', demande.produit_id)
-              .maybeSingle();
+              .update({
+                quantite_disponible: existingStock.quantite_disponible + demande.quantite,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', existingStock.id);
+          } else {
+            await supabase
+              .from('stock_atelier')
+              .insert({
+                produit_id: demande.produit_id,
+                quantite_disponible: demande.quantite,
+                transfere_par: currentUser.id,
+                created_at: new Date().toISOString()
+              });
+          }
+          
+        } else if (destination === 'Boutique') {
+          // Gérer le stock boutique
+          const { data: existingStockBoutique } = await supabase
+            .from('stock_boutique')
+            .select('*')
+            .eq('produit_id', demande.produit_id)
+            .maybeSingle();
 
-            if (existingStock) {
-              await supabase
-                .from('stock_atelier')
-                .update({
-                  quantite_disponible: existingStock.quantite_disponible + demande.quantite,
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', existingStock.id);
-            } else {
-              await supabase
-                .from('stock_atelier')
-                .insert({
-                  produit_id: demande.produit_id,
-                  quantite_disponible: demande.quantite,
-                  transfere_par: currentUser.id,
-                  created_at: new Date().toISOString()
-                });
-            }
+          // Récupérer le prix de vente si défini
+          const { data: prixVente } = await supabase
+            .from('prix_vente_produits')
+            .select('prix')
+            .eq('produit_id', demande.produit_id)
+            .eq('actif', true)
+            .maybeSingle();
+
+          if (existingStockBoutique) {
+            // Mettre à jour le stock existant
+            await supabase
+              .from('stock_boutique')
+              .update({
+                quantite_disponible: (existingStockBoutique.quantite_disponible || 0) + demande.quantite,
+                type_produit: existingStockBoutique.type_produit || 'vendable',
+                nom_produit: existingStockBoutique.nom_produit || demande.produit?.nom || `Produit ${demande.produit_id}`,
+                prix_vente: prixVente?.prix || existingStockBoutique.prix_vente || null,
+                statut_stock: 'normal',
+                transfere_par: currentUser.id,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', existingStockBoutique.id);
+          } else {
+            // Créer une nouvelle entrée dans stock_boutique
+            await supabase
+              .from('stock_boutique')
+              .insert({
+                produit_id: demande.produit_id,
+                nom_produit: demande.produit?.nom || `Produit ${demande.produit_id}`,
+                quantite_disponible: demande.quantite,
+                quantite_vendue: 0,
+                quantite_utilisee: 0,
+                type_produit: 'vendable',
+                prix_vente: prixVente?.prix || null,
+                statut_stock: 'normal',
+                transfere_par: currentUser.id,
+                created_at: new Date().toISOString()
+              });
           }
 
-          processedCount++;
-        } catch (error) {
-          console.error(`Erreur pour ${demande.produit?.nom}:`, error);
-          errors.push({
-            produit: demande.produit?.nom,
-            erreur: error.message
-          });
+          // Enregistrer l'entrée dans entrees_boutique
+          await supabase
+            .from('entrees_boutique')
+            .insert({
+              produit_id: demande.produit_id,
+              quantite: demande.quantite,
+              source: 'Stock Principal',
+              type_entree: 'Demande',
+              prix_vente: prixVente?.prix || null,
+              ajoute_par: currentUser.id,
+              created_at: new Date().toISOString()
+            });
         }
+
+        // 3. Enregistrer le mouvement de stock
+        await supabase
+          .from('mouvements_stock')
+          .insert({
+            produit_id: demande.produit_id,
+            type_mouvement: 'transfert',
+            quantite: demande.quantite,
+            source: 'Stock Principal',
+            destination: destination || 'Production',
+            utilisateur_id: currentUser.id,
+            reference_id: demande.id,
+            reference_type: 'demande',
+            commentaire: `Demande groupée #${demandeGroupeeId} validée`,
+            created_at: new Date().toISOString()
+          });
+
+        processedCount++;
+        
+      } catch (error) {
+        console.error(`Erreur pour ${demande.produit?.nom}:`, error);
+        errors.push({
+          produit: demande.produit?.nom || `Produit ID: ${demande.produit_id}`,
+          erreur: error.message
+        });
       }
-
-      showProgress('📝 Finalisation...');
-
-      // Passer en traitement puis valider (pour respecter la contrainte)
-      await supabase
-        .from('demandes_groupees')
-        .update({ statut: 'en_traitement' })
-        .eq('id', demandeGroupeeId);
-
-      // Mettre à jour les demandes individuelles
-      await supabase
-        .from('demandes')
-        .update({
-          statut: 'validee',
-          valideur_id: currentUser.id,
-          date_validation: new Date().toISOString()
-        })
-        .eq('demande_groupee_id', demandeGroupeeId);
-
-      // Valider la demande groupée
-      const statutFinal = errors.length > 0 ? 'partiellement_validee' : 'validee';
-      
-      await supabase
-        .from('demandes_groupees')
-        .update({
-          statut: statutFinal,
-          valideur_id: currentUser.id,
-          date_validation: new Date().toISOString(),
-          details_validation: errors.length > 0 ? { erreurs: errors } : null
-        })
-        .eq('id', demandeGroupeeId);
-
-      await loadData();
-      hideProgress();
-      
-      if (errors.length > 0) {
-        alert(`⚠️ Validation partielle\n✅ ${processedCount} produits traités\n❌ ${errors.length} erreurs`);
-      } else {
-        alert(`✅ Demande validée avec succès !`);
-      }
-
-    } catch (err) {
-      hideProgress();
-      console.error('Erreur:', err);
-      alert('❌ ' + err.message);
-    } finally {
-      setValidationsEnCours(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(demandeGroupeeId);
-        return newSet;
-      });
     }
-  };
+
+    showProgress('📝 Finalisation...');
+
+    // 4. Passer en traitement puis valider (pour respecter la contrainte CHECK)
+    await supabase
+      .from('demandes_groupees')
+      .update({ statut: 'en_traitement' })
+      .eq('id', demandeGroupeeId);
+
+    // 5. Mettre à jour les demandes individuelles
+    await supabase
+      .from('demandes')
+      .update({
+        statut: 'validee',
+        valideur_id: currentUser.id,
+        date_validation: new Date().toISOString()
+      })
+      .eq('demande_groupee_id', demandeGroupeeId);
+
+    // 6. Valider la demande groupée
+    const statutFinal = errors.length > 0 ? 'partiellement_validee' : 'validee';
+    
+    await supabase
+      .from('demandes_groupees')
+      .update({
+        statut: statutFinal,
+        valideur_id: currentUser.id,
+        date_validation: new Date().toISOString(),
+        details_validation: errors.length > 0 ? { erreurs: errors } : null
+      })
+      .eq('id', demandeGroupeeId);
+
+    // 7. Notifier le demandeur
+    const { data: demandeInfo } = await supabase
+      .from('demandes_groupees')
+      .select('demandeur_id, nombre_produits, destination')
+      .eq('id', demandeGroupeeId)
+      .single();
+
+    if (demandeInfo?.demandeur_id && demandeInfo.demandeur_id !== currentUser.id) {
+      await supabase
+        .from('notifications')
+        .insert({
+          destinataire_id: demandeInfo.demandeur_id,
+          emetteur_id: currentUser.id,
+          type: 'demande_validee',
+          message: `Votre demande a été validée par ${currentUser.nom || currentUser.username}`,
+          details: errors.length > 0 
+            ? `${processedCount}/${demandesGroupe.length} produit(s) traités avec succès`
+            : `${demandeInfo.nombre_produits} produit(s) ajoutés au stock ${demandeInfo.destination}`,
+          lien: `/demandes#${demandeGroupeeId}`,
+          lu: false,
+          priorite: 'normale',
+          created_at: new Date().toISOString()
+        });
+    }
+
+    await loadData();
+    hideProgress();
+    
+    // 8. Message de résultat
+    if (errors.length > 0) {
+      let message = `⚠️ Validation terminée avec des erreurs\n\n`;
+      message += `✅ ${processedCount}/${demandesGroupe.length} produits traités avec succès\n\n`;
+      message += `❌ Erreurs rencontrées :\n`;
+      errors.forEach(e => {
+        message += `• ${e.produit}: ${e.erreur}\n`;
+      });
+      alert(message);
+    } else {
+      alert(`✅ Demande groupée validée avec succès !\n\n${processedCount} produits ont été transférés vers le stock ${demandeGroupeeInfo?.destination || 'de destination'}.`);
+    }
+
+  } catch (err) {
+    hideProgress();
+    console.error('Erreur globale:', err);
+    alert('❌ ' + err.message);
+  } finally {
+    // 9. Libération du verrou
+    setValidationsEnCours(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(demandeGroupeeId);
+      return newSet;
+    });
+  }
+};
 
   // ============ REFUS DE DEMANDE ============
   const handleRejectGroupedDemande = async (demandeGroupeeId) => {
