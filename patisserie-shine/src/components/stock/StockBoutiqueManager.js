@@ -44,10 +44,16 @@ export default function StockBoutiqueManager({ currentUser }) {
   };
 
   // Commencer l'édition d'un prix
-  const startEditPrice = (stockItem) => {
-    setEditingPrice(stockItem.id);
-    setNewPrice(stockItem.prix_vente ? stockItem.prix_vente.toString() : '');
-  };
+const startEditPrice = (stockItem) => {
+  // Vérifier que l'utilisateur est admin
+  if (currentUser.role !== 'admin') {
+    alert('⛔ Seuls les administrateurs peuvent modifier les prix de vente');
+    return;
+  }
+  
+  setEditingPrice(stockItem.id);
+  setNewPrice(stockItem.prix_vente ? stockItem.prix_vente.toString() : '');
+};
 
   // Commencer l'édition du type de produit
   const startEditType = (stockItem) => {
@@ -507,35 +513,41 @@ const saveType = async (stockId) => {
                           </td>
                           {activeTab === 'vendables' && (
                             <>
-                              <td className="px-6 py-4">
-                                {isEditingPrice ? (
-                                  <div className="flex items-center space-x-2">
-                                    <input
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      value={newPrice}
-                                      onChange={(e) => setNewPrice(e.target.value)}
-                                      className="w-24 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                      placeholder="Prix"
-                                      autoFocus
-                                    />
-                                    <span className="text-xs text-gray-500">CFA</span>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center space-x-2">
-                                    {stock.prix_defini ? (
-                                      <span className="font-semibold text-green-600">
-                                        {utils.formatCFA(stock.prix_vente || 0)}
-                                      </span>
-                                    ) : (
-                                      <span className="text-yellow-600 text-sm font-medium">
-                                        Non défini
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm">
+  {editingPrice === stock.id ? (
+    // Input d'édition (visible seulement quand on édite)
+    <div className="flex items-center space-x-2">
+      <input
+        type="number"
+        step="50"
+        min="0"
+        value={newPrice}
+        onChange={(e) => setNewPrice(e.target.value)}
+        className="w-24 px-2 py-1 border rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+        placeholder="Prix"
+        autoFocus
+      />
+      <span className="text-xs text-gray-500">CFA</span>
+    </div>
+  ) : (
+    // Affichage normal du prix
+    <div className="flex items-center space-x-2 group">
+      <span className={stock.prix_vente ? 'font-medium text-gray-900' : 'text-gray-400'}>
+        {stock.prix_vente ? utils.formatCFA(stock.prix_vente) : 'Non défini'}
+      </span>
+      {/* Icône d'édition seulement pour admin sur les produits vendables */}
+      {currentUser.role === 'admin' && activeTab === 'vendables' && stock.type_produit === 'vendable' && (
+        <button
+          onClick={() => startEditPrice(stock)}
+          className="text-blue-600 hover:text-blue-900 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Modifier le prix"
+        >
+          <Edit className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  )}
+</td>
                               <td className="px-6 py-4 font-semibold text-blue-600">
                                 {stock.prix_defini ? 
                                   utils.formatCFA((stock.stock_reel || 0) * (stock.prix_vente || 0)) : 
@@ -590,7 +602,7 @@ const saveType = async (stockId) => {
                               </div>
                             ) : (
                               <div className="flex space-x-1">
-                                {activeTab === 'vendables' && (
+                                {activeTab === 'vendables' && currentUser.role === 'admin' && (
                                   <button
                                     onClick={() => startEditPrice(stock)}
                                     className="text-blue-600 hover:text-blue-900 p-1 hover:bg-blue-50 rounded transition-colors"
