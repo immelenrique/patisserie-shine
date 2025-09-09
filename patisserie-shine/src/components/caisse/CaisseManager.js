@@ -196,18 +196,31 @@ const imprimerRecu = () => {
   if (!lastReceipt) return;
 
   const contenuRecu = genererContenuRecu(lastReceipt);
-  const fenetreImpression = window.open('', '_blank');
+  const fenetreImpression = window.open('', '_blank', 'width=400,height=600');
   
+  if (!fenetreImpression) {
+    alert('Impossible d\'ouvrir la fenêtre d\'impression. Vérifiez que les popups ne sont pas bloquées.');
+    return;
+  }
+  
+  fenetreImpression.document.open();
   fenetreImpression.document.write(`
+    <!DOCTYPE html>
     <html>
       <head>
+        <meta charset="UTF-8">
         <title>Reçu ${lastReceipt.numero}</title>
         <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
           body { 
-            font-family: monospace; 
+            font-family: 'Courier New', monospace; 
             font-size: 12px; 
-            margin: 0; 
-            padding: 20px; 
+            padding: 20px;
+            line-height: 1.4;
           }
           .recu { 
             max-width: 300px; 
@@ -228,44 +241,53 @@ const imprimerRecu = () => {
             body { 
               margin: 0; 
               padding: 10px; 
-            } 
+            }
+            @page {
+              margin: 0.5cm;
+            }
           }
         </style>
       </head>
       <body>
         ${contenuRecu}
-        <script>
-          // Solution 1: Attendre l'événement afterprint avant de fermer
-          window.onafterprint = function() {
-            window.close();
-          };
-          
-          // Solution 2: Ajouter un délai de sécurité et gérer les navigateurs
-          window.onload = function() {
-            // Attendre que le document soit complètement chargé
-            setTimeout(function() {
-              window.print();
-              
-              // Fallback: fermer après un délai si afterprint n'est pas supporté
-              setTimeout(function() {
-                // Vérifier si la fenêtre est toujours ouverte
-                if (!window.closed) {
-                  window.close();
-                }
-              }, 1000); // Délai d'1 seconde après l'ouverture de la boîte de dialogue
-            }, 100); // Petit délai pour s'assurer que le contenu est rendu
-          };
-        </script>
       </body>
     </html>
   `);
   
   fenetreImpression.document.close();
   
-  // Solution alternative: Focus sur la nouvelle fenêtre
-  fenetreImpression.focus();
+  // Attendre que le contenu soit complètement chargé
+  fenetreImpression.onload = function() {
+    // Attendre un court instant pour le rendu
+    setTimeout(() => {
+      fenetreImpression.print();
+      
+      // Gérer la fermeture après impression
+      if (fenetreImpression.onafterprint !== undefined) {
+        // Chrome, Firefox
+        fenetreImpression.onafterprint = function() {
+          fenetreImpression.close();
+        };
+      } else {
+        // Safari, anciens navigateurs
+        // Utiliser matchMedia pour détecter quand l'impression est terminée
+        const mediaQueryList = fenetreImpression.matchMedia('print');
+        mediaQueryList.addListener(function(mql) {
+          if (!mql.matches) {
+            fenetreImpression.close();
+          }
+        });
+        
+        // Fallback avec timeout
+        setTimeout(() => {
+          if (!fenetreImpression.closed) {
+            fenetreImpression.close();
+          }
+        }, 5000); // 5 secondes de délai maximum
+      }
+    }, 250); // 250ms pour s'assurer du rendu complet
+  };
 };
-
 // Alternative plus robuste avec gestion des erreurs
 const imprimerRecuAvecGestionErreurs = () => {
   if (!lastReceipt) {
