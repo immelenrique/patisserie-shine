@@ -12,15 +12,13 @@ import {
   CreditCard, 
   Printer, 
   Receipt, 
-  Calendar, 
   BarChart3, 
-  X, 
   Lock,
   TrendingUp,
   Users
 } from 'lucide-react';
 import { Card, Modal } from '../ui';
-import CashierDashboard from './CashierDashboard'; // Import du nouveau dashboard
+import CashierDashboard from './CashierDashboard';
 
 export default function CaisseManager({ currentUser }) {
   const [produitsBoutique, setProduitsBoutique] = useState([]);
@@ -35,7 +33,6 @@ export default function CaisseManager({ currentUser }) {
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    // Charger les données seulement pour les onglets caisse et ventes
     if (activeTab !== 'dashboard') {
       loadData();
     }
@@ -52,7 +49,6 @@ export default function CaisseManager({ currentUser }) {
       if (stockResult.error) throw new Error(stockResult.error);
       if (ventesResult.error) throw new Error(ventesResult.error);
 
-      // Filtrer seulement les produits avec stock > 0 ET prix défini
       const produitsDisponibles = (stockResult.stock || []).filter(p => 
         (p.stock_reel || 0) > 0 && (p.prix_vente || 0) > 0 && p.prix_defini
       );
@@ -67,10 +63,9 @@ export default function CaisseManager({ currentUser }) {
     }
   };
 
-  // Fonctions de gestion du panier
   const ajouterAuPanier = (produit) => {
     const existant = panier.find(item => item.id === produit.produit_id);
-    
+
     if (existant) {
       if (existant.quantite >= produit.stock_reel) {
         alert(`Stock insuffisant ! Maximum disponible : ${produit.stock_reel}`);
@@ -120,268 +115,153 @@ export default function CaisseManager({ currentUser }) {
     setPanier([]);
   };
 
-  // Calculs
   const totalPanier = panier.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
   const montantDonneNum = parseFloat(montantDonne) || 0;
   const monnaieARendre = montantDonneNum - totalPanier;
 
-  // Finaliser la vente
   const finaliserVente = async () => {
-  if (panier.length === 0) {
-    alert('Le panier est vide !');
-    return;
-  }
-
-  if (montantDonneNum < totalPanier) {
-    alert('Le montant donné est insuffisant !');
-    return;
-  }
-
-  try {
-    // Enregistrer la vente
-    const venteData = {
-      items: panier,
-      total: totalPanier,
-      montant_donne: montantDonneNum,
-      monnaie_rendue: monnaieARendre,
-      vendeur_id: currentUser.id
-    };
-
-    const { vente, error } = await caisseService.enregistrerVente(venteData);
-
-    if (error) {
-      alert('Erreur lors de l\'enregistrement : ' + error);
+    if (panier.length === 0) {
+      alert('Le panier est vide !');
       return;
     }
 
-    // Créer le reçu
-    const recu = {
-      numero: vente.numero_ticket,
-      date: new Date().toLocaleString('fr-FR'),
-      items: panier,
-      total: totalPanier,
-      montant_donne: montantDonneNum,
-      monnaie_rendue: monnaieARendre,
-      vendeur: currentUser.nom,
-      boutique: 'Pâtisserie Shine'
-    };
+    if (montantDonneNum < totalPanier) {
+      alert('Le montant donné est insuffisant !');
+      return;
+    }
 
-    // NOUVEAU : Stocker le reçu pour impression
-    setLastReceipt(recu);
-    
-    // NOUVEAU : Lancer l'impression directement
-    setTimeout(() => {
-      imprimerRecu(recu);
-    }, 100);
+    try {
+      const venteData = {
+        items: panier,
+        total: totalPanier,
+        montant_donne: montantDonneNum,
+        monnaie_rendue: monnaieARendre,
+        vendeur_id: currentUser.id
+      };
 
-    // Réinitialiser
-    setPanier([]);
-    setMontantDonne('');
-    
-    // Recharger les données
-    loadData();
-    
-    // Message de succès
-    alert(`✅ Vente finalisée avec succès !\nTicket N° ${vente.numero_ticket}`);
+      const { vente, error } = await caisseService.enregistrerVente(venteData);
 
-  } catch (err) {
-    alert('Erreur lors de la finalisation : ' + err.message);
-  }
-};
-
-  // Imprimer le reçu
-const imprimerRecu = () => {
-  if (!lastReceipt) return;
-
-  const contenuRecu = genererContenuRecu(lastReceipt);
-  const fenetreImpression = window.open('', '_blank', 'width=400,height=600');
-  
-  if (!fenetreImpression) {
-    alert('Impossible d\'ouvrir la fenêtre d\'impression. Vérifiez que les popups ne sont pas bloquées.');
-    return;
-  }
-  
-  fenetreImpression.document.open();
-  fenetreImpression.document.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Reçu ${lastReceipt.numero}</title>
-        <style>
-          * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-          }
-          body { 
-            font-family: 'Courier New', monospace; 
-            font-size: 12px; 
-            padding: 20px;
-            line-height: 1.4;
-          }
-          .recu { 
-            max-width: 300px; 
-            margin: 0 auto; 
-          }
-          .center { 
-            text-align: center; 
-          }
-          .ligne { 
-            border-bottom: 1px dashed #000; 
-            margin: 10px 0; 
-          }
-          .total { 
-            font-weight: bold; 
-            font-size: 14px; 
-          }
-          @media print { 
-            body { 
-              margin: 0; 
-              padding: 10px; 
-            }
-            @page {
-              margin: 0.5cm;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        ${contenuRecu}
-      </body>
-    </html>
-  `);
-  
-  fenetreImpression.document.close();
-  
-  // Attendre que le contenu soit complètement chargé
-  fenetreImpression.onload = function() {
-    // Attendre un court instant pour le rendu
-    setTimeout(() => {
-      fenetreImpression.print();
-      
-      // Gérer la fermeture après impression
-      if (fenetreImpression.onafterprint !== undefined) {
-        // Chrome, Firefox
-        fenetreImpression.onafterprint = function() {
-          fenetreImpression.close();
-        };
-      } else {
-        // Safari, anciens navigateurs
-        // Utiliser matchMedia pour détecter quand l'impression est terminée
-        const mediaQueryList = fenetreImpression.matchMedia('print');
-        mediaQueryList.addListener(function(mql) {
-          if (!mql.matches) {
-            fenetreImpression.close();
-          }
-        });
-        
-        // Fallback avec timeout
-        setTimeout(() => {
-          if (!fenetreImpression.closed) {
-            fenetreImpression.close();
-          }
-        }, 5000); // 5 secondes de délai maximum
+      if (error) {
+        alert('Erreur lors de l\'enregistrement : ' + error);
+        return;
       }
-    }, 250); // 250ms pour s'assurer du rendu complet
+
+      const recu = {
+        numero: vente.numero_ticket,
+        date: new Date().toLocaleString('fr-FR'),
+        items: panier,
+        total: totalPanier,
+        montant_donne: montantDonneNum,
+        monnaie_rendue: monnaieARendre,
+        vendeur: currentUser.nom || currentUser.username,
+        boutique: 'Pâtisserie Shine'
+      };
+
+      setLastReceipt(recu);
+      setShowReceiptModal(true);
+      
+      // Imprimer automatiquement après un court délai
+      setTimeout(() => {
+        imprimerRecu();
+      }, 500);
+
+      setPanier([]);
+      setMontantDonne('');
+      loadData();
+
+    } catch (err) {
+      alert('Erreur lors de la finalisation : ' + err.message);
+    }
   };
-};
 
-// Fonction pour générer le contenu HTML du reçu
-const genererContenuRecu = (recu) => {
-  return `
-    <div class="recu">
-      <div class="center">
-        <h2>${recu.boutique}</h2>
-        <p>Reçu N° ${recu.numero}</p>
-        <p>${recu.date}</p>
-      </div>
-      <div class="ligne"></div>
-      ${recu.items.map(item => `
-        <div style="display: flex; justify-content: space-between; margin: 5px 0;">
-          <span>${item.nom} x${item.quantite}</span>
-          <span>${utils.formatCFA(item.prix * item.quantite)}</span>
+  const imprimerRecu = () => {
+    if (!lastReceipt) return;
+
+    const contenuRecu = `
+      <div style="font-family: 'Courier New', monospace; max-width: 300px; margin: 0 auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h3 style="margin: 5px 0; font-size: 18px;">PÂTISSERIE SHINE</h3>
+          <p style="margin: 5px 0; font-size: 12px;">Tel: 07 07 07 07 07</p>
+          <p style="margin: 5px 0; font-size: 14px;">Reçu N° ${lastReceipt.numero}</p>
+          <p style="margin: 5px 0; font-size: 12px;">${lastReceipt.date}</p>
         </div>
-      `).join('')}
-      <div class="ligne"></div>
-      <div class="total center">
-        <p>TOTAL: ${utils.formatCFA(recu.total)}</p>
-        <p>Montant donné: ${utils.formatCFA(recu.montant_donne)}</p>
-        <p>Monnaie rendue: ${utils.formatCFA(recu.monnaie_rendue)}</p>
+        
+        <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
+        
+        ${lastReceipt.items.map(item => `
+          <div style="margin: 8px 0;">
+            <div style="font-weight: bold;">${item.nom}</div>
+            <div style="display: flex; justify-content: space-between; padding-left: 10px; font-size: 12px;">
+              <span>${item.quantite} × ${utils.formatCFA(item.prix)}</span>
+              <span>${utils.formatCFA(item.prix * item.quantite)}</span>
+            </div>
+          </div>
+        `).join('')}
+        
+        <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
+        
+        <div style="font-weight: bold; font-size: 14px;">
+          <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+            <span>TOTAL:</span>
+            <span>${utils.formatCFA(lastReceipt.total)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+            <span>Espèces:</span>
+            <span>${utils.formatCFA(lastReceipt.montant_donne)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+            <span>Monnaie:</span>
+            <span>${utils.formatCFA(lastReceipt.monnaie_rendue)}</span>
+          </div>
+        </div>
+        
+        <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
+        
+        <div style="text-align: center; margin-top: 15px;">
+          <p style="margin: 5px 0;">Servi par: ${lastReceipt.vendeur}</p>
+          <p style="margin: 10px 0; font-weight: bold;">MERCI DE VOTRE VISITE</p>
+          <p style="margin: 5px 0; font-size: 10px;">À bientôt !</p>
+        </div>
       </div>
-      <div class="ligne"></div>
-      <div class="center">
-        <p>Vendeur: ${recu.vendeur}</p>
-        <p>Merci de votre visite !</p>
-      </div>
-    </div>
-  `;
-};
+    `;
 
-// Fonction pour effectuer la clôture de caisse
-const effectuerCloture = async () => {
-  try {
-    // Calculer le total des ventes du jour
-    const aujourdhui = new Date().toISOString().split('T')[0];
-    
-    const { data: ventes, error } = await supabase
-      .from('ventes')
-      .select('*')
-      .gte('created_at', aujourdhui + 'T00:00:00')
-      .lte('created_at', aujourdhui + 'T23:59:59')
-      .eq('vendeur_id', currentUser.id);
-    
-    if (error) throw error;
-    
-    const montantTotal = ventes.reduce((sum, v) => sum + (v.total || 0), 0);
-    const nombreVentes = ventes.length;
-    
-    // Demander le montant en caisse
-    const montantDeclare = prompt(`Montant théorique: ${montantTotal} FCFA\nEntrez le montant réel en caisse:`);
-    
-    if (!montantDeclare) return;
-    
-    const ecart = parseFloat(montantDeclare) - montantTotal;
-    
-    // Enregistrer la clôture
-    const { error: clotureError } = await supabase
-      .from('arrets_caisse')
-      .insert({
-        vendeur_id: currentUser.id,
-        date_arret: aujourdhui,
-        montant_theorique: montantTotal,
-        montant_declare: parseFloat(montantDeclare),
-        ecart: ecart,
-        nombre_ventes: nombreVentes,
-        details_ventes: { ventes: ventes.map(v => v.id) },
-        statut: 'termine'
-      });
-    
-    if (clotureError) throw clotureError;
-    
-    alert(`Clôture effectuée!\nÉcart: ${ecart} FCFA ${ecart === 0 ? '✓' : ecart > 0 ? '(excédent)' : '(manque)'}`);
-    
-  } catch (error) {
-    console.error('Erreur clôture:', error);
-    alert('Erreur lors de la clôture');
-  }
-};
-// Alternative plus robuste avec gestion des erreurs
-const imprimerRecuAvecGestionErreurs = () => {
-  if (!lastReceipt) {
-    console.error('Aucun reçu à imprimer');
-    return;
-  }
-
-  try {
-    const contenuRecu = genererContenuRecu(lastReceipt);
     const fenetreImpression = window.open('', '_blank', 'width=400,height=600');
     
     if (!fenetreImpression) {
-      alert('Impossible d\'ouvrir la fenêtre d\'impression. Vérifiez que les popups ne sont pas bloquées.');
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'absolute';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow.document;
+      doc.open();
+      doc.write(`
+        <html>
+          <head>
+            <title>Reçu ${lastReceipt.numero}</title>
+            <style>
+              @media print {
+                body { margin: 0; padding: 10px; }
+              }
+            </style>
+          </head>
+          <body>${contenuRecu}</body>
+        </html>
+      `);
+      doc.close();
+
+      setTimeout(() => {
+        iframe.contentWindow.print();
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 100);
+      }, 250);
+      
       return;
     }
-    
+
     fenetreImpression.document.open();
     fenetreImpression.document.write(`
       <!DOCTYPE html>
@@ -390,39 +270,18 @@ const imprimerRecuAvecGestionErreurs = () => {
           <meta charset="UTF-8">
           <title>Reçu ${lastReceipt.numero}</title>
           <style>
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
+            @page { 
+              size: 80mm auto;
+              margin: 5mm;
             }
             body { 
-              font-family: 'Courier New', monospace; 
-              font-size: 12px; 
-              padding: 20px;
-              line-height: 1.4;
-            }
-            .recu { 
-              max-width: 300px; 
-              margin: 0 auto; 
-            }
-            .center { 
-              text-align: center; 
-            }
-            .ligne { 
-              border-bottom: 1px dashed #000; 
-              margin: 10px 0; 
-            }
-            .total { 
-              font-weight: bold; 
-              font-size: 14px; 
+              margin: 0;
+              padding: 10px;
             }
             @media print { 
               body { 
                 margin: 0; 
-                padding: 10px; 
-              }
-              @page {
-                margin: 0.5cm;
+                padding: 5px; 
               }
             }
           </style>
@@ -435,93 +294,74 @@ const imprimerRecuAvecGestionErreurs = () => {
     
     fenetreImpression.document.close();
     
-    // Attendre que le contenu soit complètement chargé
     fenetreImpression.onload = function() {
-      // Attendre un court instant pour le rendu
       setTimeout(() => {
         fenetreImpression.print();
         
-        // Gérer la fermeture après impression
         if (fenetreImpression.onafterprint !== undefined) {
-          // Chrome, Firefox
           fenetreImpression.onafterprint = function() {
             fenetreImpression.close();
           };
         } else {
-          // Safari, anciens navigateurs
-          // Utiliser matchMedia pour détecter quand l'impression est terminée
-          const mediaQueryList = fenetreImpression.matchMedia('print');
-          mediaQueryList.addListener(function(mql) {
-            if (!mql.matches) {
-              fenetreImpression.close();
-            }
-          });
-          
-          // Fallback avec timeout
           setTimeout(() => {
             if (!fenetreImpression.closed) {
               fenetreImpression.close();
             }
-          }, 5000); // 5 secondes de délai maximum
+          }, 5000);
         }
-      }, 250); // 250ms pour s'assurer du rendu complet
+      }, 250);
     };
-    
-  } catch (error) {
-    console.error('Erreur lors de l\'impression:', error);
-    alert('Une erreur est survenue lors de l\'impression. Veuillez réessayer.');
-  }
-};
+  };
 
-  // Créer un iframe caché pour l'impression
-  const iframe = document.createElement('iframe');
-  iframe.style.position = 'absolute';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = 'none';
-  document.body.appendChild(iframe);
-
-  const doc = iframe.contentWindow.document;
-  doc.open();
-  doc.write(`
-    <html>
-      <head>
-        <title>Reçu ${lastReceipt.numero}</title>
-        <style>
-          @media print {
-            body { margin: 0; padding: 10px; }
-          }
-        </style>
-      </head>
-      <body>
-        ${contenuRecu}
-      </body>
-    </html>
-  `);
-  doc.close();
-
-  // Attendre que le contenu soit chargé puis imprimer
-  iframe.contentWindow.focus();
-  setTimeout(() => {
+  const effectuerCloture = async () => {
     try {
-      iframe.contentWindow.print();
-    } catch (e) {
-      console.error('Erreur impression:', e);
-      alert('Impossible d\'imprimer. Utilisez Ctrl+P ou Cmd+P pour imprimer manuellement.');
+      const aujourdhui = new Date().toISOString().split('T')[0];
+      
+      const { data: ventes, error } = await supabase
+        .from('ventes')
+        .select('*')
+        .gte('created_at', aujourdhui + 'T00:00:00')
+        .lte('created_at', aujourdhui + 'T23:59:59')
+        .eq('vendeur_id', currentUser.id);
+      
+      if (error) throw error;
+      
+      const montantTotal = ventes.reduce((sum, v) => sum + (v.total || 0), 0);
+      const nombreVentes = ventes.length;
+      
+      const montantDeclare = prompt(`Montant théorique: ${montantTotal} FCFA\nEntrez le montant réel en caisse:`);
+      
+      if (!montantDeclare) return;
+      
+      const ecart = parseFloat(montantDeclare) - montantTotal;
+      
+      const { error: clotureError } = await supabase
+        .from('arrets_caisse')
+        .insert({
+          vendeur_id: currentUser.id,
+          date_arret: aujourdhui,
+          montant_theorique: montantTotal,
+          montant_declare: parseFloat(montantDeclare),
+          ecart: ecart,
+          nombre_ventes: nombreVentes,
+          details_ventes: { ventes: ventes.map(v => v.id) },
+          statut: 'termine'
+        });
+      
+      if (clotureError) throw clotureError;
+      
+      alert(`Clôture effectuée!\nÉcart: ${ecart} FCFA ${ecart === 0 ? '✓' : ecart > 0 ? '(excédent)' : '(manque)'}`);
+      
+    } catch (error) {
+      console.error('Erreur clôture:', error);
+      alert('Erreur lors de la clôture');
     }
-    // Nettoyer après impression
-    setTimeout(() => {
-      document.body.removeChild(iframe);
-    }, 100);
-  }, 250);
-};
+  };
 
-  // Filtrer les produits selon la recherche
   const produitsFiltres = produitsBoutique.filter(p =>
     p.nom_produit.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Calculer les statistiques du jour
   const statsJour = {
     totalVentes: ventesJour.reduce((sum, v) => sum + (v.total || 0), 0),
     nombreVentes: ventesJour.length,
@@ -563,6 +403,15 @@ const imprimerRecuAvecGestionErreurs = () => {
             <p className="text-sm text-gray-500">Session</p>
             <p className="font-semibold">{new Date().toLocaleDateString('fr-FR')}</p>
           </div>
+          {activeTab === 'caisse' && (
+            <button
+              onClick={effectuerCloture}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center"
+            >
+              <Lock className="w-4 h-4 mr-2" />
+              Clôturer
+            </button>
+          )}
         </div>
       </div>
 
@@ -572,10 +421,9 @@ const imprimerRecuAvecGestionErreurs = () => {
         </div>
       )}
 
-      {/* Onglets améliorés */}
+      {/* Onglets */}
       <div className="border-b border-gray-200 bg-white rounded-t-lg">
         <nav className="-mb-px flex space-x-8 px-6">
-          {/* Onglet Point de Vente */}
           <button
             onClick={() => setActiveTab('caisse')}
             className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
@@ -588,7 +436,6 @@ const imprimerRecuAvecGestionErreurs = () => {
             Point de Vente
           </button>
 
-          {/* Onglet Ventes du Jour */}
           <button
             onClick={() => setActiveTab('ventes')}
             className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
@@ -606,7 +453,6 @@ const imprimerRecuAvecGestionErreurs = () => {
             )}
           </button>
 
-          {/* NOUVEAU - Onglet Tableau de Bord */}
           <button
             onClick={() => setActiveTab('dashboard')}
             className={`py-3 px-1 border-b-2 font-medium text-sm transition-colors ${
@@ -630,24 +476,21 @@ const imprimerRecuAvecGestionErreurs = () => {
       {/* Contenu Point de Vente */}
       {activeTab === 'caisse' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Produits disponibles */}
           <div className="lg:col-span-2">
             <Card>
               <div className="p-6 border-b">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-semibold">Produits Disponibles</h3>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Rechercher un produit..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                    />
-                  </div>
+                  <input
+                    type="text"
+                    placeholder="Rechercher un produit..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                  />
                 </div>
               </div>
-              
+
               <div className="p-4">
                 {produitsFiltres.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
@@ -681,7 +524,6 @@ const imprimerRecuAvecGestionErreurs = () => {
             </Card>
           </div>
 
-          {/* Panier */}
           <div>
             <Card>
               <div className="p-6 border-b">
@@ -750,7 +592,6 @@ const imprimerRecuAvecGestionErreurs = () => {
                       </div>
                     ))}
 
-                    {/* Total et paiement */}
                     <div className="space-y-3 pt-3">
                       <div className="flex justify-between text-lg font-semibold">
                         <span>Total</span>
@@ -802,7 +643,6 @@ const imprimerRecuAvecGestionErreurs = () => {
       {/* Contenu Ventes du Jour */}
       {activeTab === 'ventes' && (
         <div className="space-y-6">
-          {/* Statistiques rapides */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card>
               <div className="p-6">
@@ -843,7 +683,6 @@ const imprimerRecuAvecGestionErreurs = () => {
             </Card>
           </div>
 
-          {/* Liste des ventes */}
           <Card>
             <div className="p-6 border-b">
               <h3 className="text-lg font-semibold">Détail des Ventes du Jour</h3>
@@ -918,7 +757,7 @@ const imprimerRecuAvecGestionErreurs = () => {
         </div>
       )}
 
-      {/* NOUVEAU - Contenu Tableau de Bord */}
+      {/* Contenu Tableau de Bord */}
       {activeTab === 'dashboard' && (
         <div className="bg-gray-50 -m-6 p-6">
           <CashierDashboard currentUser={currentUser} />
@@ -926,13 +765,13 @@ const imprimerRecuAvecGestionErreurs = () => {
       )}
 
       {/* Modal de reçu */}
-      {showReceiptModal && lastReceipt && (
-        <Modal
-          isOpen={showReceiptModal}
-          onClose={() => setShowReceiptModal(false)}
-          title="Reçu de Vente"
-        >
-          <div className="p-6 bg-white" id="receipt-content">
+      <Modal
+        isOpen={showReceiptModal}
+        onClose={() => setShowReceiptModal(false)}
+        title="Reçu de Vente"
+      >
+        {lastReceipt && (
+          <div className="p-6 bg-white">
             <div className="text-center mb-4">
               <h2 className="text-xl font-bold">{lastReceipt.boutique}</h2>
               <p className="text-sm text-gray-500">Ticket N° {lastReceipt.numero}</p>
@@ -978,8 +817,8 @@ const imprimerRecuAvecGestionErreurs = () => {
               </button>
             </div>
           </div>
-        </Modal>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }
