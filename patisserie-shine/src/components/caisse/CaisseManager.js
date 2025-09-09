@@ -190,8 +190,6 @@ export default function CaisseManager({ currentUser }) {
 };
 
   // Imprimer le reçu
-// Remplacez votre fonction imprimerRecu actuelle par celle-ci :
-
 const imprimerRecu = () => {
   if (!lastReceipt) return;
 
@@ -287,6 +285,86 @@ const imprimerRecu = () => {
       }
     }, 250); // 250ms pour s'assurer du rendu complet
   };
+};
+
+// Fonction pour générer le contenu HTML du reçu
+const genererContenuRecu = (recu) => {
+  return `
+    <div class="recu">
+      <div class="center">
+        <h2>${recu.boutique}</h2>
+        <p>Reçu N° ${recu.numero}</p>
+        <p>${recu.date}</p>
+      </div>
+      <div class="ligne"></div>
+      ${recu.items.map(item => `
+        <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+          <span>${item.nom} x${item.quantite}</span>
+          <span>${utils.formatCFA(item.prix * item.quantite)}</span>
+        </div>
+      `).join('')}
+      <div class="ligne"></div>
+      <div class="total center">
+        <p>TOTAL: ${utils.formatCFA(recu.total)}</p>
+        <p>Montant donné: ${utils.formatCFA(recu.montant_donne)}</p>
+        <p>Monnaie rendue: ${utils.formatCFA(recu.monnaie_rendue)}</p>
+      </div>
+      <div class="ligne"></div>
+      <div class="center">
+        <p>Vendeur: ${recu.vendeur}</p>
+        <p>Merci de votre visite !</p>
+      </div>
+    </div>
+  `;
+};
+
+// Fonction pour effectuer la clôture de caisse
+const effectuerCloture = async () => {
+  try {
+    // Calculer le total des ventes du jour
+    const aujourdhui = new Date().toISOString().split('T')[0];
+    
+    const { data: ventes, error } = await supabase
+      .from('ventes')
+      .select('*')
+      .gte('created_at', aujourdhui + 'T00:00:00')
+      .lte('created_at', aujourdhui + 'T23:59:59')
+      .eq('vendeur_id', currentUser.id);
+    
+    if (error) throw error;
+    
+    const montantTotal = ventes.reduce((sum, v) => sum + (v.total || 0), 0);
+    const nombreVentes = ventes.length;
+    
+    // Demander le montant en caisse
+    const montantDeclare = prompt(`Montant théorique: ${montantTotal} FCFA\nEntrez le montant réel en caisse:`);
+    
+    if (!montantDeclare) return;
+    
+    const ecart = parseFloat(montantDeclare) - montantTotal;
+    
+    // Enregistrer la clôture
+    const { error: clotureError } = await supabase
+      .from('arrets_caisse')
+      .insert({
+        vendeur_id: currentUser.id,
+        date_arret: aujourdhui,
+        montant_theorique: montantTotal,
+        montant_declare: parseFloat(montantDeclare),
+        ecart: ecart,
+        nombre_ventes: nombreVentes,
+        details_ventes: { ventes: ventes.map(v => v.id) },
+        statut: 'termine'
+      });
+    
+    if (clotureError) throw clotureError;
+    
+    alert(`Clôture effectuée!\nÉcart: ${ecart} FCFA ${ecart === 0 ? '✓' : ecart > 0 ? '(excédent)' : '(manque)'}`);
+    
+  } catch (error) {
+    console.error('Erreur clôture:', error);
+    alert('Erreur lors de la clôture');
+  }
 };
 // Alternative plus robuste avec gestion des erreurs
 const imprimerRecuAvecGestionErreurs = () => {
