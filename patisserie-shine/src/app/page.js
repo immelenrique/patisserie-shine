@@ -26,7 +26,8 @@ import { supabase, authService, userService } from '../lib/supabase';
 import { permissionsService } from '../services/permissionsService';
 import NotificationCenter from '../components/notifications/NotificationCenter';
 import CashierDashboard from '../components/caisse/CashierDashboard';
-
+import DepensesManager from '../components/depenses/DepensesManager';
+import { Receipt } from 'lucide-react';
 
 import { 
   LogOut, User, KeyRound, LayoutDashboard, Package, 
@@ -357,6 +358,7 @@ useEffect(() => {
     { id: 'production', label: 'Production', icon: ChefHat, permission: 'view_production' },
     { id: 'caisse', label: 'Caisse', icon: CreditCard, permission: 'view_caisse' },
     { id: 'comptabilite', label: 'Comptabilité', icon: Calculator, permission: 'view_comptabilite' },
+    { id: 'depenses', label: 'Dépenses', icon: Receipt, permission: 'manage_depenses', adminOnly: true },
     { id: 'unites', label: 'Unités', icon: Ruler, permission: 'manage_units', adminOnly: true },
     { id: 'equipe', label: 'Équipe', icon: Users, permission: 'manage_team', adminOnly: true },
     { id: 'users', label: 'Utilisateurs', icon: UserCog, permission: 'manage_users', adminOnly: true },
@@ -490,9 +492,8 @@ console.log('Available:', availableTabs.map(t => t.label));
         {activeTab === 'equipe' && <TeamManager currentUser={currentUser} />}
         {activeTab === 'users' && <UserManagement currentUser={currentUser} />}
         {activeTab === 'permissions' && <PermissionsManager currentUser={currentUser} />}
-        {activeTab === 'caisse' && hasPermission('view_caisse') && (
-    <CashierDashboard /> 
-  )}
+        {activeTab === 'caisse' && hasPermission('view_caisse') && (<CashierDashboard /> )}
+        {activeTab === 'depenses' && hasPermission('manage_depenses') && (<DepensesManager currentUser={currentUser} />)} 
       </main>
 
       {/* Modal changement mot de passe */}
