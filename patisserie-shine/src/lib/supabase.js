@@ -110,6 +110,192 @@ export const utils = {
   }
 }
 
+// ===================== SERVICES HISTORIQUE VENTES =====================
+// À ajouter dans src/lib/supabase.js
+
+export const historiqueVentesService = {
+  /**
+   * Récupérer l'historique des ventes d'un employé pour une date donnée
+   * @param {string} vendeurId - ID de l'employé (UUID)
+   * @param {string} date - Date au format YYYY-MM-DD
+   * @returns {Object} { ventes: Array, error: string|null }
+   */
+  async getHistoriqueEmployeParDate(vendeurId, date) {
+    try {
+      // Validation des paramètres
+      if (!vendeurId || !date) {
+        return { 
+          ventes: [], 
+          error: 'Paramètres manquants: vendeurId et date sont requis' 
+        };
+      }
+
+      // Définir les bornes temporelles pour la journée
+      const dateDebut = date + 'T00:00:00.000Z';
+      const dateFin = date + 'T23:59:59.999Z';
+
+      // Récupérer les ventes de l'employé pour la date
+      const { data: ventes, error: ventesError } = await supabase
+        .from('ventes')
+        .select(`
+          id,
+          numero_ticket,
+          total,
+          montant_donne,
+          monnaie_rendue,
+          created_at,
+          statut,
+          vendeur:profiles!ventes_vendeur_id_fkey(
+            id,
+            nom,
+            username
+          )
+        `)
+        .eq('vendeur_id', vendeurId)
+        .gte('created_at', dateDebut)
+        .lte('created_at', dateFin)
+        .eq('statut', 'validee')
+        .order('created_at', { ascending: false });
+
+      if (ventesError) {
+        console.error('Erreur getHistoriqueEmployeParDate:', ventesError);
+        return { ventes: [], error: ventesError.message };
+      }
+
+      // Pour chaque vente, récupérer les lignes de vente (articles)
+      const ventesAvecDetails = await Promise.all(
+        (ventes || []).map(async (vente) => {
+          try {
+            const { data: lignes, error: lignesError } = await supabase
+              .from('lignes_vente')
+              .select('*')
+              .eq('vente_id', vente.id)
+              .order('id', { ascending: true });
+
+            if (lignesError) {
+              console.error('Erreur lignes_vente:', lignesError);
+              return { ...vente, items: [] };
+            }
+
+            return {
+              ...vente,
+              items: lignes || [],
+              nombre_articles: (lignes || []).reduce((sum, l) => sum + (l.quantite || 0), 0)
+            };
+          } catch (err) {
+            console.error('Erreur détails vente:', err);
+            return { ...vente, items: [], nombre_articles: 0 };
+          }
+        })
+      );
+
+      // Calculer les statistiques du jour
+      const statistiques = {
+        nombre_ventes: ventesAvecDetails.length,
+        total_jour: ventesAvecDetails.reduce((sum, v) => sum + (v.total || 0), 0),
+        total_articles: ventesAvecDetails.reduce((sum, v) => sum + (v.nombre_articles || 0), 0),
+        ticket_moyen: ventesAvecDetails.length > 0 
+          ? ventesAvecDetails.reduce((sum, v) => sum + (v.total || 0), 0) / ventesAvecDetails.length 
+          : 0
+      };
+
+      return { 
+        ventes: ventesAvecDetails,
+        statistiques,
+        error: null 
+      };
+    } catch (error) {
+      console.error('Erreur dans getHistoriqueEmployeParDate:', error);
+      return { ventes: [], statistiques: null, error: error.message };
+    }
+  },
+
+  /**
+   * Récupérer tous les employés qui peuvent vendre (boutique + admin)
+   * @returns {Object} { employes: Array, error: string|null }
+   */
+  async getEmployesVendeurs() {
+    try {
+      const { data: employes, error } = await supabase
+        .from('profiles')
+        .select('id, nom, username, role')
+        .in('role', ['admin', 'employe_boutique'])
+        .eq('actif', true)
+        .order('nom', { ascending: true });
+
+      if (error) {
+        console.error('Erreur getEmployesVendeurs:', error);
+        return { employes: [], error: error.message };
+      }
+
+      return { employes: employes || [], error: null };
+    } catch (error) {
+      console.error('Erreur dans getEmployesVendeurs:', error);
+      return { employes: [], error: error.message };
+    }
+  },
+
+  /**
+   * Récupérer les détails complets d'une vente (pour afficher la facture)
+   * @param {number} venteId - ID de la vente
+   * @returns {Object} { vente: Object, error: string|null }
+   */
+  async getDetailsVente(venteId) {
+    try {
+      if (!venteId) {
+        return { vente: null, error: 'ID de vente manquant' };
+      }
+
+      const { data: vente, error: venteError } = await supabase
+        .from('ventes')
+        .select(`
+          id,
+          numero_ticket,
+          total,
+          montant_donne,
+          monnaie_rendue,
+          created_at,
+          statut,
+          vendeur:profiles!ventes_vendeur_id_fkey(
+            id,
+            nom,
+            username
+          )
+        `)
+        .eq('id', venteId)
+        .single();
+
+      if (venteError) {
+        console.error('Erreur getDetailsVente:', venteError);
+        return { vente: null, error: venteError.message };
+      }
+
+      // Récupérer les lignes de vente
+      const { data: lignes, error: lignesError } = await supabase
+        .from('lignes_vente')
+        .select('*')
+        .eq('vente_id', venteId)
+        .order('id', { ascending: true });
+
+      if (lignesError) {
+        console.error('Erreur lignes_vente:', lignesError);
+        return { vente: null, error: lignesError.message };
+      }
+
+      return {
+        vente: {
+          ...vente,
+          items: lignes || []
+        },
+        error: null
+      };
+    } catch (error) {
+      console.error('Erreur dans getDetailsVente:', error);
+      return { vente: null, error: error.message };
+    }
+  }
+};
+
 // ===================== SERVICES D'AUTHENTIFICATION =====================
 export const authService = {
   async signInWithUsername(usernameOrEmail, password) {
@@ -3336,6 +3522,7 @@ export const permissionService = {
   }
    }
   export default supabase
+
 
 
 
