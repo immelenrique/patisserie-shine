@@ -1,8 +1,9 @@
-// src/components/admin/HistoriqueEmployeVentes.js
+// src/components/admin/HistoriqueVentesParEmploye.js
 "use client";
 
 import { useState, useEffect } from 'react';
-import { historiqueVentesService, utils } from '../../lib/supabase';
+import { historiqueVentesService } from '../../lib/historiqueVentes';
+import { utils } from '../../lib/supabase';
 import { 
   User, 
   Calendar, 
