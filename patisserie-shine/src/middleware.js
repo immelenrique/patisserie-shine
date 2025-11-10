@@ -9,17 +9,26 @@ export async function middleware(req) {
   // 1. Protection des routes API admin
   if (pathname.startsWith('/api/admin')) {
     try {
-      // IMPORTANT: Pour les routes API, on laisse passer la requête
-      // La vérification se fera dans l'API route elle-même
-      // car le middleware ne peut pas bien gérer les Bearer tokens
-      
-      // Option 1: Désactiver complètement la vérification middleware pour /api/admin/create-user
+      // IMPORTANT: /api/admin/create-user utilise Bearer token authentication
+      // qui est vérifiée dans l'API route elle-même (lignes 44-91 de route.js)
+      // Le middleware laisse passer la requête mais l'API route vérifie:
+      // 1. Présence du Bearer token
+      // 2. Validité du token via supabase.auth.getUser()
+      // 3. Permissions admin du profil utilisateur
       if (pathname === '/api/admin/create-user') {
-        console.log('[Middleware] Bypass pour create-user - vérification dans l\'API route');
+        // Vérification obligatoire : token doit être présent
+        const authHeader = req.headers.get('authorization')
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+          return NextResponse.json(
+            { error: 'Non autorisé - Token d\'authentification requis' },
+            { status: 401 }
+          )
+        }
+        // Token présent, vérification complète dans l'API route
         return res;
       }
       
-      // Option 2: Pour les autres routes admin, essayer de vérifier avec le cookie de session
+      // Pour les autres routes admin, vérifier avec le cookie de session ou Bearer token
       const supabase = createMiddlewareClient({ req, res })
       const { data: { session } } = await supabase.auth.getSession()
       
@@ -27,7 +36,6 @@ export async function middleware(req) {
       const authHeader = req.headers.get('authorization')
       
       if (!session && !authHeader) {
-        console.log('[Middleware] Pas de session ni de token Bearer');
         return NextResponse.json(
           { error: 'Non autorisé - Authentification requise' },
           { status: 401 }
@@ -36,7 +44,6 @@ export async function middleware(req) {
       
       // Si on a un Bearer token, on laisse passer et l'API route vérifiera
       if (authHeader && authHeader.startsWith('Bearer ')) {
-        console.log('[Middleware] Bearer token détecté, passage à l\'API route');
         return res;
       }
       
@@ -50,14 +57,11 @@ export async function middleware(req) {
           .single()
         
         if (profile?.role !== 'admin' && profile?.username !== 'proprietaire') {
-          console.log('[Middleware] Accès refusé pour:', profile?.username);
           return NextResponse.json(
             { error: 'Accès refusé - Droits administrateur requis' },
             { status: 403 }
           )
         }
-        
-        console.log(`[Middleware] Admin ${profile.username} accède à ${pathname}`);
       }
       
     } catch (error) {
