@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { comptabiliteService, caisseService, utils, supabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase-client';
+import { comptabiliteService, caisseService } from '../../services';
+import { utils } from '../../utils/formatters';
 import { BarChart3, TrendingUp, TrendingDown, DollarSign, Calendar, Download, FileText, PieChart, Calculator, Receipt } from 'lucide-react';
 import { Card, StatCard,Modal } from '../ui';
 

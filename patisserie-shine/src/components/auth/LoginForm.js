@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ChefHat, User, Lock, Eye, EyeOff, RefreshCw } from 'lucide-react';
-import { authService } from '../../lib/supabase';
+import { authService } from '../../services';
 
 export default function LoginForm({ onLogin }) {
   const [username, setUsername] = useState('');

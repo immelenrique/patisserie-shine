@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { uniteService, utils } from '../../lib/supabase';
+import { uniteService } from '../../services';
+import { utils } from '../../utils/formatters';
 import { Plus, Edit, Trash2, Calculator } from 'lucide-react';
 import { Card, Modal } from '../ui';
 

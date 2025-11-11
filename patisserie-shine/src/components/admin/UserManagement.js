@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { supabase, userService } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase-client';
+import { userService } from '../../services';
 
 import { Plus, Users, User, Crown, ChefHat, ShoppingBag, Trash2, Edit, UserPlus, AlertTriangle, CheckCircle, Key, Shield, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import { Card, Modal } from '../ui';

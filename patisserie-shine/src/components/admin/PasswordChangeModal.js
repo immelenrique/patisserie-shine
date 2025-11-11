@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Lock, Eye, EyeOff, Shield, AlertTriangle, CheckCircle } from 'lucide-react';
 import { Modal } from '../ui';
-import { authService } from '../../lib/supabase';
+import { authService } from '../../services';
 
 export default function PasswordChangeModal({ isOpen, user, onPasswordChanged, onLogout }) {
   const [passwords, setPasswords] = useState({

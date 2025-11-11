@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { userService } from '../../lib/supabase';
+import { userService } from '../../services';
 import { Plus, Users, User, Crown, ChefHat, ShoppingBag } from 'lucide-react';
 import { Card, Modal } from '../ui';
 

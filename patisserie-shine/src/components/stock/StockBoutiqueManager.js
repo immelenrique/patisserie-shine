@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { stockBoutiqueService, caisseService, utils, supabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase-client';
+import { stockBoutiqueService, caisseService } from '../../services';
+import { utils } from '../../utils/formatters';
 import { Store, Package, AlertTriangle, TrendingUp, TrendingDown, Edit, Check, X, DollarSign, ShoppingCart, Eye, EyeOff, Archive, Boxes } from 'lucide-react';
 import { Card, StatCard, Modal } from '../ui';
 

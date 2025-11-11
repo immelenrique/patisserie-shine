@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react';
 import { Search, Plus, Edit, Trash2, Package, Store } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
-import { productService, uniteService, referentielService, utils, supabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase-client';
+import { productService, uniteService, referentielService } from '../../services';
+import { utils } from '../../utils/formatters';
 
 
 export default function StockManager({ currentUser }) {

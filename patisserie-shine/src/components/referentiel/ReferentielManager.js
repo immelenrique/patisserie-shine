@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Package, Search, Upload, Download } from 'lucide-react';
 import { Card, Modal } from '../ui';
-import { referentielService, uniteService, utils } from '../../lib/supabase';
+import { referentielService, uniteService } from '../../services';
+import { utils } from '../../utils/formatters';
 
 export default function ReferentielManager({ currentUser }) {
   const [referentiels, setReferentiels] = useState([]);

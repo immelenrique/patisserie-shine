@@ -23,8 +23,8 @@ import {
 } from 'lucide-react';
 import { Card, StatCard } from '../ui';
 import { cashierDashboardService } from '../../services/cashierDashboardService';
-import { authService } from '../../lib/supabase';
-import { utils } from '../../lib/utils';
+import { authService } from '../../services';
+import { utils } from '../../utils/formatters';
 import HistoriqueEmployeVentes from './HistoriqueEmployeVentes';
 
 // Composant de graphique des ventes

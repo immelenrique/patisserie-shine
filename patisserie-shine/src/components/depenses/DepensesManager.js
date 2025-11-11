@@ -5,7 +5,7 @@ import {
   AlertCircle, TrendingUp, TrendingDown, Receipt,
   Upload, File, Image, Eye, Paperclip
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase-client';
 
 const DepensesManager = ({ currentUser }) => {
   const [depenses, setDepenses] = useState([]);

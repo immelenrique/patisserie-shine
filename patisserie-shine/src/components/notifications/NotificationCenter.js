@@ -3,8 +3,8 @@
 
 import { useState, useEffect } from 'react';
 import { Bell, X, Check, AlertCircle, Package, CheckCircle, XCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { utils } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase-client';
+import { utils } from '../../utils/formatters';
 
 export default function NotificationCenter({ currentUser }) {
   const [notifications, setNotifications] = useState([]);

@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react';
 import { Plus, ChefHat, Calculator, Trash2, Package, Copy, DollarSign } from 'lucide-react';
 import { Card, Modal } from '../ui';
-import { recetteService, productService, utils, supabase } from '../../lib/supabase'; 
+import { supabase } from '../../lib/supabase-client';
+import { recetteService, productService } from '../../services';
+import { utils } from '../../utils/formatters'; 
 
 export default function RecettesManager({ currentUser }) {
   const [recettes, setRecettes] = useState([]);

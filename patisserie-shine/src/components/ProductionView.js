@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { productionService, recetteService, utils } from '@/lib/supabase';
+import { productionService, recetteService } from '@/services';
+import { utils } from '@/utils/formatters';
 import { ChefHat, Plus, Calendar, MapPin, User, AlertTriangle, CheckCircle, Clock, Package } from 'lucide-react';
 
 export default function ProductionView() {

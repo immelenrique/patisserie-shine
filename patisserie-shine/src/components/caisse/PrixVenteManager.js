@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { productService, utils } from '../../lib/supabase';
+import { productService } from '../../services';
+import { utils } from '../../utils/formatters';
 import { DollarSign, Plus, Edit, TrendingUp, Package, AlertTriangle, CheckCircle, Save } from 'lucide-react';
 import { Card, Modal } from '../ui';
 

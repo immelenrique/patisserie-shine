@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { demandeService, utils, supabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase-client';
+import { demandeService } from '../../services';
+import { utils } from '../../utils/formatters';
 import {
   Plus, ShoppingCart, Check, X, Clock, Package,
   Warehouse, Store, Trash2, Search, Factory,

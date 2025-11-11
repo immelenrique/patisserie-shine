@@ -3,7 +3,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { productionService, recetteService, utils, supabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase-client';
+import { productionService, recetteService } from '../../services';
+import { utils } from '../../utils/formatters';
 import { Plus, ChefHat, Calendar, MapPin, User, AlertTriangle, CheckCircle, Clock, Package, Info, Store } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
 

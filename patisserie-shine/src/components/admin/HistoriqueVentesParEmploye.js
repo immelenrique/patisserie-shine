@@ -2,8 +2,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { historiqueVentesService } from '../../lib/historiqueVentes';
-import { utils } from '../../lib/supabase';
+import { historiqueVentesService } from '../../services';
+import { utils } from '../../utils/formatters';
 import { 
   User, 
   Calendar, 

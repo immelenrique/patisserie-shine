@@ -2,7 +2,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { caisseService, stockBoutiqueService, utils, supabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase-client';
+import { caisseService, stockBoutiqueService } from '../../services';
+import { utils } from '../../utils/formatters';
 import { 
   ShoppingCart, 
   Plus, 

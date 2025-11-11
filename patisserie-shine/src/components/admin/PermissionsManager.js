@@ -1,8 +1,8 @@
 // src/components/admin/PermissionsManager.js
 import { useState, useEffect } from 'react';
 import { Shield, Plus, Users, Lock, Database } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { permissionsService } from '../../services/permissionsService';
+import { supabase } from '../../lib/supabase-client';
+import { permissionService } from '../../services';
 
 export default function PermissionsManager({ currentUser }) {
   const [activeTab, setActiveTab] = useState('modules');

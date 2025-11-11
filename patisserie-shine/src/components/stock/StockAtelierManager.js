@@ -3,7 +3,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { stockAtelierService, productService, utils } from '../../lib/supabase';
+import { stockAtelierService, productService } from '../../services';
+import { utils } from '../../utils/formatters';
 import { Package, Plus, Search, ArrowRight, AlertTriangle, History } from 'lucide-react';
 import { Card, Modal } from '../ui';
 
