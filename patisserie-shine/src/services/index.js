@@ -1,23 +1,38 @@
 // src/services/index.js
 // Barrel export - Point d'entrée centralisé pour tous les services
 
+// ========== Services Utilisateurs & Permissions ==========
 export { authService } from './authService'
 export { userService } from './userService'
 export { permissionService } from './permissionService'
+
+// ========== Services Produits & Stock ==========
+export { productService } from './productService'
+export { stockAtelierService } from './stockAtelierService'
+export { stockBoutiqueService } from './stockBoutiqueService'
+export { mouvementStockService } from './mouvementStockService'
+
+// ========== Services Demandes ==========
+export { demandeService } from './demandeService'
+
+// ========== Services Production & Recettes ==========
+export { productionService } from './productionService'
+export { recetteService } from './recetteService'
+
+// ========== Services Prix & Caisse ==========
+export { prixService } from './prixService'
+export { caisseService } from './caisseService'
+export { arretCaisseService } from './arretCaisseService'
+
+// ========== Services Comptabilité ==========
+export { comptabiliteService } from './comptabiliteService'
+
+// ========== Services Ventes & Historique ==========
 export { historiqueVentesService } from './historiqueVentesService'
 
-// Note: D'autres services seront ajoutés progressivement lors de la migration depuis lib/supabase.js  
-// - statsService
-// - productService
-// - demandeService
-// - stockAtelierService
-// - stockBoutiqueService
-// - prixService
-// - caisseService
-// - comptabiliteService
-// - productionService
-// - recetteService
-// - referentielService
-// - uniteService
-// - mouvementStockService
-// - arretCaisseService
+// ========== Services Statistiques ==========
+export { statsService } from './statsService'
+
+// ========== Services Référentiel & Unités ==========
+export { referentielService } from './referentielService'
+export { uniteService } from './uniteService'
