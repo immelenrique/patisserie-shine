@@ -2,11 +2,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { 
-  TrendingUp, 
-  DollarSign, 
-  ShoppingCart, 
-  Clock, 
+import {
+  TrendingUp,
+  DollarSign,
+  ShoppingCart,
+  Clock,
   Calendar,
   User,
   Users,
@@ -18,12 +18,14 @@ import {
   RefreshCw,
   Eye,
   Loader2,
-  Trophy
+  Trophy,
+  ChevronLeft
 } from 'lucide-react';
 import { Card, StatCard } from '../ui';
 import { cashierDashboardService } from '../../services/cashierDashboardService';
 import { authService } from '../../lib/supabase';
 import { utils } from '../../lib/utils';
+import HistoriqueEmployeVentes from './HistoriqueEmployeVentes';
 
 // Composant de graphique des ventes
 const SalesChart = ({ data, loading }) => {
@@ -74,6 +76,7 @@ export default function CashierDashboard({ currentUser: propsUser }) {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  const [activeView, setActiveView] = useState('dashboard'); // 'dashboard' ou 'historique'
 
   // Auto-refresh toutes les 30 secondes en production
   useEffect(() => {
@@ -277,6 +280,24 @@ setCurrentUser(user);
     );
   }
 
+  // Si on est en mode historique, afficher le composant Historique
+  if (activeView === 'historique') {
+    return (
+      <div className="space-y-6">
+        {/* Bouton retour */}
+        <button
+          onClick={() => setActiveView('dashboard')}
+          className="flex items-center gap-2 text-blue-600 hover:text-blue-700 transition"
+        >
+          <ChevronLeft className="w-4 h-4" />
+          Retour au tableau de bord
+        </button>
+
+        <HistoriqueEmployeVentes currentUser={currentUser} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* En-tête avec filtres */}
@@ -330,6 +351,15 @@ setCurrentUser(user);
                   ))}
                 </select>
               )}
+
+              {/* Bouton historique */}
+              <button
+                onClick={() => setActiveView('historique')}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2"
+              >
+                <Eye className="w-4 h-4" />
+                Historique détaillé
+              </button>
 
               {/* Bouton rafraîchir */}
               <button

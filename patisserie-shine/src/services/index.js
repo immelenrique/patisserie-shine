@@ -3,10 +3,10 @@
 
 export { authService } from './authService'
 export { userService } from './userService'
+export { permissionService } from './permissionService'
 export { historiqueVentesService } from './historiqueVentesService'
 
-// Note: D'autres services seront ajoutés progressivement lors de la migration depuis lib/supabase.js
-// - permissionService  
+// Note: D'autres services seront ajoutés progressivement lors de la migration depuis lib/supabase.js  
 // - statsService
 // - productService
 // - demandeService

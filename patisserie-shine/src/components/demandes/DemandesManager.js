@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { demandeService, utils, supabase } from '../../lib/supabase';
-import { 
-  Plus, ShoppingCart, Check, X, Clock, Package, 
-  Warehouse, Store, Trash2, Search, Factory, 
-  FileCheck, FileX, Eye, Archive,RotateCcw
+import {
+  Plus, ShoppingCart, Check, X, Clock, Package,
+  Warehouse, Store, Trash2, Search, Factory,
+  FileCheck, FileX, Eye, Archive, RotateCcw,
+  FileText, AlertCircle
 } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
 
@@ -861,9 +862,9 @@ export default function DemandesManager({ currentUser }) {
   // ============ REFUS DE DEMANDE ============
   const handleRejectGroupedDemande = async (demandeGroupeeId) => {
     if (!confirm('Êtes-vous sûr de vouloir refuser cette demande ?')) return;
-    
+
     const raison = prompt('Raison du refus (optionnel):');
-    
+
     try {
       // Passer en traitement puis refuser
       await supabase
@@ -871,12 +872,22 @@ export default function DemandesManager({ currentUser }) {
         .update({ statut: 'en_traitement' })
         .eq('id', demandeGroupeeId);
 
+      // Préparer les détails avec la raison du refus
+      const detailsValidation = raison ? {
+        refus: {
+          date: new Date().toISOString(),
+          par: currentUser.id,
+          raison: raison
+        }
+      } : null;
+
       await supabase
         .from('demandes_groupees')
         .update({
           statut: 'refusee',
           valideur_id: currentUser.id,
-          date_validation: new Date().toISOString()
+          date_validation: new Date().toISOString(),
+          details_validation: detailsValidation
         })
         .eq('id', demandeGroupeeId);
 
@@ -889,9 +900,32 @@ export default function DemandesManager({ currentUser }) {
         })
         .eq('demande_groupee_id', demandeGroupeeId);
 
+      // Notifier le demandeur
+      const { data: demandeInfo } = await supabase
+        .from('demandes_groupees')
+        .select('demandeur_id, nombre_produits')
+        .eq('id', demandeGroupeeId)
+        .single();
+
+      if (demandeInfo?.demandeur_id && demandeInfo.demandeur_id !== currentUser.id) {
+        await supabase
+          .from('notifications')
+          .insert({
+            destinataire_id: demandeInfo.demandeur_id,
+            emetteur_id: currentUser.id,
+            type: 'demande_refusee',
+            message: `Votre demande a été refusée par ${currentUser.nom || currentUser.username}`,
+            details: raison ? `Raison: ${raison}` : 'Aucune raison spécifiée',
+            lien: `/demandes#${demandeGroupeeId}`,
+            lu: false,
+            priorite: 'normale',
+            created_at: new Date().toISOString()
+          });
+      }
+
       await loadData();
-      alert('Demande refusée');
-      
+      alert(raison ? `Demande refusée.\nRaison: ${raison}` : 'Demande refusée');
+
     } catch (err) {
       console.error('Erreur:', err);
       alert('❌ Erreur lors du refus');
@@ -1262,14 +1296,14 @@ export default function DemandesManager({ currentUser }) {
         </form>
       </Modal>
 
-      {/* Modal Détails reste identique */}
-      <Modal 
-        isOpen={showDetailsModal} 
+      {/* Modal Détails avec commentaires */}
+      <Modal
+        isOpen={showDetailsModal}
         onClose={() => {
           setShowDetailsModal(false);
           setSelectedGroupedDemande(null);
-        }} 
-        title="Détails de la Demande" 
+        }}
+        title="Détails de la Demande"
         size="xl"
       >
         {selectedGroupedDemande && (
@@ -1297,6 +1331,132 @@ export default function DemandesManager({ currentUser }) {
                 </div>
               </div>
             </div>
+
+            {/* Commentaire du demandeur */}
+            {selectedGroupedDemande.commentaire && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <FileText className="w-5 h-5 text-blue-600 mr-2 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-blue-900 mb-1">Commentaire du demandeur</p>
+                    <p className="text-sm text-blue-800">{selectedGroupedDemande.commentaire}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Informations de validation/refus */}
+            {selectedGroupedDemande.valideur && (
+              <div className={`border rounded-lg p-4 ${
+                selectedGroupedDemande.statut === 'validee' || selectedGroupedDemande.statut === 'partiellement_validee'
+                  ? 'bg-green-50 border-green-200'
+                  : selectedGroupedDemande.statut === 'refusee'
+                  ? 'bg-red-50 border-red-200'
+                  : 'bg-gray-50 border-gray-200'
+              }`}>
+                <div className="flex items-start">
+                  {selectedGroupedDemande.statut === 'validee' || selectedGroupedDemande.statut === 'partiellement_validee' ? (
+                    <Check className="w-5 h-5 text-green-600 mr-2 mt-0.5" />
+                  ) : selectedGroupedDemande.statut === 'refusee' ? (
+                    <X className="w-5 h-5 text-red-600 mr-2 mt-0.5" />
+                  ) : (
+                    <Clock className="w-5 h-5 text-gray-600 mr-2 mt-0.5" />
+                  )}
+                  <div className="flex-1">
+                    <p className={`text-sm font-medium mb-1 ${
+                      selectedGroupedDemande.statut === 'validee' || selectedGroupedDemande.statut === 'partiellement_validee'
+                        ? 'text-green-900'
+                        : selectedGroupedDemande.statut === 'refusee'
+                        ? 'text-red-900'
+                        : 'text-gray-900'
+                    }`}>
+                      {selectedGroupedDemande.statut === 'validee' && 'Demande validée'}
+                      {selectedGroupedDemande.statut === 'partiellement_validee' && 'Demande partiellement validée'}
+                      {selectedGroupedDemande.statut === 'refusee' && 'Demande refusée'}
+                      {selectedGroupedDemande.statut === 'annulee' && 'Demande annulée'}
+                    </p>
+                    <p className={`text-sm ${
+                      selectedGroupedDemande.statut === 'validee' || selectedGroupedDemande.statut === 'partiellement_validee'
+                        ? 'text-green-800'
+                        : selectedGroupedDemande.statut === 'refusee'
+                        ? 'text-red-800'
+                        : 'text-gray-800'
+                    }`}>
+                      Par: {selectedGroupedDemande.valideur.nom || selectedGroupedDemande.valideur.username}
+                    </p>
+                    {selectedGroupedDemande.date_validation && (
+                      <p className={`text-xs mt-1 ${
+                        selectedGroupedDemande.statut === 'validee' || selectedGroupedDemande.statut === 'partiellement_validee'
+                          ? 'text-green-700'
+                          : selectedGroupedDemande.statut === 'refusee'
+                          ? 'text-red-700'
+                          : 'text-gray-700'
+                      }`}>
+                        Le {new Date(selectedGroupedDemande.date_validation).toLocaleDateString('fr-FR')} à{' '}
+                        {new Date(selectedGroupedDemande.date_validation).toLocaleTimeString('fr-FR', {
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Raison du refus ou détails d'annulation */}
+                {selectedGroupedDemande.details_validation && (
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    {/* Raison du refus */}
+                    {selectedGroupedDemande.details_validation.refus && (
+                      <div className="bg-red-50 border border-red-200 rounded p-3 mt-2">
+                        <div className="flex items-start">
+                          <AlertCircle className="w-5 h-5 text-red-600 mr-2 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-red-900 mb-1">Raison du refus :</p>
+                            <p className="text-sm text-red-800">
+                              {selectedGroupedDemande.details_validation.refus.raison}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Raison de l'annulation */}
+                    {selectedGroupedDemande.details_validation.annulation && (
+                      <div className="bg-orange-50 border border-orange-200 rounded p-3 mt-2">
+                        <p className="text-sm font-medium text-orange-900 mb-1">Raison de l'annulation :</p>
+                        <p className="text-sm text-orange-800">
+                          {selectedGroupedDemande.details_validation.annulation.raison}
+                        </p>
+                        {selectedGroupedDemande.details_validation.annulation.erreurs &&
+                         selectedGroupedDemande.details_validation.annulation.erreurs.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs font-medium text-orange-900">Erreurs rencontrées :</p>
+                            <ul className="text-xs text-orange-700 list-disc list-inside mt-1">
+                              {selectedGroupedDemande.details_validation.annulation.erreurs.map((err, idx) => (
+                                <li key={idx}>{err}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Erreurs de validation */}
+                    {selectedGroupedDemande.details_validation.erreurs &&
+                     selectedGroupedDemande.details_validation.erreurs.length > 0 && (
+                      <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mt-2">
+                        <p className="text-sm font-medium text-yellow-900 mb-1">Erreurs de validation :</p>
+                        <ul className="text-sm text-yellow-800 list-disc list-inside">
+                          {selectedGroupedDemande.details_validation.erreurs.map((err, idx) => (
+                            <li key={idx}>{err.produit}: {err.erreur}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="max-h-96 overflow-y-auto">
               <table className="min-w-full divide-y divide-gray-200">
