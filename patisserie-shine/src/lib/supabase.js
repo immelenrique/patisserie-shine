@@ -30,6 +30,7 @@ export { supabase } from './supabase-client'
 export { authService } from '../services/authService'
 export { userService } from '../services/userService'
 export { permissionService } from '../services/permissionService'
+export { permissionsService } from '../services/permissionsService'
 
 // Services Produits & Stock
 export { productService } from '../services/productService'
@@ -48,6 +49,7 @@ export { recetteService } from '../services/recetteService'
 export { prixService } from '../services/prixService'
 export { caisseService } from '../services/caisseService'
 export { arretCaisseService } from '../services/arretCaisseService'
+export { cashierDashboardService } from '../services/cashierDashboardService'
 
 // Services Comptabilité
 export { comptabiliteService } from '../services/comptabiliteService'
@@ -61,6 +63,9 @@ export { statsService } from '../services/statsService'
 // Services Référentiel & Unités
 export { referentielService } from '../services/referentielService'
 export { uniteService } from '../services/uniteService'
+
+// Services Notifications
+export { notificationService } from '../services/notificationService'
 
 // ==================== UTILITAIRES (RE-EXPORT) ====================
 // Les utilitaires sont maintenant dans src/utils/formatters.js

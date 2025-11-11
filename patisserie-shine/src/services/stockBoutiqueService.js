@@ -1,8 +1,7 @@
 // src/services/stockBoutiqueService.js
 // Service de gestion du stock boutique (vente)
 import { supabase } from '../lib/supabase-client'
-// TODO: Remplacer par import depuis utils/formatters.js après extraction
-import { utils } from '../lib/supabase'
+import { utils } from '../utils/formatters'
 
 /**
  * Service pour gérer le stock de la boutique (produits prêts à la vente)

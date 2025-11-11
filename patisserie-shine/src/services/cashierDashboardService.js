@@ -1,6 +1,6 @@
 // src/services/cashierDashboardService.js
-import { supabase } from '../lib/supabase';
-import { utils } from '../lib/utils';
+import { supabase } from '../lib/supabase-client'
+import { utils } from '../utils/formatters'
 
 // Cache pour optimiser les performances
 const cache = {

@@ -16,8 +16,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Card, Modal } from '../ui';
-import { historiqueVentesService } from '../../services/historiqueVentesService';
-import { utils } from '../../lib/utils';
+import { historiqueVentesService } from '../../services';
+import { utils } from '../../utils/formatters';
 
 export default function HistoriqueEmployeVentes({ currentUser }) {
   // États

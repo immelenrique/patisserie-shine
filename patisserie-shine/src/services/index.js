@@ -5,6 +5,7 @@
 export { authService } from './authService'
 export { userService } from './userService'
 export { permissionService } from './permissionService'
+export { permissionsService } from './permissionsService'
 
 // ========== Services Produits & Stock ==========
 export { productService } from './productService'
@@ -23,6 +24,7 @@ export { recetteService } from './recetteService'
 export { prixService } from './prixService'
 export { caisseService } from './caisseService'
 export { arretCaisseService } from './arretCaisseService'
+export { cashierDashboardService } from './cashierDashboardService'
 
 // ========== Services Comptabilité ==========
 export { comptabiliteService } from './comptabiliteService'
@@ -36,3 +38,6 @@ export { statsService } from './statsService'
 // ========== Services Référentiel & Unités ==========
 export { referentielService } from './referentielService'
 export { uniteService } from './uniteService'
+
+// ========== Services Notifications ==========
+export { notificationService } from './notificationService'
