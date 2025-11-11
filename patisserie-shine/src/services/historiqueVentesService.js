@@ -1,6 +1,6 @@
 // src/services/historiqueVentesService.js
-import { supabase } from '../lib/supabase';
-import { utils } from '../lib/utils';
+import { supabase } from '../lib/supabase-client'
+import { utils } from '../utils/formatters'
 
 export const historiqueVentesService = {
   /**
