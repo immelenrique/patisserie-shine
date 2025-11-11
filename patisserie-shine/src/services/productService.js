@@ -171,5 +171,81 @@ export const productService = {
       console.error('Erreur dans update:', error)
       return { product: null, error: error.message }
     }
+  },
+
+  /**
+   * Réapprovisionne un produit existant (ajoute du stock)
+   * @param {string} productId - ID du produit à réapprovisionner
+   * @param {Object} reapproData - Données du réapprovisionnement
+   * @param {number} reapproData.quantite_ajoutee - Quantité à ajouter
+   * @param {number} reapproData.prix_achat_total - Prix total de ce réapprovisionnement
+   * @param {string} reapproData.date_achat - Date de cet achat
+   * @returns {Object} { product, error }
+   */
+  async reapprovisionner(productId, reapproData) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+
+      // 1. Récupérer le produit actuel
+      const { data: produitActuel, error: fetchError } = await supabase
+        .from('produits')
+        .select('*, unite:unites(id, value, label)')
+        .eq('id', productId)
+        .single()
+
+      if (fetchError || !produitActuel) {
+        return { product: null, error: 'Produit non trouvé' }
+      }
+
+      // 2. Calculer le nouveau prix d'achat moyen pondéré
+      const quantiteAjoutee = parseFloat(reapproData.quantite_ajoutee)
+      const prixAchatNouveauTotal = parseFloat(reapproData.prix_achat_total)
+      const prixAchatNouveauUnitaire = prixAchatNouveauTotal / quantiteAjoutee
+
+      const quantiteAncienne = parseFloat(produitActuel.quantite)
+      const prixAchatAncien = parseFloat(produitActuel.prix_achat || 0)
+
+      // Prix moyen pondéré
+      const quantiteTotale = quantiteAncienne + quantiteAjoutee
+      const valeurTotaleAncienne = quantiteAncienne * prixAchatAncien
+      const valeurTotaleNouvelle = quantiteAjoutee * prixAchatNouveauUnitaire
+      const prixMoyenPondere = (valeurTotaleAncienne + valeurTotaleNouvelle) / quantiteTotale
+
+      // 3. Mettre à jour le produit
+      const { data: produitMisAJour, error: updateError } = await supabase
+        .from('produits')
+        .update({
+          quantite: quantiteTotale,
+          quantite_restante: parseFloat(produitActuel.quantite_restante) + quantiteAjoutee,
+          prix_achat: prixMoyenPondere,
+          date_achat: reapproData.date_achat || produitActuel.date_achat,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', productId)
+        .select('*, unite:unites(id, value, label)')
+        .single()
+
+      if (updateError) {
+        return { product: null, error: updateError.message }
+      }
+
+      // 4. Enregistrer le mouvement de stock
+      await supabase
+        .from('mouvements_stock')
+        .insert({
+          produit_id: productId,
+          type_mouvement: 'entree',
+          quantite: quantiteAjoutee,
+          prix_unitaire: prixAchatNouveauUnitaire,
+          motif: `Réapprovisionnement - ${quantiteAjoutee} ${produitActuel.unite?.value || ''}`,
+          utilisateur_id: user?.id,
+          created_at: new Date().toISOString()
+        })
+
+      return { product: produitMisAJour, error: null }
+    } catch (error) {
+      console.error('Erreur dans reapprovisionner:', error)
+      return { product: null, error: error.message }
+    }
   }
 }
