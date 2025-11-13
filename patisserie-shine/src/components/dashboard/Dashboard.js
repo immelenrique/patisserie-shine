@@ -12,7 +12,7 @@ import {
   Receipt 
 } from 'lucide-react';
 import { Card, StatCard } from '../ui';
-import HistoriqueEmployeVentes from '../admin/HistoriqueVentesParEmploye';
+import HistoriqueEmployeVentes from '../caisse/HistoriqueEmployeVentes';
 
 export default function Dashboard({ stats, loading, currentUser }) {
   // État pour gérer l'onglet actif
