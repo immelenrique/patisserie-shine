@@ -1,0 +1,135 @@
+CHEMINS ABSOLUS DES FICHIERS CLÉS
+
+=== SERVICES (Backend) ===
+
+1. caisseService.js
+   C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\services\caisseService.js
+   - enregistrerVente() - crée une vente et met à jour le stock
+   - getVentesJour() - récupère les ventes du jour
+   - getVentesPeriode() - récupère les ventes sur une période
+   - getProduitsTopVentes() - stats des produits les plus vendus
+
+2. historiqueVentesService.js
+   C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\services\historiqueVentesService.js
+   - getHistoriqueVentes(params) - récupère l'historique avec filtres
+   - getEmployes() - récupère la liste des employés
+   - calculateStats(ventes) - calcule les statistiques
+   - exportHistorique(params) - exporte en CSV
+
+3. stockBoutiqueService.js
+   C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\services\stockBoutiqueService.js
+   - getStockBoutique() - état complet du stock boutique
+   - updatePrixVente(stockId, nouveauPrix) - met à jour les prix
+   - synchroniserPrixRecettes() - synchronise les prix
+   - getHistoriqueEntrees(limit) - historique des entrées
+   - getHistoriqueSorties(limit) - historique des sorties
+
+4. mouvementStockService.js
+   C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\services\mouvementStockService.js
+   - getAll(produitId) - récupère les mouvements de stock
+   - create(mouvementData) - crée un mouvement de stock
+
+5. permissionService.js
+   C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\services\permissionService.js
+   - getModules() - récupère les modules disponibles
+   - getRoles() - récupère les rôles personnalisés
+   - getUserPermissions(userId) - récupère les permissions d'un user
+   - getPermissions() - récupère toutes les permissions
+
+=== COMPOSANTS (Frontend/UI) ===
+
+6. CaisseManager.js
+   C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\components\caisse\CaisseManager.js
+   - Interface principale pour effectuer une vente
+   - Gestion du panier (ajouter, modifier, retirer produits)
+   - Paiement et génération de tickets
+   - Onglets: caisse, dashboard, historique
+
+7. CashierDashboard.js
+   C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\components\caisse\CashierDashboard.js
+   - Tableau de bord caisse pour admin
+   - Vue des statistiques (CA, ticket moyen, articles vendus)
+   - Graphique des ventes
+   - Filtre par date, caissier, période
+   - Liste des top produits et dernières transactions
+   - Statistiques par caissier
+
+8. HistoriqueEmployeVentes.js
+   C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\components\caisse\HistoriqueEmployeVentes.js
+   - Historique des ventes par employé
+   - Affichage détaillé des ventes
+   - Bouton pour voir/imprimer facture
+   - Filtre par date, employé
+
+9. HistoriqueVentesParEmploye.js
+   C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\components\admin\HistoriqueVentesParEmploye.js
+   - Composant similaire pour l'admin
+   - Voir les ventes de tous les employés
+   - Export CSV
+
+=== API ROUTES (Backend) ===
+
+10. delete-product/route.js
+    C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\app\api\admin\delete-product\route.js
+    - Exemple de suppression en cascade
+    - Vérifications avant suppression
+    - Gestion des erreurs et rollback
+    - À utiliser comme modèle pour cancel-sale
+
+11. create-user/route.js
+    C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\app\api\admin\create-user\route.js
+    - Exemple de route API admin protégée
+    - Vérification des autorisations
+
+12. deactivate-user/route.js
+    C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\app\api\admin\deactivate-user\route.js
+    - Exemple de route pour désactiver un utilisateur
+
+=== FICHIERS DE CONFIGURATION ===
+
+13. supabase-client.js
+    C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\lib\supabase-client.js
+    - Client Supabase configuré
+    - À utiliser pour toutes les requêtes DB
+
+14. admin.js
+    C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\lib\admin.js
+    - Service admin avec clé de service role
+    - Pour les opérations côté serveur sensibles
+
+=== CONTEXTES & HOOKS ===
+
+15. PermissionContext.js
+    C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\contexts\PermissionContext.js
+    - Contexte global pour les permissions
+
+16. usePermission.js
+    C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\hooks\usePermission.js
+    - Hook personnalisé pour vérifier les permissions
+
+=== UTILS ===
+
+17. formatters.js
+    C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\utils\formatters.js
+    - utils.formatCFA() - formate les montants
+    - utils.formatNumber() - formate les nombres
+    - utils.formatDate() - formate les dates
+
+=== STOCKAGE DES DONNÉES ===
+
+Tables principales liées aux ventes:
+1. ventes - la transaction principale
+2. lignes_vente - détail des articles de chaque vente
+3. stock_boutique - stock disponible pour la vente
+4. sorties_boutique - historique des sorties (ventes)
+5. stock_atelier - stock de l'atelier
+6. profiles - utilisateurs
+7. mouvements_stock - historique des mouvements
+8. produits - catalogue de produits
+
+Tables de support:
+- entrees_boutique - historique des entrées
+- prix_vente_produits - synchronisation des prix
+- prix_vente_recettes - prix des produits de recette
+- permissions, modules, user_permissions - gestion des droits
+

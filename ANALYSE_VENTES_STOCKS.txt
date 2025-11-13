@@ -1,0 +1,220 @@
+=== ANALYSE COMPLETE - STRUCTURE DES VENTES ET STOCKS ===
+
+## 1. TABLES PRINCIPALES DE LA BASE DE DONNEES
+
+### 1.1 TABLE: ventes
+Stocke les transactions de vente principales
+- id: UUID (primary key)
+- numero_ticket: String (identifiant unique - ex: V-1699999999-abc12)
+- vendeur_id: UUID (FK -> profiles.id)
+- total: Decimal (montant total de la vente)
+- montant_donne: Decimal (montant paye par le client)
+- monnaie_rendue: Decimal (monnaie rendue)
+- statut: Enum ('validee', 'annulee', 'en_cours')
+- created_at: Timestamp
+- updated_at: Timestamp
+
+### 1.2 TABLE: lignes_vente
+Detail des articles vendus dans chaque vente (relation N-1 avec ventes)
+- id: UUID (primary key)
+- vente_id: UUID (FK -> ventes.id)
+- produit_id: UUID (FK -> produits.id)
+- nom_produit: String
+- quantite: Decimal
+- prix_unitaire: Decimal
+- total: Decimal
+- created_at: Timestamp
+
+### 1.3 TABLE: stock_boutique
+Stock disponible pour la vente (boutique)
+- id: UUID (primary key)
+- produit_id: UUID (FK -> produits.id)
+- nom_produit: String
+- quantite_disponible: Integer (quantite recue de l'atelier)
+- quantite_vendue: Integer (quantite vendue - se met a jour lors des ventes)
+- quantite_utilisee: Integer (quantite utilisee pour autre chose)
+- prix_vente: Decimal
+- type_produit: String
+- transfere_par: UUID (FK -> profiles.id)
+- created_at: Timestamp
+- updated_at: Timestamp
+
+CALCUL STOCK REEL: stock_reel = quantite_disponible - quantite_vendue - quantite_utilisee
+
+### 1.4 TABLE: sorties_boutique
+Historique des sorties de stock (ventes)
+- id: UUID (primary key)
+- vente_id: UUID (FK -> ventes.id)
+- produit_id: UUID (FK -> produits.id)
+- quantite: Decimal
+- prix_unitaire: Decimal
+- total: Decimal
+- created_at: Timestamp
+
+### 1.5 TABLE: stock_atelier
+Stock produits fabriques a l'atelier
+- id: UUID (primary key)
+- produit_id: UUID (FK -> produits.id)
+- quantite_disponible: Integer
+- quantite_utilisee: Integer
+- quantite_fournie: Integer
+- created_at: Timestamp
+- updated_at: Timestamp
+
+### 1.6 TABLE: entrees_boutique
+Historique des entrees en boutique
+- id: UUID (primary key)
+- produit_id: UUID (FK -> produits.id)
+- quantite: Integer
+- source: String (atelier, achat, etc)
+- type_entree: String
+- created_at: Timestamp
+
+### 1.7 TABLE: profiles
+Utilisateurs du systeme (tous les roles)
+- id: UUID (primary key - FK -> auth.users.id)
+- nom: String
+- username: String
+- telephone: String
+- role: Enum ('admin', 'employe_boutique', 'employe_atelier', etc)
+- actif: Boolean
+- created_at: Timestamp
+
+### 1.8 TABLE: mouvements_stock
+Historique des mouvements de stock
+- id: UUID (primary key)
+- produit_id: UUID (FK -> produits.id)
+- type_mouvement: String (entree, sortie, ajustement)
+- quantite: Decimal
+- utilisateur_id: UUID (FK -> profiles.id)
+- created_at: Timestamp
+
+---
+
+## 2. FLUX ACTUEL D'UNE VENTE
+
+### Processus d'enregistrement (caisseService.enregistrerVente):
+1. Creer un entry dans ventes avec:
+   - numero_ticket unique
+   - vendeur_id (utilisateur connecte)
+   - total, montant_donne, monnaie_rendue
+   - statut = 'validee'
+
+2. Pour chaque article du panier:
+   - Creer une ligne dans lignes_vente
+   - Creer une sortie dans sorties_boutique
+   - Mettre a jour stock_boutique:
+     - quantite_vendue += item.quantite
+
+3. Retourner les donnees de vente creee
+
+---
+
+## 3. FICHIERS CLES POUR L'ANNULATION
+
+### Service: caisseService.js
+Chemin absolu: C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\services\caisseService.js
+- enregistrerVente() - enregistre une vente complete
+- getVentesJour() - recupere les ventes du jour
+- getVentesPeriode() - recupere les ventes sur une periode
+- getProduitsTopVentes() - statistiques
+
+### Service: historiqueVentesService.js
+Chemin absolu: C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\services\historiqueVentesService.js
+- getHistoriqueVentes() - recupere l'historique avec filtres
+- getEmployes() - recupere la liste des employes
+- calculateStats() - calcule les statistiques
+- exportHistorique() - exporte en CSV
+
+### Component: HistoriqueEmployeVentes.js
+Chemin absolu: C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\components\caisse\HistoriqueEmployeVentes.js
+- Affiche les ventes par employe
+- Permet de voir les details des ventes
+- Bouton pour imprimer facture
+
+### Component: CashierDashboard.js
+Chemin absolu: C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\components\caisse\CashierDashboard.js
+- Tableau de bord admin caisse
+- Vue des statistiques par caissier
+- Filtre par date, caissier, periode
+
+### Component: CaisseManager.js
+Chemin absolu: C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\components\caisse\CaisseManager.js
+- Interface de vente (panier, paiement)
+- Affichage des produits disponibles
+- Generation des tickets
+
+### API Route: delete-product/route.js
+Chemin absolu: C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\app\api\admin\delete-product\route.js
+Exemple de suppression en cascade avec verifications
+
+### Service: stockBoutiqueService.js
+Chemin absolu: C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\services\stockBoutiqueService.js
+- getStockBoutique() - etat du stock
+- updatePrixVente() - met a jour les prix
+
+### Service: permissionService.js
+Chemin absolu: C:\Users\enyameogo\Downloads\perso\patisserie-shine\patisserie-shine\src\services\permissionService.js
+- Gestion des permissions utilisateur
+- Recuperation des modules et permissions
+
+---
+
+## 4. STRUCTURE DE PERMISSION
+
+Roles existants:
+- admin: acces complet, peut voir tous les caissiers
+- employe_boutique: acces boutique/vente, ne voit que ses ventes
+- employe_atelier: acces atelier, production
+- Autres roles personnalises possible
+
+Tables de permission:
+- modules: definit les modules du systeme
+- permissions: permissions granulaires par module
+- roles_custom: roles personnalises
+- user_permissions: permissions assignees par utilisateur
+
+---
+
+## 5. IMPACT DE L'ANNULATION
+
+Lorsqu'on annule une vente, il faut:
+
+### Mettre a jour:
+1. ventes - statut: 'validee' -> 'annulee'
+2. stock_boutique - decrementer quantite_vendue des articles annules
+3. sorties_boutique - marquer ou supprimer les sorties
+4. mouvements_stock - creer des mouvements d'annulation
+
+### Creer:
+- Entree dans mouvements_stock pour tracabilite
+- Log d'audit (qui a annule, quand, raison)
+- Notification admin/caissier
+
+### Conserver:
+- La trace originale (pour audit)
+- L'historique complet
+
+---
+
+## 6. ETAPES D'IMPLEMENTATION
+
+### Phase 1: Backend (API Route)
+- Creer src/app/api/admin/cancel-sale/route.js
+- Implémenter la logique d'annulation
+- Verifier les permissions
+
+### Phase 2: Service
+- Creer methode dans historiqueVentesService.js
+- ou creer saleManagementService.js
+
+### Phase 3: UI
+- Ajouter bouton d'annulation dans HistoriqueEmployeVentes
+- Ajouter confirmations et messages d'erreur
+- Modal de confirmation
+
+### Phase 4: Tests & Audit
+- Verifier integrite des stocks
+- Verifier tracabilite
+- Tester avec differents roles
+

@@ -13,11 +13,13 @@ import {
   Filter,
   Download,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  XCircle
 } from 'lucide-react';
 import { Card, Modal } from '../ui';
 import { historiqueVentesService } from '../../services';
 import { utils } from '../../utils/formatters';
+import CancelSaleModal from './CancelSaleModal';
 
 export default function HistoriqueEmployeVentes({ currentUser }) {
   // États
@@ -45,6 +47,10 @@ export default function HistoriqueEmployeVentes({ currentUser }) {
   // Modal détails vente
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedVente, setSelectedVente] = useState(null);
+
+  // Modal annulation vente
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [venteToCancel, setVenteToCancel] = useState(null);
 
   // Statistiques
   const [stats, setStats] = useState({
@@ -155,6 +161,18 @@ export default function HistoriqueEmployeVentes({ currentUser }) {
     } catch (err) {
       alert(`Erreur: ${err.message}`);
     }
+  };
+
+  // Ouvrir le modal d'annulation
+  const handleCancelSale = (vente) => {
+    setVenteToCancel(vente);
+    setShowCancelModal(true);
+  };
+
+  // Callback après annulation réussie
+  const handleCancelSuccess = () => {
+    // Recharger les ventes pour refléter l'annulation
+    loadVentes();
   };
 
   // Permission de voir les ventes de tous les employés
@@ -334,7 +352,7 @@ export default function HistoriqueEmployeVentes({ currentUser }) {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vendeur</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Articles</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Paiement</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
@@ -371,22 +389,47 @@ export default function HistoriqueEmployeVentes({ currentUser }) {
                         {utils.formatCFA(vente.total)}
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          vente.monnaie_rendue === 0
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-green-100 text-green-700'
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          vente.statut === 'annulee'
+                            ? 'bg-red-100 text-red-700'
+                            : vente.statut === 'validee'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-100 text-gray-700'
                         }`}>
-                          {vente.monnaie_rendue === 0 ? 'Exact' : 'Espèces'}
+                          {vente.statut === 'annulee' ? 'Annulée' : 'Validée'}
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <button
-                          onClick={() => handleShowDetails(vente)}
-                          className="text-blue-600 hover:text-blue-800 transition"
-                          title="Voir les détails"
-                        >
-                          <Eye className="w-5 h-5" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleShowDetails(vente)}
+                            className="text-blue-600 hover:text-blue-800 transition"
+                            title="Voir les détails"
+                          >
+                            <Eye className="w-5 h-5" />
+                          </button>
+                          {isAdmin && vente.statut === 'validee' && (() => {
+                            const venteDate = new Date(vente.created_at);
+                            const aujourdhui = new Date();
+                            const differenceJours = Math.floor((aujourdhui - venteDate) / (1000 * 60 * 60 * 24));
+                            const peutAnnuler = differenceJours <= 7;
+
+                            return (
+                              <button
+                                onClick={() => handleCancelSale(vente)}
+                                disabled={!peutAnnuler}
+                                className={`transition ${
+                                  peutAnnuler
+                                    ? 'text-red-600 hover:text-red-800'
+                                    : 'text-gray-300 cursor-not-allowed'
+                                }`}
+                                title={peutAnnuler ? 'Annuler la vente' : 'Délai d\'annulation dépassé (7 jours)'}
+                              >
+                                <XCircle className="w-5 h-5" />
+                              </button>
+                            );
+                          })()}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -445,6 +488,16 @@ export default function HistoriqueEmployeVentes({ currentUser }) {
                 <p className="text-sm text-gray-500">Vendeur</p>
                 <p className="font-medium">{selectedVente.vendeur_nom}</p>
               </div>
+              <div>
+                <p className="text-sm text-gray-500">Statut</p>
+                <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+                  selectedVente.statut === 'annulee'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-green-100 text-green-700'
+                }`}>
+                  {selectedVente.statut === 'annulee' ? 'Annulée' : 'Validée'}
+                </span>
+              </div>
             </div>
 
             {/* Articles */}
@@ -487,6 +540,14 @@ export default function HistoriqueEmployeVentes({ currentUser }) {
           </div>
         )}
       </Modal>
+
+      {/* Modal annulation vente */}
+      <CancelSaleModal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        vente={venteToCancel}
+        onSuccess={handleCancelSuccess}
+      />
     </div>
   );
 }
