@@ -50,7 +50,7 @@ export const historiqueVentesService = {
         `)
         .gte('created_at', startDate.toISOString())
         .lte('created_at', endDate.toISOString())
-        .eq('statut', 'validee')
+        .in('statut', ['validee', 'annulee'])
         .order('created_at', { ascending: false });
 
       // Appliquer les filtres de permission
@@ -83,6 +83,7 @@ export const historiqueVentesService = {
           created_at: vente.created_at,
           vendeur_nom: vente.vendeur?.nom || vente.vendeur?.username || 'Non défini',
           vendeur_id: vente.vendeur_id,
+          statut: vente.statut || 'validee',
           total: parseFloat(vente.total || 0),
           montant_donne: parseFloat(vente.montant_donne || 0),
           monnaie_rendue: parseFloat(vente.monnaie_rendue || 0),
