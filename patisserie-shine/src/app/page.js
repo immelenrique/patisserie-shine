@@ -471,8 +471,8 @@ console.log('Available:', availableTabs.map(t => t.label));
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
         {activeTab === 'dashboard' && (
-          <Dashboard 
-            user={currentUser} 
+          <Dashboard
+            currentUser={currentUser}
             stats={stats}
             loading={statsLoading}
             onRefresh={loadDashboardStats}
