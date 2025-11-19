@@ -176,11 +176,11 @@ export async function POST(request) {
           .from('mouvements_stock')
           .insert({
             produit_id: ligne.produit_id,
-            type_mouvement: 'annulation_vente',
+            type_mouvement: 'restauration_annulation',
             quantite: ligne.quantite,
-            reference: `Annulation vente ${vente.numero_ticket}`,
-            user_id: user.id,
-            vente_id: venteId
+            commentaire: `Annulation vente ${vente.numero_ticket}`,
+            utilisateur_id: user.id,
+            reference_id: venteId
           })
 
         produitsRestores.push({
