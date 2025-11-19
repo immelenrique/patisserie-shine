@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { AlertTriangle, Loader2, XCircle, CheckCircle, Info } from 'lucide-react';
 import { Modal } from '../ui';
 import { utils } from '../../utils/formatters';
+import { supabase } from '../../lib/supabase-client';
 
 /**
  * Modal pour annuler une vente
@@ -56,7 +57,7 @@ export default function CancelSaleModal({ isOpen, onClose, vente, onSuccess }) {
 
     try {
       // Récupérer le token d'authentification
-      const { data: { session } } = await window.supabase?.auth.getSession() || {};
+      const { data: { session } } = await supabase.auth.getSession();
 
       if (!session?.access_token) {
         throw new Error('Session expirée. Veuillez vous reconnecter.');
