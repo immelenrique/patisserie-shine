@@ -219,8 +219,12 @@ export async function POST(request) {
       .eq('id', venteId)
 
     if (updateVenteError) {
+      console.error('Erreur détaillée UPDATE vente:', updateVenteError)
       return NextResponse.json(
-        { error: 'Erreur lors de la mise à jour du statut de la vente' },
+        {
+          error: 'Erreur lors de la mise à jour du statut de la vente',
+          details: updateVenteError.message || updateVenteError.toString()
+        },
         { status: 500 }
       )
     }
