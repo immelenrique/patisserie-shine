@@ -213,8 +213,7 @@ export async function POST(request) {
     const { error: updateVenteError } = await supabaseWithAuth
       .from('ventes')
       .update({
-        statut: 'annulee',
-        updated_at: new Date().toISOString()
+        statut: 'annulee'
       })
       .eq('id', venteId)
 
