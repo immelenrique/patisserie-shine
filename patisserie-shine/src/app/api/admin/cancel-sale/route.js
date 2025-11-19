@@ -197,7 +197,20 @@ export async function POST(request) {
     }
 
     // Marquer la vente comme annulée
-    const { error: updateVenteError } = await supabaseAdmin
+    // Créer un client Supabase avec le token de l'utilisateur pour passer les RLS
+    const supabaseWithAuth = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      }
+    )
+
+    const { error: updateVenteError } = await supabaseWithAuth
       .from('ventes')
       .update({
         statut: 'annulee',
