@@ -4,9 +4,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 
+// Utiliser la service_role_key si disponible, sinon la clé anon
+// La service_role_key bypass les RLS, la clé anon nécessite des politiques RLS
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  supabaseKey,
   {
     auth: {
       autoRefreshToken: false,
