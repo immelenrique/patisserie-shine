@@ -28,7 +28,6 @@ export default function RecettesManager({ currentUser }) {
 
   useEffect(() => {
     loadData();
-    ajouterIngredient();
   }, []);
 
  // Dans RecettesManager.js, corrigez la fonction loadData :
@@ -367,8 +366,12 @@ const handleCalculBesoins = async (e) => {
             <Calculator className="h-5 w-5" />
             <span>Calculer Besoins</span>
           </button>
-          <button 
-            onClick={() => setShowAddModal(true)}
+          <button
+            onClick={() => {
+              setIngredients([]);
+              ajouterIngredient();
+              setShowAddModal(true);
+            }}
             className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-2 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 flex items-center space-x-2"
           >
             <Plus className="h-5 w-5" />
