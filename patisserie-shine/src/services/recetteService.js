@@ -84,23 +84,43 @@ export const recetteService = {
 
   /**
    * Crée une ou plusieurs recettes (ingrédients d'un produit)
-   * @param {Object} recetteData - { nom_produit, ingredients: [{ produit_ingredient_id, quantite_necessaire }] }
+   * @param {Object} recetteData -
+   *   Format 1: { nom_produit, produit_ingredient_id, quantite_necessaire } (un seul ingrédient)
+   *   Format 2: { nom_produit, ingredients: [{ produit_ingredient_id, quantite_necessaire }] } (plusieurs)
    * @returns {Object} { recettes, error }
    */
   async create(recetteData) {
     try {
       const { data: { user } } = await supabase.auth.getUser()
 
-      const ingredients = recetteData.ingredients.filter(ing =>
-        ing.produit_ingredient_id && ing.quantite_necessaire > 0
-      )
+      let recettesAInserer = []
 
-      const recettesAInserer = ingredients.map(ing => ({
-        nom_produit: recetteData.nom_produit,
-        produit_ingredient_id: ing.produit_ingredient_id,
-        quantite_necessaire: ing.quantite_necessaire,
-        created_by: user?.id
-      }))
+      // Format 1 : Un seul ingrédient (utilisé par RecettesManager)
+      if (recetteData.produit_ingredient_id && recetteData.quantite_necessaire) {
+        recettesAInserer = [{
+          nom_produit: recetteData.nom_produit,
+          produit_ingredient_id: recetteData.produit_ingredient_id,
+          quantite_necessaire: recetteData.quantite_necessaire,
+          created_by: user?.id
+        }]
+      }
+      // Format 2 : Plusieurs ingrédients (ancien format, pour compatibilité)
+      else if (Array.isArray(recetteData.ingredients)) {
+        const ingredients = recetteData.ingredients.filter(ing =>
+          ing.produit_ingredient_id && ing.quantite_necessaire > 0
+        )
+
+        recettesAInserer = ingredients.map(ing => ({
+          nom_produit: recetteData.nom_produit,
+          produit_ingredient_id: ing.produit_ingredient_id,
+          quantite_necessaire: ing.quantite_necessaire,
+          created_by: user?.id
+        }))
+      }
+
+      if (recettesAInserer.length === 0) {
+        return { recettes: null, error: 'Aucun ingrédient valide à insérer' }
+      }
 
       const { data, error } = await supabase
         .from('recettes')
