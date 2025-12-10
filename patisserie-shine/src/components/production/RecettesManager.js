@@ -45,13 +45,14 @@ const loadData = async () => {
       setRecettes(recettesData || []);
     }
 
-    // IMPORTANT: Charger les produits DIRECTEMENT depuis Supabase
-    // pour éviter les problèmes de format
+    // IMPORTANT: Charger les produits avec le STOCK ATELIER (pas le stock principal)
+    // car c'est dans l'atelier que se fait la production
     const { data: produitsData, error: produitsError } = await supabase
       .from('produits')
       .select(`
         *,
-        unite:unites(id, value, label)
+        unite:unites(id, value, label),
+        stock_atelier:stock_atelier(quantite)
       `)
       .order('nom', { ascending: true });
 
@@ -60,7 +61,12 @@ const loadData = async () => {
       setProducts([]);
     } else {
       console.log('Produits chargés pour recettes:', produitsData?.length || 0);
-      setProducts(produitsData || []);
+      // Ajouter la quantité atelier à chaque produit
+      const produitsAvecStockAtelier = produitsData?.map(p => ({
+        ...p,
+        quantite_atelier: p.stock_atelier?.[0]?.quantite || 0
+      })) || [];
+      setProducts(produitsAvecStockAtelier);
     }
 
   } catch (err) {
@@ -533,9 +539,9 @@ const handleCalculBesoins = async (e) => {
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
                         >
                           <option value="">Choisir un ingrédient</option>
-                          {products.map(product => (
+                          {Array.isArray(products) && products.map(product => (
                             <option key={product.id} value={product.id}>
-                              {product.nom} ({product.unite?.label}) - Stock: {utils.formatNumber(product.quantite_restante || 0, 1)}
+                              {product.nom} ({product.unite?.label}) - Stock atelier: {utils.formatNumber(product.quantite_atelier || 0, 1)}
                             </option>
                           ))}
                         </select>
@@ -580,19 +586,19 @@ const handleCalculBesoins = async (e) => {
                         <div className="md:col-span-4 mt-2 pt-2 border-t border-gray-300">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-gray-600">
                             <div>
-                              <strong>Stock principal:</strong> {utils.formatNumber(produitSelectionne.quantite_restante || 0, 1)} {produitSelectionne.unite?.value}
+                              <strong>Stock atelier:</strong> {utils.formatNumber(produitSelectionne.quantite_atelier || 0, 1)} {produitSelectionne.unite?.value}
                             </div>
                             <div>
                               <strong>Prix:</strong> {utils.formatCFA(produitSelectionne.prix_achat || 0)} / {produitSelectionne.unite?.value}
                             </div>
                             <div>
-                              <strong>Coût estimé:</strong> 
-                              {ingredient.quantite_necessaire && produitSelectionne.prix_achat ? 
-                                utils.formatCFA((parseFloat(ingredient.quantite_necessaire) / produitSelectionne.quantite) * produitSelectionne.prix_achat) 
+                              <strong>Coût estimé:</strong>
+                              {ingredient.quantite_necessaire && produitSelectionne.prix_achat ?
+                                utils.formatCFA((parseFloat(ingredient.quantite_necessaire) / produitSelectionne.quantite) * produitSelectionne.prix_achat)
                                 : ' - '}
                             </div>
-                            <div className={`font-medium ${produitSelectionne.quantite_restante <= 0 ? 'text-red-600' : 'text-green-600'}`}>
-                              {produitSelectionne.quantite_restante <= 0 ? '⚠ Rupture' : '✓ Disponible'}
+                            <div className={`font-medium ${produitSelectionne.quantite_atelier <= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                              {produitSelectionne.quantite_atelier <= 0 ? '⚠ Rupture atelier' : '✓ Disponible atelier'}
                             </div>
                           </div>
                         </div>
