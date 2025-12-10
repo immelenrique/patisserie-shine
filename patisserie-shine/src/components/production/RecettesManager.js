@@ -285,7 +285,6 @@ const loadData = async () => {
     setIngredients([]);
     setPrixVenteRecette('');
     setDefinirPrixVente(false);
-    setTimeout(() => ajouterIngredient(), 100);
     
     // Message de succès
     let message = `Recette créée avec succès ! ${ingredientsValides.length} ingrédient(s) ajouté(s).`;
@@ -368,7 +367,10 @@ const handleCalculBesoins = async (e) => {
           </button>
           <button
             onClick={() => {
+              setSelectedProduit('');
               setIngredients([]);
+              setPrixVenteRecette('');
+              setDefinirPrixVente(false);
               ajouterIngredient();
               setShowAddModal(true);
             }}
