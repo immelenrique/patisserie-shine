@@ -1,10 +1,17 @@
-
 {
   "name": "patisserie-shine",
   "version": "2.0.0",
   "private": true,
   "description": "Système de gestion professionnel pour pâtisserie - Stock, Production, Demandes",
-  "keywords": ["pâtisserie", "gestion", "stock", "production", "Côte d'Ivoire", "next.js", "supabase"],
+  "keywords": [
+    "pâtisserie",
+    "gestion",
+    "stock",
+    "production",
+    "Côte d'Ivoire",
+    "next.js",
+    "supabase"
+  ],
   "author": "Pâtisserie Shine",
   "license": "MIT",
   "scripts": {
@@ -18,25 +25,26 @@
     "analyze": "cross-env ANALYZE=true next build"
   },
   "dependencies": {
+    "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/auth-helpers-react": "^0.5.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "lucide-react": "^0.263.1",
     "next": "14.2.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "lucide-react": "^0.263.1",
-    "@supabase/supabase-js": "^2.45.0",
-    "@supabase/auth-helpers-nextjs": "^0.10.0",
-    "@supabase/auth-helpers-react": "^0.5.0"
+    "react-select": "^5.10.2"
   },
   "devDependencies": {
     "@types/node": "^20.14.11",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",
+    "cross-env": "^7.0.3",
     "eslint": "^8.57.0",
     "eslint-config-next": "14.2.5",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.6",
-    "typescript": "^5.5.3",
-    "cross-env": "^7.0.3"
+    "typescript": "^5.5.3"
   },
   "engines": {
     "node": ">=18.0.0",

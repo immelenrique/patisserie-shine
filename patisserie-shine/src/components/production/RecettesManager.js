@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, ChefHat, Calculator, Trash2, Package, Copy, DollarSign } from 'lucide-react';
+import Select from 'react-select';
 import { Card, Modal } from '../ui';
 import { supabase } from '../../lib/supabase-client';
 import { recetteService, productService } from '../../services';
@@ -47,12 +48,13 @@ const loadData = async () => {
 
     // IMPORTANT: Charger les produits avec le STOCK ATELIER (pas le stock principal)
     // car c'est dans l'atelier que se fait la production
+
+    // 1. Charger les produits
     const { data: produitsData, error: produitsError } = await supabase
       .from('produits')
       .select(`
         *,
-        unite:unites(id, value, label),
-        stock_atelier:stock_atelier(quantite)
+        unite:unites(id, value, label)
       `)
       .order('nom', { ascending: true });
 
@@ -60,12 +62,28 @@ const loadData = async () => {
       console.error('Erreur chargement produits:', produitsError);
       setProducts([]);
     } else {
-      console.log('Produits chargés pour recettes:', produitsData?.length || 0);
-      // Ajouter la quantité atelier à chaque produit
-      const produitsAvecStockAtelier = produitsData?.map(p => ({
+      // 2. Charger le stock atelier séparément
+      const { data: stockAtelierData, error: stockAtelierError } = await supabase
+        .from('stock_atelier')
+        .select('produit_id, quantite');
+
+      if (stockAtelierError) {
+        console.error('Erreur chargement stock atelier:', stockAtelierError);
+      }
+
+      // 3. Combiner les données
+      const stockAtelierMap = (stockAtelierData || []).reduce((acc, item) => {
+        acc[item.produit_id] = item.quantite;
+        return acc;
+      }, {});
+
+      const produitsAvecStockAtelier = (produitsData || []).map(p => ({
         ...p,
-        quantite_atelier: p.stock_atelier?.[0]?.quantite || 0
-      })) || [];
+        quantite_atelier: stockAtelierMap[p.id] || 0
+      }));
+
+      console.log('Produits chargés pour recettes:', produitsAvecStockAtelier.length);
+      console.log('Exemple produit:', produitsAvecStockAtelier[0]);
       setProducts(produitsAvecStockAtelier);
     }
 
@@ -533,18 +551,39 @@ const handleCalculBesoins = async (e) => {
                         <label className="block text-xs font-medium text-gray-600 mb-1">
                           Ingrédient {index + 1} {estValide && <span className="text-green-600">✓</span>}
                         </label>
-                        <select
-                          value={ingredient.produit_ingredient_id}
-                          onChange={(e) => updateIngredient(ingredient.id, 'produit_ingredient_id', e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
-                        >
-                          <option value="">Choisir un ingrédient</option>
-                          {Array.isArray(products) && products.map(product => (
-                            <option key={product.id} value={product.id}>
-                              {product.nom} ({product.unite?.label}) - Stock atelier: {utils.formatNumber(product.quantite_atelier || 0, 1)}
-                            </option>
-                          ))}
-                        </select>
+                        <Select
+                          value={
+                            ingredient.produit_ingredient_id
+                              ? {
+                                  value: ingredient.produit_ingredient_id,
+                                  label: products.find(p => p.id === parseInt(ingredient.produit_ingredient_id))?.nom || 'Sélectionné'
+                                }
+                              : null
+                          }
+                          onChange={(selectedOption) => updateIngredient(ingredient.id, 'produit_ingredient_id', selectedOption?.value || '')}
+                          options={Array.isArray(products) ? products.map(product => ({
+                            value: product.id,
+                            label: `${product.nom} (${product.unite?.label}) - Stock: ${utils.formatNumber(product.quantite_atelier || 0, 1)}`,
+                            product: product
+                          })) : []}
+                          placeholder="Tapez pour rechercher un ingrédient..."
+                          isClearable
+                          isSearchable
+                          noOptionsMessage={() => "Aucun ingrédient trouvé"}
+                          className="text-sm"
+                          styles={{
+                            control: (base) => ({
+                              ...base,
+                              borderColor: '#d1d5db',
+                              '&:hover': { borderColor: '#f97316' },
+                              boxShadow: 'none',
+                              '&:focus-within': {
+                                borderColor: '#f97316',
+                                boxShadow: '0 0 0 2px rgba(249, 115, 22, 0.2)'
+                              }
+                            })
+                          }}
+                        />
                       </div>
                       
                       <div>
