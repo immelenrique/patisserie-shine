@@ -65,7 +65,7 @@ const loadData = async () => {
       // 2. Charger le stock atelier séparément
       const { data: stockAtelierData, error: stockAtelierError } = await supabase
         .from('stock_atelier')
-        .select('produit_id, quantite');
+        .select('produit_id, quantite_disponible');
 
       if (stockAtelierError) {
         console.error('Erreur chargement stock atelier:', stockAtelierError);
@@ -73,7 +73,7 @@ const loadData = async () => {
 
       // 3. Combiner les données
       const stockAtelierMap = (stockAtelierData || []).reduce((acc, item) => {
-        acc[item.produit_id] = item.quantite;
+        acc[item.produit_id] = item.quantite_disponible;
         return acc;
       }, {});
 

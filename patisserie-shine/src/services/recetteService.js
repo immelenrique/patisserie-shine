@@ -38,7 +38,7 @@ export const recetteService = {
       // 2. Charger le stock atelier séparément
       const { data: stockAtelierData, error: stockError } = await supabase
         .from('stock_atelier')
-        .select('produit_id, quantite')
+        .select('produit_id, quantite_disponible')
 
       if (stockError) {
         console.error('Erreur chargement stock atelier:', stockError)
@@ -46,7 +46,7 @@ export const recetteService = {
 
       // 3. Créer un map du stock atelier
       const stockAtelierMap = (stockAtelierData || []).reduce((acc, item) => {
-        acc[item.produit_id] = item.quantite
+        acc[item.produit_id] = item.quantite_disponible
         return acc
       }, {})
 
@@ -192,10 +192,10 @@ export const recetteService = {
       // 2. Charger le stock atelier
       const { data: stockAtelierData } = await supabase
         .from('stock_atelier')
-        .select('produit_id, quantite')
+        .select('produit_id, quantite_disponible')
 
       const stockAtelierMap = (stockAtelierData || []).reduce((acc, item) => {
-        acc[item.produit_id] = item.quantite
+        acc[item.produit_id] = item.quantite_disponible
         return acc
       }, {})
 
