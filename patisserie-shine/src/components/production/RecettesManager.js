@@ -139,6 +139,8 @@ const loadData = async () => {
 
   // Calculer le coût total de la recette
   const calculerCoutRecette = () => {
+    if (!Array.isArray(products) || products.length === 0) return 0;
+
     const ingredientsValides = getIngredientsValides();
     return ingredientsValides.reduce((sum, ing) => {
       const produit = products.find(p => p.id === parseInt(ing.produit_ingredient_id));
@@ -332,7 +334,9 @@ const handleCalculBesoins = async (e) => {
   }, {});
 
   const getIngredientsValides = () => {
-    return ingredients.filter(ing => 
+    if (!Array.isArray(ingredients)) return [];
+
+    return ingredients.filter(ing =>
       ing.produit_ingredient_id && ing.quantite_necessaire && parseFloat(ing.quantite_necessaire) > 0
     );
   };
