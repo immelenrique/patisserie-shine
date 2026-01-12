@@ -5,19 +5,20 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase-client';
 import { caisseService, stockBoutiqueService } from '../../services';
 import { utils } from '../../utils/formatters';
-import { 
-  ShoppingCart, 
-  Plus, 
-  Minus, 
-  Trash2, 
-  Calculator, 
-  CreditCard, 
-  Printer, 
-  Receipt, 
-  BarChart3, 
+import {
+  ShoppingCart,
+  Plus,
+  Minus,
+  Trash2,
+  Calculator,
+  CreditCard,
+  Printer,
+  Receipt,
+  BarChart3,
   Lock,
   TrendingUp,
-  Users
+  Users,
+  Monitor
 } from 'lucide-react';
 import { Card, Modal } from '../ui';
 import CashierDashboard from './CashierDashboard';
@@ -33,12 +34,24 @@ export default function CaisseManager({ currentUser }) {
   const [ventesJour, setVentesJour] = useState([]);
   const [activeTab, setActiveTab] = useState('caisse');
   const [searchTerm, setSearchTerm] = useState('');
+  const [clientDisplayWindow, setClientDisplayWindow] = useState(null);
 
   useEffect(() => {
     if (activeTab !== 'dashboard') {
       loadData();
     }
   }, [activeTab]);
+
+  // Synchroniser le panier avec l'affichage client
+  useEffect(() => {
+    if (clientDisplayWindow && !clientDisplayWindow.closed) {
+      clientDisplayWindow.postMessage({
+        type: 'UPDATE_PANIER',
+        panier: panier,
+        montantDonne: parseFloat(montantDonne) || 0
+      }, '*');
+    }
+  }, [panier, montantDonne, clientDisplayWindow]);
 
   const loadData = async () => {
     setLoading(true);
@@ -115,6 +128,41 @@ export default function CaisseManager({ currentUser }) {
 
   const viderPanier = () => {
     setPanier([]);
+  };
+
+  const ouvrirAffichageClient = () => {
+    // Vérifier si la fenêtre existe déjà et est ouverte
+    if (clientDisplayWindow && !clientDisplayWindow.closed) {
+      clientDisplayWindow.focus();
+      return;
+    }
+
+    // Ouvrir une nouvelle fenêtre pour l'affichage client
+    const largeur = 800;
+    const hauteur = 600;
+    const left = window.screen.width - largeur; // Positionner à droite
+    const top = 0;
+
+    const nouvelleFenetre = window.open(
+      '/caisse/affichage-client',
+      'AffichageClient',
+      `width=${largeur},height=${hauteur},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
+
+    if (nouvelleFenetre) {
+      setClientDisplayWindow(nouvelleFenetre);
+
+      // Envoyer les données initiales quand la fenêtre est prête
+      nouvelleFenetre.addEventListener('load', () => {
+        nouvelleFenetre.postMessage({
+          type: 'UPDATE_PANIER',
+          panier: panier,
+          montantDonne: parseFloat(montantDonne) || 0
+        }, '*');
+      });
+    } else {
+      alert('Impossible d\'ouvrir l\'affichage client. Veuillez autoriser les popups pour ce site.');
+    }
   };
 
   const totalPanier = panier.reduce((sum, item) => sum + (item.prix * item.quantite), 0);
@@ -406,13 +454,23 @@ export default function CaisseManager({ currentUser }) {
             <p className="font-semibold">{new Date().toLocaleDateString('fr-FR')}</p>
           </div>
           {activeTab === 'caisse' && (
-            <button
-              onClick={effectuerCloture}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center"
-            >
-              <Lock className="w-4 h-4 mr-2" />
-              Clôturer
-            </button>
+            <>
+              <button
+                onClick={ouvrirAffichageClient}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+                title="Ouvrir l'affichage client sur un second écran"
+              >
+                <Monitor className="w-4 h-4 mr-2" />
+                Écran Client
+              </button>
+              <button
+                onClick={effectuerCloture}
+                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center"
+              >
+                <Lock className="w-4 h-4 mr-2" />
+                Clôturer
+              </button>
+            </>
           )}
         </div>
       </div>
