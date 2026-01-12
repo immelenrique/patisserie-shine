@@ -140,8 +140,8 @@ export default function AffichageClient() {
             </div>
           ) : (
             <div className="h-full flex flex-col space-y-2">
-              {/* Liste des articles */}
-              <div className={`flex-1 overflow-hidden ${scale.spacing}`}>
+              {/* Liste des articles avec scroll */}
+              <div className={`flex-1 overflow-y-auto ${scale.spacing}`}>
                 {panier.map((item, index) => (
                   <div
                     key={item.id}
