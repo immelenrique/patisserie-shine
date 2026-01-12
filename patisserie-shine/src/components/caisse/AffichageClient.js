@@ -29,17 +29,8 @@ export default function AffichageClient() {
     // Masquer l'aide après 8 secondes
     const timer = setTimeout(() => setShowHelp(false), 8000)
 
-    // Empêcher la fermeture accidentelle
-    const handleBeforeUnload = (e) => {
-      e.preventDefault()
-      e.returnValue = ''
-    }
-
-    window.addEventListener('beforeunload', handleBeforeUnload)
-
     return () => {
       window.removeEventListener('message', handleMessage)
-      window.removeEventListener('beforeunload', handleBeforeUnload)
       clearTimeout(timer)
     }
   }, [])
@@ -53,19 +44,6 @@ export default function AffichageClient() {
 
     if (count <= 3) {
       return {
-        itemCard: 'p-5',
-        badge: 'w-12 h-12 text-xl',
-        productName: 'text-2xl',
-        productDetails: 'text-lg',
-        productPrice: 'text-3xl px-6 py-3',
-        spacing: 'space-y-5',
-        totalLabel: 'text-3xl',
-        totalAmount: 'text-5xl',
-        moneyLabel: 'text-2xl',
-        moneyAmount: 'text-3xl'
-      }
-    } else if (count <= 5) {
-      return {
         itemCard: 'p-4',
         badge: 'w-10 h-10 text-lg',
         productName: 'text-xl',
@@ -75,9 +53,10 @@ export default function AffichageClient() {
         totalLabel: 'text-2xl',
         totalAmount: 'text-4xl',
         moneyLabel: 'text-xl',
-        moneyAmount: 'text-2xl'
+        moneyAmount: 'text-2xl',
+        containerPadding: 'p-6'
       }
-    } else if (count <= 8) {
+    } else if (count <= 5) {
       return {
         itemCard: 'p-3',
         badge: 'w-8 h-8 text-base',
@@ -88,20 +67,36 @@ export default function AffichageClient() {
         totalLabel: 'text-xl',
         totalAmount: 'text-3xl',
         moneyLabel: 'text-lg',
-        moneyAmount: 'text-xl'
+        moneyAmount: 'text-xl',
+        containerPadding: 'p-4'
       }
-    } else {
+    } else if (count <= 8) {
       return {
         itemCard: 'p-2',
         badge: 'w-7 h-7 text-sm',
         productName: 'text-base',
         productDetails: 'text-xs',
         productPrice: 'text-lg px-3 py-1',
-        spacing: 'space-y-2',
+        spacing: 'space-y-1',
         totalLabel: 'text-lg',
         totalAmount: 'text-2xl',
         moneyLabel: 'text-base',
-        moneyAmount: 'text-lg'
+        moneyAmount: 'text-lg',
+        containerPadding: 'p-3'
+      }
+    } else {
+      return {
+        itemCard: 'p-1.5',
+        badge: 'w-6 h-6 text-xs',
+        productName: 'text-sm',
+        productDetails: 'text-xs',
+        productPrice: 'text-base px-2 py-1',
+        spacing: 'space-y-1',
+        totalLabel: 'text-base',
+        totalAmount: 'text-xl',
+        moneyLabel: 'text-sm',
+        moneyAmount: 'text-base',
+        containerPadding: 'p-2'
       }
     }
   }
@@ -133,9 +128,9 @@ export default function AffichageClient() {
         </div>
       </div>
 
-      {/* Contenu principal avec scroll */}
-      <div className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-6xl mx-auto">
+      {/* Contenu principal sans scroll */}
+      <div className={`flex-1 overflow-hidden ${scale.containerPadding}`}>
+        <div className="h-full max-w-6xl mx-auto flex flex-col">
           {panier.length === 0 ? (
             <div className="text-center py-24">
               <div className="text-7xl mb-6">🛒</div>
@@ -144,9 +139,9 @@ export default function AffichageClient() {
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="h-full flex flex-col space-y-2">
               {/* Liste des articles */}
-              <div className={scale.spacing}>
+              <div className={`flex-1 overflow-hidden ${scale.spacing}`}>
                 {panier.map((item, index) => (
                   <div
                     key={item.id}
@@ -182,12 +177,12 @@ export default function AffichageClient() {
               </div>
 
               {/* Ligne de séparation */}
-              <div className="border-t-4 border-orange-300 my-4"></div>
+              <div className="border-t-2 border-orange-300"></div>
 
               {/* Section Total */}
-              <div className="space-y-3">
+              <div className="flex-shrink-0 space-y-2">
                 {/* Total à payer */}
-                <div className="bg-gradient-to-r from-blue-600 to-blue-500 rounded-2xl shadow-xl p-5">
+                <div className={`bg-gradient-to-r from-blue-600 to-blue-500 rounded-xl shadow-xl ${scale.itemCard}`}>
                   <div className="flex justify-between items-center text-white">
                     <span className={`${scale.totalLabel} font-bold tracking-wide`}>
                       TOTAL À PAYER
@@ -200,7 +195,7 @@ export default function AffichageClient() {
 
                 {/* Montant donné */}
                 {montantDonne > 0 && (
-                  <div className="bg-white rounded-2xl shadow-lg p-4 border-3 border-gray-200">
+                  <div className={`bg-white rounded-xl shadow-lg ${scale.itemCard} border-2 border-gray-200`}>
                     <div className="flex justify-between items-center">
                       <span className={`${scale.moneyLabel} font-semibold text-gray-700`}>
                         Espèces reçues
@@ -214,7 +209,7 @@ export default function AffichageClient() {
 
                 {/* Monnaie à rendre */}
                 {monnaieARendre > 0 && (
-                  <div className="bg-gradient-to-r from-green-500 to-emerald-500 rounded-2xl shadow-xl p-5 border-3 border-green-400 animate-pulse">
+                  <div className={`bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl shadow-xl ${scale.itemCard} border-2 border-green-400 animate-pulse`}>
                     <div className="flex justify-between items-center text-white">
                       <span className={`${scale.totalLabel} font-bold tracking-wide`}>
                         MONNAIE À RENDRE
