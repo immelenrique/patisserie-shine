@@ -47,6 +47,67 @@ export default function AffichageClient() {
   const totalPanier = panier.reduce((sum, item) => sum + (item.prix * item.quantite), 0)
   const monnaieARendre = montantDonne > totalPanier ? montantDonne - totalPanier : 0
 
+  // Calcul dynamique des tailles en fonction du nombre d'articles
+  const getScaleClasses = () => {
+    const count = panier.length
+
+    if (count <= 3) {
+      return {
+        itemCard: 'p-5',
+        badge: 'w-12 h-12 text-xl',
+        productName: 'text-2xl',
+        productDetails: 'text-lg',
+        productPrice: 'text-3xl px-6 py-3',
+        spacing: 'space-y-5',
+        totalLabel: 'text-3xl',
+        totalAmount: 'text-5xl',
+        moneyLabel: 'text-2xl',
+        moneyAmount: 'text-3xl'
+      }
+    } else if (count <= 5) {
+      return {
+        itemCard: 'p-4',
+        badge: 'w-10 h-10 text-lg',
+        productName: 'text-xl',
+        productDetails: 'text-base',
+        productPrice: 'text-2xl px-5 py-2',
+        spacing: 'space-y-3',
+        totalLabel: 'text-2xl',
+        totalAmount: 'text-4xl',
+        moneyLabel: 'text-xl',
+        moneyAmount: 'text-2xl'
+      }
+    } else if (count <= 8) {
+      return {
+        itemCard: 'p-3',
+        badge: 'w-8 h-8 text-base',
+        productName: 'text-lg',
+        productDetails: 'text-sm',
+        productPrice: 'text-xl px-4 py-2',
+        spacing: 'space-y-2',
+        totalLabel: 'text-xl',
+        totalAmount: 'text-3xl',
+        moneyLabel: 'text-lg',
+        moneyAmount: 'text-xl'
+      }
+    } else {
+      return {
+        itemCard: 'p-2',
+        badge: 'w-7 h-7 text-sm',
+        productName: 'text-base',
+        productDetails: 'text-xs',
+        productPrice: 'text-lg px-3 py-1',
+        spacing: 'space-y-2',
+        totalLabel: 'text-lg',
+        totalAmount: 'text-2xl',
+        moneyLabel: 'text-base',
+        moneyAmount: 'text-lg'
+      }
+    }
+  }
+
+  const scale = getScaleClasses()
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-yellow-50 to-orange-100 flex flex-col relative">
       {/* Aide au démarrage */}
@@ -83,26 +144,26 @@ export default function AffichageClient() {
               </p>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {/* Liste des articles */}
-              <div className="space-y-5">
+              <div className={scale.spacing}>
                 {panier.map((item, index) => (
                   <div
                     key={item.id}
-                    className="bg-white rounded-2xl shadow-lg p-5 border-3 border-orange-200"
+                    className={`bg-white rounded-2xl shadow-lg ${scale.itemCard} border-3 border-orange-200`}
                   >
-                    <div className="flex justify-between items-center gap-6">
+                    <div className="flex justify-between items-center gap-4">
                       {/* Numéro de ligne */}
-                      <div className="flex-shrink-0 w-12 h-12 bg-orange-500 text-white rounded-full flex items-center justify-center">
-                        <span className="text-xl font-bold">{index + 1}</span>
+                      <div className={`flex-shrink-0 ${scale.badge} bg-orange-500 text-white rounded-full flex items-center justify-center`}>
+                        <span className="font-bold">{index + 1}</span>
                       </div>
 
                       {/* Informations produit */}
                       <div className="flex-1">
-                        <h3 className="text-2xl font-bold text-gray-800 mb-1">
+                        <h3 className={`${scale.productName} font-bold text-gray-800 mb-1`}>
                           {item.nom}
                         </h3>
-                        <div className="flex items-center gap-3 text-lg text-gray-600">
+                        <div className={`flex items-center gap-3 ${scale.productDetails} text-gray-600`}>
                           <span className="font-semibold">{formatCFA(item.prix)}</span>
                           <span className="text-orange-500 font-bold">×</span>
                           <span className="font-semibold">{item.quantite} {item.unite}</span>
@@ -110,8 +171,8 @@ export default function AffichageClient() {
                       </div>
 
                       {/* Prix total de la ligne */}
-                      <div className="flex-shrink-0 text-right bg-orange-50 rounded-xl px-6 py-3 border-2 border-orange-300">
-                        <p className="text-3xl font-black text-orange-600">
+                      <div className={`flex-shrink-0 text-right bg-orange-50 rounded-xl ${scale.productPrice} border-2 border-orange-300`}>
+                        <p className="font-black text-orange-600">
                           {formatCFA(item.prix * item.quantite)}
                         </p>
                       </div>
@@ -121,17 +182,17 @@ export default function AffichageClient() {
               </div>
 
               {/* Ligne de séparation */}
-              <div className="border-t-4 border-orange-300 my-6"></div>
+              <div className="border-t-4 border-orange-300 my-4"></div>
 
               {/* Section Total */}
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {/* Total à payer */}
-                <div className="bg-gradient-to-r from-blue-600 to-blue-500 rounded-2xl shadow-xl p-6">
+                <div className="bg-gradient-to-r from-blue-600 to-blue-500 rounded-2xl shadow-xl p-5">
                   <div className="flex justify-between items-center text-white">
-                    <span className="text-3xl font-bold tracking-wide">
+                    <span className={`${scale.totalLabel} font-bold tracking-wide`}>
                       TOTAL À PAYER
                     </span>
-                    <span className="text-5xl font-black">
+                    <span className={`${scale.totalAmount} font-black`}>
                       {formatCFA(totalPanier)}
                     </span>
                   </div>
@@ -139,12 +200,12 @@ export default function AffichageClient() {
 
                 {/* Montant donné */}
                 {montantDonne > 0 && (
-                  <div className="bg-white rounded-2xl shadow-lg p-5 border-3 border-gray-200">
+                  <div className="bg-white rounded-2xl shadow-lg p-4 border-3 border-gray-200">
                     <div className="flex justify-between items-center">
-                      <span className="text-2xl font-semibold text-gray-700">
+                      <span className={`${scale.moneyLabel} font-semibold text-gray-700`}>
                         Espèces reçues
                       </span>
-                      <span className="text-3xl font-bold text-gray-800">
+                      <span className={`${scale.moneyAmount} font-bold text-gray-800`}>
                         {formatCFA(montantDonne)}
                       </span>
                     </div>
@@ -153,12 +214,12 @@ export default function AffichageClient() {
 
                 {/* Monnaie à rendre */}
                 {monnaieARendre > 0 && (
-                  <div className="bg-gradient-to-r from-green-500 to-emerald-500 rounded-2xl shadow-xl p-6 border-3 border-green-400 animate-pulse">
+                  <div className="bg-gradient-to-r from-green-500 to-emerald-500 rounded-2xl shadow-xl p-5 border-3 border-green-400 animate-pulse">
                     <div className="flex justify-between items-center text-white">
-                      <span className="text-3xl font-bold tracking-wide">
+                      <span className={`${scale.totalLabel} font-bold tracking-wide`}>
                         MONNAIE À RENDRE
                       </span>
-                      <span className="text-5xl font-black">
+                      <span className={`${scale.totalAmount} font-black`}>
                         {formatCFA(monnaieARendre)}
                       </span>
                     </div>
