@@ -42,6 +42,42 @@ export default function CaisseManager({ currentUser }) {
     }
   }, [activeTab]);
 
+  // Ouvrir automatiquement l'affichage client au chargement
+  useEffect(() => {
+    // Positionner sur le second écran (à droite du premier)
+    const screenWidth = window.screen.width;
+    const screenHeight = window.screen.height;
+
+    // Ouvrir la fenêtre d'affichage client sur le second écran
+    const nouvelleFenetre = window.open(
+      '/caisse/affichage-client',
+      'AffichageClient',
+      `width=${screenWidth},height=${screenHeight},left=${screenWidth},top=0,fullscreen=yes`
+    );
+
+    if (nouvelleFenetre) {
+      setClientDisplayWindow(nouvelleFenetre);
+
+      // Tenter de mettre en plein écran après un court délai
+      setTimeout(() => {
+        try {
+          if (nouvelleFenetre.document.documentElement.requestFullscreen) {
+            nouvelleFenetre.document.documentElement.requestFullscreen();
+          }
+        } catch (e) {
+          console.log('Plein écran non disponible:', e);
+        }
+      }, 1000);
+    }
+
+    // Fermer la fenêtre lors du démontage du composant (déconnexion)
+    return () => {
+      if (nouvelleFenetre && !nouvelleFenetre.closed) {
+        nouvelleFenetre.close();
+      }
+    };
+  }, []);
+
   // Synchroniser le panier avec l'affichage client
   useEffect(() => {
     if (clientDisplayWindow && !clientDisplayWindow.closed) {
@@ -134,23 +170,42 @@ export default function CaisseManager({ currentUser }) {
     // Vérifier si la fenêtre existe déjà et est ouverte
     if (clientDisplayWindow && !clientDisplayWindow.closed) {
       clientDisplayWindow.focus();
+
+      // Tenter de mettre en plein écran
+      try {
+        if (clientDisplayWindow.document.documentElement.requestFullscreen) {
+          clientDisplayWindow.document.documentElement.requestFullscreen();
+        }
+      } catch (e) {
+        console.log('Plein écran non disponible:', e);
+      }
       return;
     }
 
-    // Ouvrir une nouvelle fenêtre pour l'affichage client
-    const largeur = 800;
-    const hauteur = 600;
-    const left = window.screen.width - largeur; // Positionner à droite
-    const top = 0;
+    // Positionner sur le second écran (à droite du premier)
+    const screenWidth = window.screen.width;
+    const screenHeight = window.screen.height;
 
+    // Ouvrir une nouvelle fenêtre pour l'affichage client sur le second écran
     const nouvelleFenetre = window.open(
       '/caisse/affichage-client',
       'AffichageClient',
-      `width=${largeur},height=${hauteur},left=${left},top=${top},resizable=yes,scrollbars=yes`
+      `width=${screenWidth},height=${screenHeight},left=${screenWidth},top=0,fullscreen=yes`
     );
 
     if (nouvelleFenetre) {
       setClientDisplayWindow(nouvelleFenetre);
+
+      // Tenter de mettre en plein écran après chargement
+      setTimeout(() => {
+        try {
+          if (nouvelleFenetre.document.documentElement.requestFullscreen) {
+            nouvelleFenetre.document.documentElement.requestFullscreen();
+          }
+        } catch (e) {
+          console.log('Plein écran non disponible:', e);
+        }
+      }, 1000);
 
       // Envoyer les données initiales quand la fenêtre est prête
       nouvelleFenetre.addEventListener('load', () => {
