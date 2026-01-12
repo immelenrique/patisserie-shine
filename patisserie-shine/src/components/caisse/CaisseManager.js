@@ -48,44 +48,47 @@ export default function CaisseManager({ currentUser }) {
     const primaryScreenWidth = window.screen.width;
     const primaryScreenHeight = window.screen.height;
 
-    // Position pour le second écran (largeur de l'écran principal)
-    const secondScreenLeft = primaryScreenWidth;
+    // Pour positionner sur le second écran, on utilise la largeur totale disponible
+    // En mode extension, le second écran commence généralement à primaryScreenWidth
+    const secondScreenLeft = primaryScreenWidth + 100; // +100 pour être sûr d'être sur le 2e écran
 
-    console.log('Ouverture affichage client:', {
+    console.log('Configuration des écrans:', {
       primaryWidth: primaryScreenWidth,
       primaryHeight: primaryScreenHeight,
-      secondScreenLeft: secondScreenLeft
+      secondScreenLeft: secondScreenLeft,
+      totalAvailWidth: window.screen.availWidth
     });
 
-    // Ouvrir la fenêtre d'affichage client
+    // Ouvrir la fenêtre d'affichage client maximisée
     const nouvelleFenetre = window.open(
       '/caisse/affichage-client',
       'AffichageClient',
-      `width=${primaryScreenWidth},height=${primaryScreenHeight},left=${secondScreenLeft},top=0`
+      `width=${primaryScreenWidth},height=${primaryScreenHeight},left=${secondScreenLeft},top=0,toolbar=no,menubar=no,location=no`
     );
 
     if (nouvelleFenetre) {
       setClientDisplayWindow(nouvelleFenetre);
 
-      // Déplacer et agrandir la fenêtre après son chargement
+      // Instructions pour l'utilisateur dans la console
+      console.log(`
+📺 INSTRUCTIONS AFFICHAGE CLIENT:
+1. Déplacez manuellement la fenêtre sur votre 2e écran si elle n'y est pas
+2. Appuyez sur F11 pour passer en plein écran
+3. Chrome se souviendra de la position pour les prochaines fois
+      `);
+
+      // Essayer de déplacer la fenêtre (peut être bloqué par le navigateur)
       setTimeout(() => {
         try {
-          // Forcer le déplacement vers le second écran
           nouvelleFenetre.moveTo(secondScreenLeft, 0);
           nouvelleFenetre.resizeTo(primaryScreenWidth, primaryScreenHeight);
-
-          console.log('Fenêtre déplacée vers:', secondScreenLeft);
-
-          // Tenter de mettre en plein écran
-          if (nouvelleFenetre.document.documentElement.requestFullscreen) {
-            nouvelleFenetre.document.documentElement.requestFullscreen();
-          }
+          console.log('✓ Tentative de déplacement vers le 2e écran');
         } catch (e) {
-          console.log('Impossible de déplacer/agrandir:', e);
+          console.log('⚠ Déplacement automatique bloqué:', e.message);
         }
-      }, 500);
+      }, 300);
     } else {
-      alert('Impossible d\'ouvrir l\'affichage client. Veuillez autoriser les popups pour ce site.');
+      alert('⚠ Impossible d\'ouvrir l\'affichage client.\n\nVeuillez:\n1. Autoriser les popups pour ce site\n2. Actualiser la page');
     }
 
     // Fermer la fenêtre lors du démontage du composant (déconnexion)

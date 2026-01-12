@@ -8,6 +8,7 @@ const formatCFA = utils.formatCFA
 export default function AffichageClient() {
   const [panier, setPanier] = useState([])
   const [montantDonne, setMontantDonne] = useState(0)
+  const [showHelp, setShowHelp] = useState(true)
 
   useEffect(() => {
     // Écouter les messages de la fenêtre principale
@@ -25,6 +26,9 @@ export default function AffichageClient() {
       window.opener.postMessage({ type: 'CLIENT_DISPLAY_READY' }, '*')
     }
 
+    // Masquer l'aide après 8 secondes
+    const timer = setTimeout(() => setShowHelp(false), 8000)
+
     // Empêcher la fermeture accidentelle
     const handleBeforeUnload = (e) => {
       e.preventDefault()
@@ -36,6 +40,7 @@ export default function AffichageClient() {
     return () => {
       window.removeEventListener('message', handleMessage)
       window.removeEventListener('beforeunload', handleBeforeUnload)
+      clearTimeout(timer)
     }
   }, [])
 
@@ -43,7 +48,22 @@ export default function AffichageClient() {
   const monnaieARendre = montantDonne > totalPanier ? montantDonne - totalPanier : 0
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-yellow-50 to-orange-100 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-yellow-50 to-orange-100 flex flex-col relative">
+      {/* Aide au démarrage */}
+      {showHelp && (
+        <div className="fixed top-4 right-4 z-50 bg-blue-600 text-white px-6 py-4 rounded-xl shadow-2xl animate-pulse">
+          <p className="text-lg font-semibold mb-2">💡 Premier démarrage</p>
+          <p className="text-sm">• Déplacez cette fenêtre sur le 2e écran</p>
+          <p className="text-sm">• Appuyez sur <kbd className="bg-white text-blue-600 px-2 py-1 rounded font-bold">F11</kbd> pour le plein écran</p>
+          <button
+            onClick={() => setShowHelp(false)}
+            className="mt-3 bg-white text-blue-600 px-4 py-1 rounded text-sm font-semibold hover:bg-blue-50"
+          >
+            Compris !
+          </button>
+        </div>
+      )}
+
       {/* En-tête fixe */}
       <div className="bg-gradient-to-r from-orange-600 to-yellow-500 text-white py-6 shadow-2xl">
         <div className="text-center">
