@@ -44,30 +44,48 @@ export default function CaisseManager({ currentUser }) {
 
   // Ouvrir automatiquement l'affichage client au chargement
   useEffect(() => {
-    // Positionner sur le second écran (à droite du premier)
-    const screenWidth = window.screen.width;
-    const screenHeight = window.screen.height;
+    // Détecter la position du second écran
+    const primaryScreenWidth = window.screen.width;
+    const primaryScreenHeight = window.screen.height;
 
-    // Ouvrir la fenêtre d'affichage client sur le second écran
+    // Position pour le second écran (largeur de l'écran principal)
+    const secondScreenLeft = primaryScreenWidth;
+
+    console.log('Ouverture affichage client:', {
+      primaryWidth: primaryScreenWidth,
+      primaryHeight: primaryScreenHeight,
+      secondScreenLeft: secondScreenLeft
+    });
+
+    // Ouvrir la fenêtre d'affichage client
     const nouvelleFenetre = window.open(
       '/caisse/affichage-client',
       'AffichageClient',
-      `width=${screenWidth},height=${screenHeight},left=${screenWidth},top=0,fullscreen=yes`
+      `width=${primaryScreenWidth},height=${primaryScreenHeight},left=${secondScreenLeft},top=0`
     );
 
     if (nouvelleFenetre) {
       setClientDisplayWindow(nouvelleFenetre);
 
-      // Tenter de mettre en plein écran après un court délai
+      // Déplacer et agrandir la fenêtre après son chargement
       setTimeout(() => {
         try {
+          // Forcer le déplacement vers le second écran
+          nouvelleFenetre.moveTo(secondScreenLeft, 0);
+          nouvelleFenetre.resizeTo(primaryScreenWidth, primaryScreenHeight);
+
+          console.log('Fenêtre déplacée vers:', secondScreenLeft);
+
+          // Tenter de mettre en plein écran
           if (nouvelleFenetre.document.documentElement.requestFullscreen) {
             nouvelleFenetre.document.documentElement.requestFullscreen();
           }
         } catch (e) {
-          console.log('Plein écran non disponible:', e);
+          console.log('Impossible de déplacer/agrandir:', e);
         }
-      }, 1000);
+      }, 500);
+    } else {
+      alert('Impossible d\'ouvrir l\'affichage client. Veuillez autoriser les popups pour ce site.');
     }
 
     // Fermer la fenêtre lors du démontage du composant (déconnexion)
@@ -183,29 +201,35 @@ export default function CaisseManager({ currentUser }) {
     }
 
     // Positionner sur le second écran (à droite du premier)
-    const screenWidth = window.screen.width;
-    const screenHeight = window.screen.height;
+    const primaryScreenWidth = window.screen.width;
+    const primaryScreenHeight = window.screen.height;
+    const secondScreenLeft = primaryScreenWidth;
 
-    // Ouvrir une nouvelle fenêtre pour l'affichage client sur le second écran
+    // Ouvrir une nouvelle fenêtre pour l'affichage client
     const nouvelleFenetre = window.open(
       '/caisse/affichage-client',
       'AffichageClient',
-      `width=${screenWidth},height=${screenHeight},left=${screenWidth},top=0,fullscreen=yes`
+      `width=${primaryScreenWidth},height=${primaryScreenHeight},left=${secondScreenLeft},top=0`
     );
 
     if (nouvelleFenetre) {
       setClientDisplayWindow(nouvelleFenetre);
 
-      // Tenter de mettre en plein écran après chargement
+      // Déplacer et agrandir la fenêtre après chargement
       setTimeout(() => {
         try {
+          // Forcer le déplacement vers le second écran
+          nouvelleFenetre.moveTo(secondScreenLeft, 0);
+          nouvelleFenetre.resizeTo(primaryScreenWidth, primaryScreenHeight);
+
+          // Tenter de mettre en plein écran
           if (nouvelleFenetre.document.documentElement.requestFullscreen) {
             nouvelleFenetre.document.documentElement.requestFullscreen();
           }
         } catch (e) {
-          console.log('Plein écran non disponible:', e);
+          console.log('Impossible de déplacer/agrandir:', e);
         }
-      }, 1000);
+      }, 500);
 
       // Envoyer les données initiales quand la fenêtre est prête
       nouvelleFenetre.addEventListener('load', () => {
