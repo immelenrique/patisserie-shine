@@ -1,4 +1,4 @@
-import AffichageClient from '@/components/caisse/AffichageClient'
+import AffichageClient from '../../../components/caisse/AffichageClient'
 
 export const metadata = {
   title: 'Affichage Client - Pâtisserie Shine',

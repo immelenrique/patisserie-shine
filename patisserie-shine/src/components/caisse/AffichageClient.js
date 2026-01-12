@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { formatCFA } from '@/utils/formatters'
+import { utils } from '../../utils/formatters'
+
+const formatCFA = utils.formatCFA
 
 export default function AffichageClient() {
   const [panier, setPanier] = useState([])
