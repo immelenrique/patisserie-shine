@@ -113,9 +113,22 @@ CREATE INDEX IF NOT EXISTS idx_mouvements_stock_cuisine_type ON public.mouvement
 -- 6. MISE À JOUR DU RÔLE DANS PROFILES
 -- ============================================
 -- Ajouter le rôle 'employe_cuisine' aux valeurs autorisées
--- Note: Cette commande doit être exécutée si la contrainte existe déjà
+-- IMPORTANT: Cette version récupère d'abord tous les rôles existants
 DO $$
+DECLARE
+  existing_roles TEXT[];
+  new_constraint TEXT;
 BEGIN
+  -- Récupérer tous les rôles distincts actuellement dans la table
+  SELECT ARRAY_AGG(DISTINCT role) INTO existing_roles
+  FROM public.profiles
+  WHERE role IS NOT NULL;
+
+  -- Ajouter 'employe_cuisine' s'il n'existe pas déjà
+  IF NOT ('employe_cuisine' = ANY(existing_roles)) THEN
+    existing_roles := existing_roles || 'employe_cuisine';
+  END IF;
+
   -- Supprimer l'ancienne contrainte si elle existe
   IF EXISTS (
     SELECT 1 FROM pg_constraint
@@ -124,10 +137,13 @@ BEGIN
     ALTER TABLE public.profiles DROP CONSTRAINT profiles_role_check;
   END IF;
 
-  -- Ajouter la nouvelle contrainte avec tous les rôles
-  ALTER TABLE public.profiles
-  ADD CONSTRAINT profiles_role_check
-  CHECK (role IN ('admin', 'caissier', 'producteur', 'employe_cuisine'));
+  -- Construire et ajouter la nouvelle contrainte avec tous les rôles
+  new_constraint := 'ALTER TABLE public.profiles ADD CONSTRAINT profiles_role_check CHECK (role IN (''' ||
+                    ARRAY_TO_STRING(existing_roles, ''',''') || '''))';
+
+  EXECUTE new_constraint;
+
+  RAISE NOTICE 'Contrainte profiles_role_check mise à jour avec les rôles: %', ARRAY_TO_STRING(existing_roles, ', ');
 END $$;
 
 -- ============================================
