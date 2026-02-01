@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { stockAtelierService, productService } from '../../services';
 import { utils } from '../../utils/formatters';
-import { Package, Plus, Search, ArrowRight, AlertTriangle, History } from 'lucide-react';
+import { Package, Plus, Search, ArrowRight, AlertTriangle, History, Trash2 } from 'lucide-react';
 import { Card, Modal } from '../ui';
 
 export default function StockAtelierManager({ currentUser }) {
@@ -170,6 +170,59 @@ export default function StockAtelierManager({ currentUser }) {
     }
   };
 
+  // Fonction pour vider tout le stock (admin uniquement)
+  const handleViderToutLeStock = async () => {
+    // Vérifier que l'utilisateur est admin
+    if (currentUser?.role !== 'admin') {
+      alert('Action réservée aux administrateurs');
+      return;
+    }
+
+    // Demander une confirmation
+    const confirmation = window.confirm(
+      '⚠️ ATTENTION ⚠️\n\n' +
+      'Vous êtes sur le point de VIDER TOUT LE STOCK ATELIER.\n' +
+      'Toutes les quantités seront mises à 0.\n\n' +
+      'Cette action est irréversible.\n\n' +
+      'Voulez-vous vraiment continuer ?'
+    );
+
+    if (!confirmation) return;
+
+    // Double confirmation
+    const doubleConfirmation = window.confirm(
+      'Confirmation finale:\n\n' +
+      'Êtes-vous ABSOLUMENT SÛR de vouloir vider tout le stock atelier ?\n\n' +
+      'Tapez OK pour confirmer.'
+    );
+
+    if (!doubleConfirmation) return;
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const result = await stockAtelierService.viderToutLeStock();
+
+      if (result.error) {
+        alert('Erreur lors du vidage du stock: ' + result.error);
+        setError(result.error);
+      } else {
+        alert(
+          `✅ Stock atelier vidé avec succès!\n\n` +
+          `${result.nombreProduitsVides} produit(s) ont été consommés.`
+        );
+        await loadData(); // Recharger les données
+      }
+    } catch (err) {
+      console.error('Erreur vidage stock:', err);
+      alert('Erreur lors du vidage du stock: ' + err.message);
+      setError('Erreur lors du vidage du stock');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // États de chargement et d'erreur
   if (loading) {
     return (
@@ -184,8 +237,20 @@ export default function StockAtelierManager({ currentUser }) {
       {/* En-tête */}
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Stock Atelier (Production)</h2>
-        <div className="text-sm text-gray-500">
-          {filteredStocks.length} produit{filteredStocks.length > 1 ? 's' : ''} en stock
+        <div className="flex items-center space-x-4">
+          <div className="text-sm text-gray-500">
+            {filteredStocks.length} produit{filteredStocks.length > 1 ? 's' : ''} en stock
+          </div>
+          {currentUser?.role === 'admin' && (
+            <button
+              onClick={handleViderToutLeStock}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center transition-colors"
+              title="Vider tout le stock atelier (Admin uniquement)"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Vider Tout le Stock
+            </button>
+          )}
         </div>
       </div>
 
