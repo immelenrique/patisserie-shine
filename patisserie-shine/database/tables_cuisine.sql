@@ -126,7 +126,7 @@ BEGIN
 
   -- Ajouter 'employe_cuisine' s'il n'existe pas déjà
   IF NOT ('employe_cuisine' = ANY(existing_roles)) THEN
-    existing_roles := existing_roles || 'employe_cuisine';
+    existing_roles := array_append(existing_roles, 'employe_cuisine');
   END IF;
 
   -- Supprimer l'ancienne contrainte si elle existe
