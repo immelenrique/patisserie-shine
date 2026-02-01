@@ -11,6 +11,7 @@ export { permissionsService } from './permissionsService'
 export { productService } from './productService'
 export { stockAtelierService } from './stockAtelierService'
 export { stockBoutiqueService } from './stockBoutiqueService'
+export { stockCuisineService } from './stockCuisineService'
 export { mouvementStockService } from './mouvementStockService'
 
 // ========== Services Demandes ==========
@@ -23,6 +24,7 @@ export { recetteService } from './recetteService'
 // ========== Services Prix & Caisse ==========
 export { prixService } from './prixService'
 export { caisseService } from './caisseService'
+export { caisseCuisineService } from './caisseCuisineService'
 export { arretCaisseService } from './arretCaisseService'
 export { cashierDashboardService } from './cashierDashboardService'
 
