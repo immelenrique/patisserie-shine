@@ -313,7 +313,7 @@ export default function CaisseManager({ currentUser }) {
       <div style="font-family: 'Courier New', monospace; max-width: 300px; margin: 0 auto; padding: 20px;">
         <div style="text-align: center; margin-bottom: 20px;">
           <h3 style="margin: 5px 0; font-size: 18px;">PÂTISSERIE SHINE</h3>
-          <p style="margin: 5px 0; font-size: 12px;">Tel: 07 07 07 07 07</p>
+          <p style="margin: 5px 0; font-size: 12px;">Tel: +226 05 07 39 00</p>
           <p style="margin: 5px 0; font-size: 14px;">Reçu N° ${lastReceipt.numero}</p>
           <p style="margin: 5px 0; font-size: 12px;">${lastReceipt.date}</p>
         </div>
