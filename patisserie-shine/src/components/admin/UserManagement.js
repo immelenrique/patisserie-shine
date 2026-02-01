@@ -264,6 +264,8 @@ export default function UserManagement({ currentUser }) {
         return ChefHat;
       case 'employe_boutique':
         return ShoppingBag;
+      case 'employe_cuisine':
+        return ChefHat;
       default:
         return User;
     }
@@ -277,6 +279,8 @@ export default function UserManagement({ currentUser }) {
         return '👩‍🍳 Employé Production';
       case 'employe_boutique':
         return '🛒 Employé Boutique';
+      case 'employe_cuisine':
+        return '🍳 Employé Cuisine';
       default:
         return '👤 Utilisateur';
     }
@@ -290,6 +294,8 @@ export default function UserManagement({ currentUser }) {
         return 'bg-orange-100 text-orange-800';
       case 'employe_boutique':
         return 'bg-green-100 text-green-800';
+      case 'employe_cuisine':
+        return 'bg-purple-100 text-purple-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -640,11 +646,13 @@ export default function UserManagement({ currentUser }) {
             >
               <option value="employe_boutique">🛒 Employé Boutique</option>
               <option value="employe_production">👩‍🍳 Employé Production</option>
+              <option value="employe_cuisine">🍳 Employé Cuisine</option>
               <option value="admin">👑 Administrateur</option>
             </select>
             <div className="text-xs text-gray-500 mt-1">
               <strong>Boutique:</strong> Consultation et demandes uniquement<br/>
               <strong>Production:</strong> Gestion stock et production<br/>
+              <strong>Cuisine:</strong> Gestion stock cuisine et caisse cuisine<br/>
               <strong>Admin:</strong> Accès complet à toutes les fonctionnalités
             </div>
           </div>
@@ -762,6 +770,7 @@ export default function UserManagement({ currentUser }) {
               >
                 <option value="employe_boutique">🛒 Employé Boutique</option>
                 <option value="employe_production">👩‍🍳 Employé Production</option>
+                <option value="employe_cuisine">🍳 Employé Cuisine</option>
                 <option value="admin">👑 Administrateur</option>
               </select>
               {selectedUser.username === 'proprietaire' && (

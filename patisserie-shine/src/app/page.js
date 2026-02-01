@@ -20,6 +20,8 @@ import UnitesManager from '../components/admin/UnitesManager';
 import TeamManager from '../components/admin/TeamManager';
 import UserManagement from '../components/admin/UserManagement';
 import PermissionsManager from '../components/admin/PermissionsManager';
+import StockCuisineManager from '../components/cuisine/StockCuisineManager';
+import CaisseCuisineManager from '../components/cuisine/CaisseCuisineManager';
 import { Modal } from '../components/ui';
 import { supabase } from '../lib/supabase-client';
 import { statsService, authService, userService, permissionsService } from '../services';
@@ -238,11 +240,19 @@ useEffect(() => {
         ];
         return defaultPermissions.includes(permission);
       }
-      
+
       if (currentUser?.role === 'employe_boutique') {
         const defaultPermissions = [
-          'view_dashboard', 'view_stock_boutique', 
+          'view_dashboard', 'view_stock_boutique',
           'view_demandes', 'view_caisse'
+        ];
+        return defaultPermissions.includes(permission);
+      }
+
+      if (currentUser?.role === 'employe_cuisine') {
+        const defaultPermissions = [
+          'view_dashboard', 'view_stock_cuisine',
+          'view_caisse_cuisine'
         ];
         return defaultPermissions.includes(permission);
       }
@@ -352,10 +362,12 @@ useEffect(() => {
     { id: 'referentiel', label: 'Référentiel Produits', icon: Database, permission: 'view_referentiel' },
     { id: 'stock-atelier', label: 'Stock Atelier', icon: Factory, permission: 'view_stock_atelier' },
     { id: 'stock-boutique', label: 'Stock Boutique', icon: Store, permission: 'view_stock_boutique' },
+    { id: 'stock-cuisine', label: 'Stock Cuisine', icon: ChefHat, permission: 'view_stock_cuisine' },
     { id: 'recettes', label: 'Recettes', icon: BookOpen, permission: 'view_recettes' },
     { id: 'demandes', label: 'Demandes', icon: FileText, permission: 'view_demandes' },
     { id: 'production', label: 'Production', icon: ChefHat, permission: 'view_production' },
     { id: 'caisse', label: 'Caisse', icon: CreditCard, permission: 'view_caisse' },
+    { id: 'caisse-cuisine', label: 'Caisse Cuisine', icon: ChefHat, permission: 'view_caisse_cuisine' },
     { id: 'comptabilite', label: 'Comptabilité', icon: Calculator, permission: 'view_comptabilite' },
     { id: 'depenses', label: 'Dépenses', icon: Receipt, permission: 'manage_depenses', adminOnly: true },
     { id: 'unites', label: 'Unités', icon: Ruler, permission: 'manage_units', adminOnly: true },
@@ -482,10 +494,12 @@ console.log('Available:', availableTabs.map(t => t.label));
         {activeTab === 'referentiel' && <ReferentielManager currentUser={currentUser} />}
         {activeTab === 'stock-atelier' && <StockAtelierManager currentUser={currentUser} />}
         {activeTab === 'stock-boutique' && <StockBoutiqueManager currentUser={currentUser} />}
+        {activeTab === 'stock-cuisine' && <StockCuisineManager currentUser={currentUser} />}
         {activeTab === 'recettes' && <RecettesManager currentUser={currentUser} />}
         {activeTab === 'demandes' && <DemandesManager currentUser={currentUser} />}
         {activeTab === 'production' && <ProductionManager currentUser={currentUser} />}
         {activeTab === 'caisse' && <CaisseManager currentUser={currentUser} />}
+        {activeTab === 'caisse-cuisine' && <CaisseCuisineManager currentUser={currentUser} />}
         {activeTab === 'comptabilite' && <ComptabiliteManager currentUser={currentUser} />}
         {activeTab === 'unites' && <UnitesManager currentUser={currentUser} />}
         {activeTab === 'equipe' && <TeamManager currentUser={currentUser} />}
