@@ -6,17 +6,27 @@
 -- bloquent les opérations INSERT
 
 -- ============================================
--- 1. SUPPRIMER LES ANCIENNES POLITIQUES
+-- 1. SUPPRIMER TOUTES LES POLITIQUES EXISTANTES
 -- ============================================
 
--- Supprimer les politiques stock_cuisine
+-- Supprimer les anciennes politiques stock_cuisine
 DROP POLICY IF EXISTS "Seuls les admins peuvent modifier le stock" ON public.stock_cuisine;
 DROP POLICY IF EXISTS "Admins et employés cuisine peuvent voir le stock" ON public.stock_cuisine;
 
--- Supprimer les politiques produits_cuisine
+-- Supprimer les anciennes politiques produits_cuisine
 DROP POLICY IF EXISTS "Seuls les admins peuvent créer des produits" ON public.produits_cuisine;
 DROP POLICY IF EXISTS "Seuls les admins peuvent modifier des produits" ON public.produits_cuisine;
 DROP POLICY IF EXISTS "Admins et employés cuisine peuvent voir les produits" ON public.produits_cuisine;
+
+-- Supprimer les nouvelles politiques (si déjà créées partiellement)
+DROP POLICY IF EXISTS "produits_cuisine_select" ON public.produits_cuisine;
+DROP POLICY IF EXISTS "produits_cuisine_insert" ON public.produits_cuisine;
+DROP POLICY IF EXISTS "produits_cuisine_update" ON public.produits_cuisine;
+DROP POLICY IF EXISTS "produits_cuisine_delete" ON public.produits_cuisine;
+DROP POLICY IF EXISTS "stock_cuisine_select" ON public.stock_cuisine;
+DROP POLICY IF EXISTS "stock_cuisine_insert" ON public.stock_cuisine;
+DROP POLICY IF EXISTS "stock_cuisine_update" ON public.stock_cuisine;
+DROP POLICY IF EXISTS "stock_cuisine_delete" ON public.stock_cuisine;
 
 -- ============================================
 -- 2. RECRÉER LES POLITIQUES CORRIGÉES
