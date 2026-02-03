@@ -83,6 +83,15 @@ export const utils = {
     if (percentage <= 20) return 'critique'
     if (percentage <= 50) return 'faible'
     return 'normal'
+  },
+
+  /**
+   * Alias de formatCFA pour compatibilité
+   * @param {number} montant - Montant à formater
+   * @returns {string} Montant formaté (ex: "1 000 CFA")
+   */
+  formatMontant(montant) {
+    return this.formatCFA(montant)
   }
 }
 
