@@ -376,8 +376,10 @@ export default function CaisseManager({ currentUser }) {
           <head>
             <title>Reçu ${receiptData.numero}</title>
             <style>
+              @page { size: 80mm auto; margin: 0; }
+              html, body { width: 80mm; margin: 0; padding: 0; }
               @media print {
-                body { margin: 0; padding: 10px; }
+                body { margin: 0; padding: 6px; }
               }
             </style>
           </head>
@@ -404,18 +406,19 @@ export default function CaisseManager({ currentUser }) {
           <meta charset="UTF-8">
           <title>Reçu ${receiptData.numero}</title>
           <style>
-            @page { 
+            @page {
               size: 80mm auto;
-              margin: 5mm;
-            }
-            body { 
               margin: 0;
-              padding: 10px;
             }
-            @media print { 
-              body { 
-                margin: 0; 
-                padding: 5px; 
+            html, body {
+              width: 80mm;
+              margin: 0;
+              padding: 0;
+            }
+            @media print {
+              body {
+                margin: 0;
+                padding: 6px;
               }
             }
           </style>
