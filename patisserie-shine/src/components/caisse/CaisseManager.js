@@ -293,8 +293,10 @@ export default function CaisseManager({ currentUser }) {
       setShowReceiptModal(true);
       
       // Imprimer automatiquement après un court délai
+      // On passe `recu` directement pour éviter une stale closure :
+      // le state `lastReceipt` n'est pas encore à jour ici.
       setTimeout(() => {
-        imprimerRecu();
+        imprimerRecu(recu);
       }, 500);
 
       setPanier([]);
@@ -306,21 +308,21 @@ export default function CaisseManager({ currentUser }) {
     }
   };
 
-  const imprimerRecu = () => {
-    if (!lastReceipt) return;
+  const imprimerRecu = (receiptData = lastReceipt) => {
+    if (!receiptData) return;
 
     const contenuRecu = `
       <div style="font-family: 'Courier New', monospace; max-width: 300px; margin: 0 auto; padding: 20px;">
         <div style="text-align: center; margin-bottom: 20px;">
           <h3 style="margin: 5px 0; font-size: 18px;">PÂTISSERIE SHINE</h3>
           <p style="margin: 5px 0; font-size: 12px;">Tel: +226 05 07 39 00</p>
-          <p style="margin: 5px 0; font-size: 14px;">Reçu N° ${lastReceipt.numero}</p>
-          <p style="margin: 5px 0; font-size: 12px;">${lastReceipt.date}</p>
+          <p style="margin: 5px 0; font-size: 14px;">Reçu N° ${receiptData.numero}</p>
+          <p style="margin: 5px 0; font-size: 12px;">${receiptData.date}</p>
         </div>
         
         <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
         
-        ${lastReceipt.items.map(item => `
+        ${receiptData.items.map(item => `
           <div style="margin: 8px 0;">
             <div style="font-weight: bold;">${item.nom}</div>
             <div style="display: flex; justify-content: space-between; padding-left: 10px; font-size: 12px;">
@@ -335,22 +337,22 @@ export default function CaisseManager({ currentUser }) {
         <div style="font-weight: bold; font-size: 14px;">
           <div style="display: flex; justify-content: space-between; margin: 5px 0;">
             <span>TOTAL:</span>
-            <span>${utils.formatCFA(lastReceipt.total)}</span>
+            <span>${utils.formatCFA(receiptData.total)}</span>
           </div>
           <div style="display: flex; justify-content: space-between; margin: 5px 0;">
             <span>Espèces:</span>
-            <span>${utils.formatCFA(lastReceipt.montant_donne)}</span>
+            <span>${utils.formatCFA(receiptData.montant_donne)}</span>
           </div>
           <div style="display: flex; justify-content: space-between; margin: 5px 0;">
             <span>Monnaie:</span>
-            <span>${utils.formatCFA(lastReceipt.monnaie_rendue)}</span>
+            <span>${utils.formatCFA(receiptData.monnaie_rendue)}</span>
           </div>
         </div>
         
         <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
         
         <div style="text-align: center; margin-top: 15px;">
-          <p style="margin: 5px 0;">Servi par: ${lastReceipt.vendeur}</p>
+          <p style="margin: 5px 0;">Servi par: ${receiptData.vendeur}</p>
           <p style="margin: 10px 0; font-weight: bold;">MERCI DE VOTRE VISITE</p>
           <p style="margin: 5px 0; font-size: 10px;">À bientôt !</p>
         </div>
@@ -372,7 +374,7 @@ export default function CaisseManager({ currentUser }) {
       doc.write(`
         <html>
           <head>
-            <title>Reçu ${lastReceipt.numero}</title>
+            <title>Reçu ${receiptData.numero}</title>
             <style>
               @media print {
                 body { margin: 0; padding: 10px; }
@@ -400,7 +402,7 @@ export default function CaisseManager({ currentUser }) {
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>Reçu ${lastReceipt.numero}</title>
+          <title>Reçu ${receiptData.numero}</title>
           <style>
             @page { 
               size: 80mm auto;
@@ -951,7 +953,7 @@ export default function CaisseManager({ currentUser }) {
 
             <div className="mt-6 flex justify-center">
               <button
-                onClick={imprimerRecu}
+                onClick={() => imprimerRecu()}
                 className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
               >
                 <Printer className="w-4 h-4 inline mr-2" />
