@@ -312,7 +312,7 @@ export default function CaisseManager({ currentUser }) {
     if (!receiptData) return;
 
     const contenuRecu = `
-      <div style="font-family: 'Courier New', monospace; width: 100%; box-sizing: border-box; margin: 0; padding: 4px 5mm;">
+      <div style="font-family: 'Courier New', monospace; width: 100%; box-sizing: border-box; margin: 0; padding: 4px 3mm;">
         <div style="text-align: center; margin-bottom: 20px;">
           <h3 style="margin: 5px 0; font-size: 18px;">PÂTISSERIE SHINE</h3>
           <p style="margin: 5px 0; font-size: 12px;">Tel: +226 05 07 39 00</p>
@@ -376,8 +376,8 @@ export default function CaisseManager({ currentUser }) {
           <head>
             <title>Reçu ${receiptData.numero}</title>
             <style>
-              @page { size: 80mm auto; margin: 0; }
-              html, body { width: 80mm; margin: 0; padding: 0; }
+              @page { size: auto; margin: 0; }
+              html, body { width: auto; margin: 0; padding: 0; }
               @media print {
                 body { margin: 0; padding: 0; }
               }
@@ -407,18 +407,18 @@ export default function CaisseManager({ currentUser }) {
           <title>Reçu ${receiptData.numero}</title>
           <style>
             @page {
-              size: 80mm auto;
+              size: auto;
               margin: 0;
             }
             html, body {
-              width: 80mm;
+              width: auto;
               margin: 0;
               padding: 0;
             }
             @media print {
               body {
                 margin: 0;
-                padding: 6px;
+                padding: 0;
               }
             }
           </style>
