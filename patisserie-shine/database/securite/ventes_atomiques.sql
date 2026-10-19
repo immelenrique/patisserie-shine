@@ -4,7 +4,7 @@
 -- Aucune suppression : applicable directement.
 --
 -- Avant : la vente était écrite en plusieurs appels séparés depuis le navigateur, erreurs ignorées
---   (19 ventes validées sans aucune ligne, 31 ventes au total incohérent en production), le prix et le
+--   (19 ventes validées sans aucune ligne, 11 ventes au total incohérent en production), le prix et le
 --   total venaient du navigateur, le stock n'était pas vérifié côté serveur (5 stocks négatifs) et deux
 --   caisses simultanées pouvaient écraser le décompte. L'annulation rendait le stock avant de marquer la
 --   vente annulée, sans verrou : deux annulations simultanées rendaient le stock deux fois.

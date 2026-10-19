@@ -1,7 +1,7 @@
 // src/components/cuisine/CaisseCuisineManager.js
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { caisseCuisineService } from '../../services';
 import { utils } from '../../utils/formatters';
 import {
@@ -29,6 +29,9 @@ export default function CaisseCuisineManager({ currentUser }) {
   const [ventesJour, setVentesJour] = useState([]);
   const [activeTab, setActiveTab] = useState('caisse');
   const [searchTerm, setSearchTerm] = useState('');
+  const [enregistrementEnCours, setEnregistrementEnCours] = useState(false);
+  // Verrou synchrone : deux clics rapprochés arrivent avant que l'état ne désactive le bouton
+  const enregistrementRef = useRef(false);
 
   useEffect(() => {
     loadData();
@@ -122,6 +125,11 @@ export default function CaisseCuisineManager({ currentUser }) {
       return;
     }
 
+    // Une vente déjà en cours d'envoi : un nouveau clic l'enregistrerait une seconde fois
+    if (enregistrementRef.current) return;
+    enregistrementRef.current = true;
+    setEnregistrementEnCours(true);
+
     try {
       const venteData = {
         items: panier,
@@ -153,8 +161,10 @@ export default function CaisseCuisineManager({ currentUser }) {
       setShowReceiptModal(true);
 
       // Imprimer automatiquement après un court délai
+      // On passe `recu` directement : le state `lastReceipt` n'est pas encore à jour ici
+      // (sinon le reçu imprimé serait celui de la vente précédente).
       setTimeout(() => {
-        imprimerRecu();
+        imprimerRecu(recu);
       }, 500);
 
       setPanier([]);
@@ -163,11 +173,14 @@ export default function CaisseCuisineManager({ currentUser }) {
 
     } catch (err) {
       alert('Erreur lors de la finalisation : ' + err.message);
+    } finally {
+      enregistrementRef.current = false;
+      setEnregistrementEnCours(false);
     }
   };
 
-  const imprimerRecu = () => {
-    if (!lastReceipt) return;
+  const imprimerRecu = (receiptData = lastReceipt) => {
+    if (!receiptData) return;
 
     const contenuRecu = `
       <div style="font-family: 'Courier New', monospace; max-width: 300px; margin: 0 auto; padding: 20px;">
@@ -175,13 +188,13 @@ export default function CaisseCuisineManager({ currentUser }) {
           <h3 style="margin: 5px 0; font-size: 18px;">PÂTISSERIE SHINE</h3>
           <p style="margin: 5px 0; font-size: 14px; font-weight: bold;">🍳 CUISINE 🍳</p>
           <p style="margin: 5px 0; font-size: 12px;">Tel: +226 05 07 39 00</p>
-          <p style="margin: 5px 0; font-size: 14px;">Reçu N° ${utils.escapeHtml(lastReceipt.numero)}</p>
-          <p style="margin: 5px 0; font-size: 12px;">${utils.escapeHtml(lastReceipt.date)}</p>
+          <p style="margin: 5px 0; font-size: 14px;">Reçu N° ${utils.escapeHtml(receiptData.numero)}</p>
+          <p style="margin: 5px 0; font-size: 12px;">${utils.escapeHtml(receiptData.date)}</p>
         </div>
 
         <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
 
-        ${lastReceipt.items.map(item => `
+        ${receiptData.items.map(item => `
           <div style="margin: 8px 0;">
             <div style="font-weight: bold;">${utils.escapeHtml(item.nom)}</div>
             <div style="display: flex; justify-content: space-between; padding-left: 10px; font-size: 12px;">
@@ -196,22 +209,22 @@ export default function CaisseCuisineManager({ currentUser }) {
         <div style="font-weight: bold; font-size: 14px;">
           <div style="display: flex; justify-content: space-between; margin: 5px 0;">
             <span>TOTAL:</span>
-            <span>${utils.formatCFA(lastReceipt.total)}</span>
+            <span>${utils.formatCFA(receiptData.total)}</span>
           </div>
           <div style="display: flex; justify-content: space-between; margin: 5px 0;">
             <span>Espèces:</span>
-            <span>${utils.formatCFA(lastReceipt.montant_donne)}</span>
+            <span>${utils.formatCFA(receiptData.montant_donne)}</span>
           </div>
           <div style="display: flex; justify-content: space-between; margin: 5px 0;">
             <span>Monnaie:</span>
-            <span>${utils.formatCFA(lastReceipt.monnaie_rendue)}</span>
+            <span>${utils.formatCFA(receiptData.monnaie_rendue)}</span>
           </div>
         </div>
 
         <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
 
         <div style="text-align: center; margin-top: 15px;">
-          <p style="margin: 5px 0;">Servi par: ${utils.escapeHtml(lastReceipt.vendeur)}</p>
+          <p style="margin: 5px 0;">Servi par: ${utils.escapeHtml(receiptData.vendeur)}</p>
           <p style="margin: 10px 0; font-weight: bold;">MERCI DE VOTRE VISITE</p>
           <p style="margin: 5px 0; font-size: 10px;">BON APPÉTIT !</p>
         </div>
@@ -233,7 +246,7 @@ export default function CaisseCuisineManager({ currentUser }) {
       doc.write(`
         <html>
           <head>
-            <title>Reçu ${utils.escapeHtml(lastReceipt.numero)}</title>
+            <title>Reçu ${utils.escapeHtml(receiptData.numero)}</title>
             <style>
               @media print {
                 body { margin: 0; padding: 10px; }
@@ -261,7 +274,7 @@ export default function CaisseCuisineManager({ currentUser }) {
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>Reçu ${utils.escapeHtml(lastReceipt.numero)}</title>
+          <title>Reçu ${utils.escapeHtml(receiptData.numero)}</title>
           <style>
             @page {
               size: 80mm auto;
@@ -550,11 +563,11 @@ export default function CaisseCuisineManager({ currentUser }) {
 
                       <button
                         onClick={finaliserVente}
-                        disabled={panier.length === 0 || montantDonneNum < totalPanier}
+                        disabled={panier.length === 0 || montantDonneNum < totalPanier || enregistrementEnCours}
                         className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
                       >
                         <Calculator className="w-5 h-5 inline mr-2" />
-                        Finaliser la Vente
+                        {enregistrementEnCours ? 'Enregistrement…' : 'Finaliser la Vente'}
                       </button>
                     </div>
                   </div>
@@ -728,7 +741,7 @@ export default function CaisseCuisineManager({ currentUser }) {
 
             <div className="mt-6 flex justify-center">
               <button
-                onClick={imprimerRecu}
+                onClick={() => imprimerRecu()}
                 className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
               >
                 <Printer className="w-4 h-4 inline mr-2" />

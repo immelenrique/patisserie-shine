@@ -1,7 +1,7 @@
 // src/components/caisse/CaisseManager.js
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase-client';
 import { caisseService, stockBoutiqueService } from '../../services';
 import { utils } from '../../utils/formatters';
@@ -35,6 +35,9 @@ export default function CaisseManager({ currentUser }) {
   const [activeTab, setActiveTab] = useState('caisse');
   const [searchTerm, setSearchTerm] = useState('');
   const [clientDisplayWindow, setClientDisplayWindow] = useState(null);
+  const [enregistrementEnCours, setEnregistrementEnCours] = useState(false);
+  // Verrou synchrone : deux clics rapprochés arrivent avant que l'état ne désactive le bouton
+  const enregistrementRef = useRef(false);
 
   useEffect(() => {
     if (activeTab !== 'dashboard') {
@@ -262,6 +265,11 @@ export default function CaisseManager({ currentUser }) {
       return;
     }
 
+    // Une vente déjà en cours d'envoi : un nouveau clic l'enregistrerait une seconde fois
+    if (enregistrementRef.current) return;
+    enregistrementRef.current = true;
+    setEnregistrementEnCours(true);
+
     try {
       const { vente, error } = await caisseService.enregistrerVente({
         items: panier,
@@ -303,6 +311,9 @@ export default function CaisseManager({ currentUser }) {
 
     } catch (err) {
       alert('Erreur lors de la finalisation : ' + err.message);
+    } finally {
+      enregistrementRef.current = false;
+      setEnregistrementEnCours(false);
     }
   };
 
@@ -780,11 +791,11 @@ export default function CaisseManager({ currentUser }) {
 
                       <button
                         onClick={finaliserVente}
-                        disabled={panier.length === 0 || montantDonneNum < totalPanier}
+                        disabled={panier.length === 0 || montantDonneNum < totalPanier || enregistrementEnCours}
                         className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
                       >
                         <Calculator className="w-5 h-5 inline mr-2" />
-                        Finaliser la Vente
+                        {enregistrementEnCours ? 'Enregistrement…' : 'Finaliser la Vente'}
                       </button>
                     </div>
                   </div>
