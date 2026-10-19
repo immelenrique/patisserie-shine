@@ -27,6 +27,8 @@ export default function DemandesManager({ currentUser }) {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [validationsEnCours, setValidationsEnCours] = useState(new Set());
   const [submitting, setSubmitting] = useState(false);
+  const [demandeAValider, setDemandeAValider] = useState(null);
+  const [quantitesValidees, setQuantitesValidees] = useState({});
 
   // État pour la demande multi-produits
   const [formData, setFormData] = useState({
@@ -57,7 +59,8 @@ export default function DemandesManager({ currentUser }) {
             *,
             produit:produits(id, nom, quantite_restante, unite:unites(label)),
             valideur:profiles!demandes_valideur_id_fkey(nom, username)
-          )
+          ),
+          envois(id, statut, avec_ecart, auto_validation, recu_le)
         `)
         .order('created_at', { ascending: false });
 
@@ -323,615 +326,98 @@ export default function DemandesManager({ currentUser }) {
   };
 
   // ============ VALIDATION DE DEMANDE ============
-  const handleValidateGroupedDemande = async (demandeGroupeeId) => {
-  if (validationsEnCours.has(demandeGroupeeId)) {
-    alert('⏳ Une validation est déjà en cours pour cette demande. Veuillez patienter...');
-    return;
-  }
-
-  if (!confirm('Êtes-vous sûr de vouloir valider toute cette demande groupée ?')) return;
-
-  setValidationsEnCours(prev => new Set(prev).add(demandeGroupeeId));
-
-  const showProgress = (message) => {
-    const existingProgress = document.getElementById('validation-progress');
-    if (existingProgress) {
-      existingProgress.textContent = message;
-    } else {
-      const progressDiv = document.createElement('div');
-      progressDiv.id = 'validation-progress';
-      progressDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 9999;';
-      progressDiv.textContent = message;
-      document.body.appendChild(progressDiv);
-    }
-  };
-
-  const hideProgress = () => {
-    const progressDiv = document.getElementById('validation-progress');
-    if (progressDiv) progressDiv.remove();
-  };
-
-  try {
-    showProgress('🔒 Vérification...');
-
-    // Vérifier le statut actuel
-    const { data: demandeActuelle, error: checkError } = await supabase
-      .from('demandes_groupees')
-      .select('statut')
-      .eq('id', demandeGroupeeId)
-      .single();
-
-    if (checkError || demandeActuelle.statut !== 'en_attente') {
-      alert('Cette demande ne peut pas être validée');
-      return;
-    }
-
-    showProgress('📋 Traitement...');
-
-    // Récupérer les demandes avec les infos complètes
-    const { data: demandesGroupe, error: fetchError } = await supabase
-      .from('demandes')
-      .select(`
-        *,
-        produit:produits(id, nom, quantite_restante, unite:unites(label))
-      `)
-      .eq('demande_groupee_id', demandeGroupeeId)
-      .eq('statut', 'en_attente');
-
-    if (fetchError || !demandesGroupe || demandesGroupe.length === 0) {
-      throw new Error('Aucune demande en attente trouvée');
-    }
-
-    // Récupérer la destination de la demande groupée
-    const { data: demandeGroupeeInfo } = await supabase
-      .from('demandes_groupees')
-      .select('destination')
-      .eq('id', demandeGroupeeId)
-      .single();
-
-    showProgress('🔍 Vérification des stocks...');
-
-    // Vérifier les stocks disponibles
-    const stockInsuffisant = [];
-    for (const demande of demandesGroupe) {
-      if (!demande.produit || demande.produit.quantite_restante < demande.quantite) {
-        stockInsuffisant.push({
-          produit: demande.produit?.nom || 'Produit inconnu',
-          demande: demande.quantite,
-          disponible: demande.produit?.quantite_restante || 0
-        });
-      }
-    }
-
-    if (stockInsuffisant.length > 0) {
-      let message = '⚠️ Stock insuffisant :\n';
-      stockInsuffisant.forEach(item => {
-        message += `• ${item.produit}: demandé ${item.demande}, disponible ${item.disponible}\n`;
-      });
-      throw new Error(message);
-    }
-
-    showProgress('⚙️ Validation en cours...');
-
-    const errors = [];
-    let processedCount = 0;
-
-    // Traiter chaque demande
-    for (const demande of demandesGroupe) {
-      try {
-        // 1. Réduire le stock principal
-        const { error: stockError } = await supabase.rpc('decrement_stock', {
-          p_produit_id: demande.produit_id,
-          p_quantite: demande.quantite
-        });
-
-        if (stockError) throw stockError;
-
-        // 2. Gérer le stock de destination selon le type
-        const destination = demande.destination || demandeGroupeeInfo?.destination;
-        
-        if (destination === 'Production' || destination === 'Atelier') {
-          // Gérer le stock atelier
-          const { data: existingStock } = await supabase
-            .from('stock_atelier')
-            .select('*')
-            .eq('produit_id', demande.produit_id)
-            .maybeSingle();
-
-          if (existingStock) {
-            await supabase
-              .from('stock_atelier')
-              .update({
-                quantite_disponible: existingStock.quantite_disponible + demande.quantite,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', existingStock.id);
-          } else {
-            await supabase
-              .from('stock_atelier')
-              .insert({
-                produit_id: demande.produit_id,
-                quantite_disponible: demande.quantite,
-                transfere_par: currentUser.id,
-                created_at: new Date().toISOString()
-              });
-          }
-          
-        } else if (destination === 'Boutique') {
-          // Gérer le stock boutique
-          const { data: existingStockBoutique } = await supabase
-            .from('stock_boutique')
-            .select('*')
-            .eq('produit_id', demande.produit_id)
-            .maybeSingle();
-
-          // Récupérer le prix de vente si défini
-          const { data: prixVente } = await supabase
-            .from('prix_vente_produits')
-            .select('prix')
-            .eq('produit_id', demande.produit_id)
-            .eq('actif', true)
-            .maybeSingle();
-
-          if (existingStockBoutique) {
-            // Mettre à jour le stock existant
-            await supabase
-              .from('stock_boutique')
-              .update({
-                quantite_disponible: (existingStockBoutique.quantite_disponible || 0) + demande.quantite,
-                type_produit: existingStockBoutique.type_produit || 'vendable',
-                nom_produit: existingStockBoutique.nom_produit || demande.produit?.nom || `Produit ${demande.produit_id}`,
-                prix_vente: prixVente?.prix || existingStockBoutique.prix_vente || null,
-                statut_stock: 'normal',
-                transfere_par: currentUser.id,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', existingStockBoutique.id);
-          } else {
-            // Créer une nouvelle entrée dans stock_boutique
-            await supabase
-              .from('stock_boutique')
-              .insert({
-                produit_id: demande.produit_id,
-                nom_produit: demande.produit?.nom || `Produit ${demande.produit_id}`,
-                quantite_disponible: demande.quantite,
-                quantite_vendue: 0,
-                quantite_utilisee: 0,
-                type_produit: 'vendable',
-                prix_vente: prixVente?.prix || null,
-                statut_stock: 'normal',
-                transfere_par: currentUser.id,
-                created_at: new Date().toISOString()
-              });
-          }
-
-          // Enregistrer l'entrée dans entrees_boutique
-          await supabase
-            .from('entrees_boutique')
-            .insert({
-              produit_id: demande.produit_id,
-              quantite: demande.quantite,
-              source: 'Stock Principal',
-              type_entree: 'Demande',
-              prix_vente: prixVente?.prix || null,
-              ajoute_par: currentUser.id,
-              created_at: new Date().toISOString()
-            });
-        }
-
-        // 3. Enregistrer le mouvement de stock
-        await supabase
-          .from('mouvements_stock')
-          .insert({
-            produit_id: demande.produit_id,
-            type_mouvement: 'transfert',
-            quantite: demande.quantite,
-            source: 'Stock Principal',
-            destination: destination || 'Production',
-            utilisateur_id: currentUser.id,
-            reference_id: demande.id,
-            reference_type: 'demande',
-            commentaire: `Demande groupée #${demandeGroupeeId} validée`,
-            created_at: new Date().toISOString()
-          });
-
-        processedCount++;
-        
-      } catch (error) {
-        console.error(`Erreur pour ${demande.produit?.nom}:`, error);
-        errors.push({
-          produit: demande.produit?.nom || `Produit ID: ${demande.produit_id}`,
-          erreur: error.message
-        });
-      }
-    }
-
-    showProgress('📝 Finalisation...');
-
-    // 4. Passer en traitement puis valider (pour respecter la contrainte CHECK)
-    await supabase
-      .from('demandes_groupees')
-      .update({ statut: 'en_traitement' })
-      .eq('id', demandeGroupeeId);
-
-    // 5. Mettre à jour les demandes individuelles
-    await supabase
-      .from('demandes')
-      .update({
-        statut: 'validee',
-        valideur_id: currentUser.id,
-        date_validation: new Date().toISOString()
-      })
-      .eq('demande_groupee_id', demandeGroupeeId);
-
-    // 6. Valider la demande groupée
-    const statutFinal = errors.length > 0 ? 'partiellement_validee' : 'validee';
-    
-    await supabase
-      .from('demandes_groupees')
-      .update({
-        statut: statutFinal,
-        valideur_id: currentUser.id,
-        date_validation: new Date().toISOString(),
-        details_validation: errors.length > 0 ? { erreurs: errors } : null
-      })
-      .eq('id', demandeGroupeeId);
-
-    // 7. Notifier le demandeur
-    const { data: demandeInfo } = await supabase
-      .from('demandes_groupees')
-      .select('demandeur_id, nombre_produits, destination')
-      .eq('id', demandeGroupeeId)
-      .single();
-
-    if (demandeInfo?.demandeur_id && demandeInfo.demandeur_id !== currentUser.id) {
-      await supabase
-        .from('notifications')
-        .insert({
-          destinataire_id: demandeInfo.demandeur_id,
-          emetteur_id: currentUser.id,
-          type: 'demande_validee',
-          message: `Votre demande a été validée par ${currentUser.nom || currentUser.username}`,
-          details: errors.length > 0 
-            ? `${processedCount}/${demandesGroupe.length} produit(s) traités avec succès`
-            : `${demandeInfo.nombre_produits} produit(s) ajoutés au stock ${demandeInfo.destination}`,
-          lien: `/demandes#${demandeGroupeeId}`,
-          lu: false,
-          priorite: 'normale',
-          created_at: new Date().toISOString()
-        });
-    }
-
-    await loadData();
-    hideProgress();
-    
-    // 8. Message de résultat
-    if (errors.length > 0) {
-      let message = `⚠️ Validation terminée avec des erreurs\n\n`;
-      message += `✅ ${processedCount}/${demandesGroupe.length} produits traités avec succès\n\n`;
-      message += `❌ Erreurs rencontrées :\n`;
-      errors.forEach(e => {
-        message += `• ${e.produit}: ${e.erreur}\n`;
-      });
-      alert(message);
-    } else {
-      alert(`✅ Demande groupée validée avec succès !\n\n${processedCount} produits ont été transférés vers le stock ${demandeGroupeeInfo?.destination || 'de destination'}.`);
-    }
-
-  } catch (err) {
-    hideProgress();
-    console.error('Erreur globale:', err);
-    alert('❌ ' + err.message);
-  } finally {
-    // 9. Libération du verrou
-    setValidationsEnCours(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(demandeGroupeeId);
-      return newSet;
+  // La base fait tout en une seule opération (valider_demande_groupee) : stock principal décompté, marchandise
+  // « en transit ». La destination n'est créditée qu'à la réception, comptée sur l'écran « Réceptions ».
+  const ouvrirValidation = (demande) => {
+    const quantites = {};
+    (demande.lignes || []).forEach(ligne => {
+      if (ligne.statut === 'en_attente') quantites[ligne.produit_id] = String(ligne.quantite);
     });
-  }
-};
-  const handleCancelValidatedDemande = async (demandeGroupeeId) => {
-  // Vérifier que l'utilisateur est admin
-  if (currentUser.role !== 'admin') {
-    alert('⛔ Seuls les administrateurs peuvent annuler une demande validée.');
-    return;
-  }
+    setQuantitesValidees(quantites);
+    setDemandeAValider(demande);
+  };
 
-  // Confirmation avec avertissement sérieux
-  const firstConfirm = confirm(
-    '⚠️ ATTENTION - ANNULATION DE DEMANDE VALIDÉE\n\n' +
-    'Vous êtes sur le point d\'annuler une demande déjà validée.\n\n' +
-    'Cette action va :\n' +
-    '• Restaurer le stock principal\n' +
-    '• Retirer les produits du stock de destination\n' +
-    '• Créer un mouvement de restauration\n\n' +
-    'Êtes-vous sûr de vouloir continuer ?'
-  );
+  const handleValidateGroupedDemande = async () => {
+    const demande = demandeAValider;
+    if (!demande || validationsEnCours.has(demande.id)) return;
 
-  if (!firstConfirm) return;
-
-  // Double confirmation pour une action critique
-  const raison = prompt(
-    'CONFIRMATION FINALE\n\n' +
-    'Veuillez indiquer la raison de l\'annulation (obligatoire) :'
-  );
-
-  if (!raison || raison.trim() === '') {
-    alert('L\'annulation a été abandonnée. Une raison est obligatoire.');
-    return;
-  }
-
-  try {
-    // 1. Récupérer toutes les demandes de ce groupe
-    const { data: demandesGroupe, error: fetchError } = await supabase
-      .from('demandes')
-      .select(`
-        *,
-        produit:produits(id, nom, quantite_restante, unite:unites(label))
-      `)
-      .eq('demande_groupee_id', demandeGroupeeId)
-      .eq('statut', 'validee');
-
-    if (fetchError) {
-      alert('Erreur lors de la récupération des demandes: ' + fetchError.message);
-      return;
-    }
-
-    if (!demandesGroupe || demandesGroupe.length === 0) {
-      alert('Aucune demande validée trouvée pour cette demande groupée.');
-      return;
-    }
-
-    // 2. Récupérer les informations de la demande groupée
-    const { data: demandeGroupeeInfo } = await supabase
-      .from('demandes_groupees')
-      .select('destination, demandeur_id, nombre_produits')
-      .eq('id', demandeGroupeeId)
-      .single();
-
-    console.log('🔄 Début de l\'annulation de la demande groupée #' + demandeGroupeeId);
-    
-    const erreurs = [];
-    const succesRestauration = [];
-
-    // 3. Pour chaque demande, restaurer les stocks
-    for (const demande of demandesGroupe) {
-      try {
-        console.log(`  Restauration de ${demande.quantite} ${demande.produit?.nom}...`);
-
-        // 3.1 Restaurer le stock principal
-        const { data: produitActuel } = await supabase
-          .from('produits')
-          .select('quantite_restante')
-          .eq('id', demande.produit_id)
-          .single();
-
-        if (produitActuel) {
-          const nouvelleQuantite = (produitActuel.quantite_restante || 0) + demande.quantite;
-          
-          const { error: restoreError } = await supabase
-            .from('produits')
-            .update({
-              quantite_restante: nouvelleQuantite,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', demande.produit_id);
-
-          if (restoreError) {
-            erreurs.push(`Erreur restauration stock principal pour ${demande.produit?.nom}: ${restoreError.message}`);
-            continue;
-          }
-        }
-
-        // 3.2 Retirer du stock de destination
-        const destination = demande.destination || demandeGroupeeInfo?.destination;
-        
-        if (destination === 'Boutique') {
-          // Retirer du stock boutique
-          const { data: stockBoutique } = await supabase
-            .from('stock_boutique')
-            .select('id, quantite_disponible')
-            .eq('produit_id', demande.produit_id)
-            .single();
-
-          if (stockBoutique) {
-            const nouvelleQuantiteBoutique = Math.max(0, (stockBoutique.quantite_disponible || 0) - demande.quantite);
-            
-            await supabase
-              .from('stock_boutique')
-              .update({
-                quantite_disponible: nouvelleQuantiteBoutique,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', stockBoutique.id);
-          }
-
-        } else if (destination === 'Production' || destination === 'Atelier') {
-          // Retirer du stock atelier
-          const { data: stockAtelier } = await supabase
-            .from('stock_atelier')
-            .select('id, quantite_disponible')
-            .eq('produit_id', demande.produit_id)
-            .single();
-
-          if (stockAtelier) {
-            const nouvelleQuantiteAtelier = Math.max(0, (stockAtelier.quantite_disponible || 0) - demande.quantite);
-            
-            await supabase
-              .from('stock_atelier')
-              .update({
-                quantite_disponible: nouvelleQuantiteAtelier,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', stockAtelier.id);
-          }
-        }
-
-        // 3.3 Créer un mouvement de restauration
-        await supabase
-          .from('mouvements_stock')
-          .insert({
-            produit_id: demande.produit_id,
-            type_mouvement: 'restauration_annulation',
-            quantite: demande.quantite,
-            source: destination || 'Production',
-            destination: 'Stock Principal',
-            utilisateur_id: currentUser.id,
-            reference_id: demande.id,
-            reference_type: 'annulation_demande',
-            raison: raison,
-            commentaire: `Annulation demande groupée #${demandeGroupeeId}: ${raison}`,
-            created_at: new Date().toISOString()
-          });
-
-        succesRestauration.push(`${demande.produit?.nom}: ${demande.quantite} ${demande.produit?.unite?.label || ''} restauré`);
-
-      } catch (error) {
-        console.error(`Erreur restauration ${demande.produit?.nom}:`, error);
-        erreurs.push(`${demande.produit?.nom}: ${error.message}`);
+    const pQuantites = {};
+    for (const ligne of (demande.lignes || []).filter(l => l.statut === 'en_attente')) {
+      const valeur = parseFloat(quantitesValidees[ligne.produit_id]);
+      if (isNaN(valeur) || valeur < 0 || valeur > ligne.quantite) {
+        alert(`Quantité invalide pour ${ligne.produit?.nom} : entre 0 et ${ligne.quantite}`);
+        return;
       }
+      pQuantites[ligne.produit_id] = valeur;
     }
 
-    // 4. Mettre à jour le statut des demandes individuelles
-    await supabase
-      .from('demandes')
-      .update({
-        statut: 'annulee',
-        date_validation: new Date().toISOString()
-      })
-      .eq('demande_groupee_id', demandeGroupeeId);
+    setValidationsEnCours(prev => new Set(prev).add(demande.id));
+    try {
+      const { data, error } = await supabase.rpc('valider_demande_groupee', {
+        p_groupe_id: demande.id,
+        p_quantites: pQuantites
+      });
+      if (error) throw error;
 
-    // 5. Mettre à jour le statut de la demande groupée
-    await supabase
-      .from('demandes_groupees')
-      .update({
-        statut: 'annulee',
-        details_validation: {
-          annulation: {
-            date: new Date().toISOString(),
-            par: currentUser.id,
-            raison: raison,
-            erreurs: erreurs.length > 0 ? erreurs : undefined
-          }
-        }
-      })
-      .eq('id', demandeGroupeeId);
+      const lieu = data.destination === 'boutique' ? 'la boutique' : 'l\'atelier';
+      alert(
+        `✅ Demande validée : la marchandise est en transit vers ${lieu}.\n` +
+        `Elle sera ajoutée au stock de ${lieu} à sa réception.` +
+        (data.auto_validation
+          ? '\n\nVous avez validé votre propre demande : la réception devra être faite par une autre personne.'
+          : '')
+      );
+      setDemandeAValider(null);
+      await loadData();
+    } catch (err) {
+      console.error('Erreur validation:', err);
+      alert('❌ Validation impossible : ' + err.message);
+      await loadData();
+    } finally {
+      setValidationsEnCours(prev => {
+        const suivant = new Set(prev);
+        suivant.delete(demande.id);
+        return suivant;
+      });
+    }
+  };
 
-    // 6. Notifier le demandeur
-    if (demandeGroupeeInfo?.demandeur_id && demandeGroupeeInfo.demandeur_id !== currentUser.id) {
-      await supabase
-        .from('notifications')
-        .insert({
-          destinataire_id: demandeGroupeeInfo.demandeur_id,
-          emetteur_id: currentUser.id,
-          type: 'demande_modifiee',
-          message: `Votre demande validée a été annulée par ${currentUser.nom || currentUser.username}`,
-          details: `Raison: ${raison}`,
-          lien: `/demandes#${demandeGroupeeId}`,
-          lu: false,
-          priorite: 'haute',
-          created_at: new Date().toISOString()
-        });
+  // ============ ANNULATION D'UN ENVOI NON RÉCEPTIONNÉ ============
+  const handleCancelValidatedDemande = async (demande) => {
+    const envoi = envoiDe(demande);
+    if (!envoi || envoi.statut !== 'en_transit') {
+      alert('Seul un envoi pas encore réceptionné peut être annulé.');
+      return;
+    }
+    const motif = prompt('Motif de l\'annulation (obligatoire) :');
+    if (motif === null) return;
+    if (motif.trim().length < 3) {
+      alert('Le motif est obligatoire.');
+      return;
     }
 
-    // 7. Afficher le résultat
-    let messageResultat = '✅ ANNULATION TERMINÉE\n\n';
-    
-    if (succesRestauration.length > 0) {
-      messageResultat += 'Restaurations réussies :\n';
-      succesRestauration.forEach(s => messageResultat += `• ${s}\n`);
+    const { error } = await supabase.rpc('annuler_envoi', { p_envoi_id: envoi.id, p_motif: motif.trim() });
+    if (error) {
+      alert('❌ Annulation impossible : ' + error.message);
+    } else {
+      alert('Envoi annulé : le stock principal a récupéré la marchandise.');
     }
-    
-    if (erreurs.length > 0) {
-      messageResultat += '\n⚠️ Erreurs rencontrées :\n';
-      erreurs.forEach(e => messageResultat += `• ${e}\n`);
-    }
-
-    messageResultat += `\nRaison de l'annulation : ${raison}`;
-
-    alert(messageResultat);
-
-    // 8. Recharger les données
     await loadData();
-
-  } catch (err) {
-    console.error('Erreur lors de l\'annulation:', err);
-    alert('❌ Erreur critique lors de l\'annulation de la demande: ' + err.message);
-  }
-};
+  };
 
   // ============ REFUS DE DEMANDE ============
   const handleRejectGroupedDemande = async (demandeGroupeeId) => {
     if (!confirm('Êtes-vous sûr de vouloir refuser cette demande ?')) return;
-
     const raison = prompt('Raison du refus (optionnel):');
+    if (raison === null) return;
 
-    try {
-      // Passer en traitement puis refuser
-      await supabase
-        .from('demandes_groupees')
-        .update({ statut: 'en_traitement' })
-        .eq('id', demandeGroupeeId);
-
-      // Préparer les détails avec la raison du refus
-      const detailsValidation = raison ? {
-        refus: {
-          date: new Date().toISOString(),
-          par: currentUser.id,
-          raison: raison
-        }
-      } : null;
-
-      await supabase
-        .from('demandes_groupees')
-        .update({
-          statut: 'refusee',
-          valideur_id: currentUser.id,
-          date_validation: new Date().toISOString(),
-          details_validation: detailsValidation
-        })
-        .eq('id', demandeGroupeeId);
-
-      await supabase
-        .from('demandes')
-        .update({
-          statut: 'refusee',
-          valideur_id: currentUser.id,
-          date_validation: new Date().toISOString()
-        })
-        .eq('demande_groupee_id', demandeGroupeeId);
-
-      // Notifier le demandeur
-      const { data: demandeInfo } = await supabase
-        .from('demandes_groupees')
-        .select('demandeur_id, nombre_produits')
-        .eq('id', demandeGroupeeId)
-        .single();
-
-      if (demandeInfo?.demandeur_id && demandeInfo.demandeur_id !== currentUser.id) {
-        await supabase
-          .from('notifications')
-          .insert({
-            destinataire_id: demandeInfo.demandeur_id,
-            emetteur_id: currentUser.id,
-            type: 'demande_refusee',
-            message: `Votre demande a été refusée par ${currentUser.nom || currentUser.username}`,
-            details: raison ? `Raison: ${raison}` : 'Aucune raison spécifiée',
-            lien: `/demandes#${demandeGroupeeId}`,
-            lu: false,
-            priorite: 'normale',
-            created_at: new Date().toISOString()
-          });
-      }
-
-      await loadData();
+    const { error } = await supabase.rpc('refuser_demande', { p_groupe_id: demandeGroupeeId, p_raison: raison });
+    if (error) {
+      alert('❌ Refus impossible : ' + error.message);
+    } else {
       alert(raison ? `Demande refusée.\nRaison: ${raison}` : 'Demande refusée');
-
-    } catch (err) {
-      console.error('Erreur:', err);
-      alert('❌ Erreur lors du refus');
     }
+    await loadData();
   };
 
   // ============ HELPERS ============
@@ -943,8 +429,29 @@ export default function DemandesManager({ currentUser }) {
     }
   };
 
-  const canValidate = () => {
-    return currentUser.role === 'admin' || currentUser.role === 'employe_production';
+  // Seuls le propriétaire et les gérants valident ce qui sort du stock principal
+  const canValidate = () => currentUser.role === 'admin';
+
+  // Envoi créé par la validation (un seul par demande)
+  const envoiDe = (demande) => (Array.isArray(demande.envois) ? demande.envois[0] : demande.envois) || null;
+
+  const ReceptionBadge = ({ demande }) => {
+    const envoi = envoiDe(demande);
+    if (!envoi) return <span className="text-gray-400">-</span>;
+    const styles = {
+      en_transit: ['bg-orange-100 text-orange-800', 'En transit'],
+      recu: envoi.avec_ecart ? ['bg-red-100 text-red-800', 'Reçu avec écart'] : ['bg-green-100 text-green-800', 'Reçu'],
+      annule: ['bg-gray-100 text-gray-700', 'Annulé']
+    };
+    const [classes, texte] = styles[envoi.statut] || ['bg-gray-100 text-gray-700', envoi.statut];
+    return (
+      <div>
+        <span className={`px-2 py-1 rounded-full text-xs ${classes}`}>{texte}</span>
+        {envoi.statut === 'en_transit' && envoi.auto_validation && (
+          <div className="text-xs text-orange-700 mt-1">À réceptionner par une autre personne</div>
+        )}
+      </div>
+    );
   };
 
   const getTabIcon = (tab) => {
@@ -975,13 +482,14 @@ export default function DemandesManager({ currentUser }) {
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Demandeur</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Valideur</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Réception</th>
             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-200">
           {demandes.length === 0 ? (
             <tr>
-              <td colSpan="7" className="text-center py-8 text-gray-500">
+              <td colSpan="8" className="text-center py-8 text-gray-500">
                 <ShoppingCart className="w-12 h-12 mx-auto mb-2 text-gray-300" />
                 Aucune demande dans cette catégorie
               </td>
@@ -1032,6 +540,9 @@ export default function DemandesManager({ currentUser }) {
                     <span className="text-gray-400">-</span>
                   )}
                 </td>
+                <td className="px-6 py-4 text-sm">
+                  <ReceptionBadge demande={demande} />
+                </td>
                 <td className="px-6 py-4">
                   <div className="flex space-x-2">
                     <button
@@ -1045,7 +556,7 @@ export default function DemandesManager({ currentUser }) {
                     {showActions && demande.statut === 'en_attente' && canValidate() && (
                       <>
                         <button 
-                          onClick={() => handleValidateGroupedDemande(demande.id)}
+                          onClick={() => ouvrirValidation(demande)}
                           disabled={validationsEnCours.has(demande.id)}
                           className={`text-green-600 hover:text-green-900 ${
                             validationsEnCours.has(demande.id) ? 'opacity-50 cursor-not-allowed' : ''
@@ -1067,15 +578,15 @@ export default function DemandesManager({ currentUser }) {
                         </button>
                       </>
                     )}
-                      {demande.statut === 'validee' && currentUser.role === 'admin' && (
-      <button 
-        onClick={() => handleCancelValidatedDemande(demande.id)}
-        className="text-orange-600 hover:text-orange-900"
-        title="Annuler cette demande validée"
-      >
-        <RotateCcw className="h-4 w-4" />
-      </button>
-    )}
+                    {envoiDe(demande)?.statut === 'en_transit' && canValidate() && (
+                      <button
+                        onClick={() => handleCancelValidatedDemande(demande)}
+                        className="text-orange-600 hover:text-orange-900"
+                        title="Annuler l'envoi (pas encore réceptionné)"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -1296,6 +807,64 @@ export default function DemandesManager({ currentUser }) {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Validation : quantités validées, au plus la quantité demandée (0 = ligne refusée) */}
+      <Modal
+        isOpen={!!demandeAValider}
+        onClose={() => setDemandeAValider(null)}
+        title={demandeAValider ? `Valider la demande #${demandeAValider.id} (${demandeAValider.destination})` : ''}
+        size="lg"
+      >
+        {demandeAValider && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Demandée par {demandeAValider.demandeur?.nom || demandeAValider.demandeur?.username}.
+              Vous pouvez réduire une quantité (0 = produit refusé).
+            </p>
+            {demandeAValider.demandeur_id === currentUser.id && (
+              <div className="bg-orange-50 border border-orange-200 text-orange-800 px-3 py-2 rounded text-sm">
+                Vous êtes l'auteur de cette demande : la réception devra être faite par une autre personne.
+              </div>
+            )}
+            <div className="space-y-2">
+              {(demandeAValider.lignes || []).filter(l => l.statut === 'en_attente').map(ligne => (
+                <div key={ligne.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                  <div>
+                    <div className="font-medium text-sm">{ligne.produit?.nom}</div>
+                    <div className="text-xs text-gray-500">
+                      Demandé : {ligne.quantite} {ligne.produit?.unite?.label} · Stock principal : {ligne.produit?.quantite_restante}
+                    </div>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    max={ligne.quantite}
+                    step="any"
+                    value={quantitesValidees[ligne.produit_id] ?? ''}
+                    onChange={(e) => setQuantitesValidees(prev => ({ ...prev, [ligne.produit_id]: e.target.value }))}
+                    className="w-24 px-2 py-1 border rounded"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex space-x-4">
+              <button
+                onClick={handleValidateGroupedDemande}
+                disabled={validationsEnCours.has(demandeAValider.id)}
+                className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 disabled:opacity-50"
+              >
+                {validationsEnCours.has(demandeAValider.id) ? 'Validation…' : 'Valider et envoyer'}
+              </button>
+              <button
+                onClick={() => setDemandeAValider(null)}
+                className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Modal Détails avec commentaires */}
