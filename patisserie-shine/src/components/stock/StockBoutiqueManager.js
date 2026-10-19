@@ -171,29 +171,17 @@ const saveType = async (stockId) => {
         return;
       }
 
-      const { error } = await supabase
-        .from('stock_boutique')
-        .update({
-          quantite_utilisee: (stockItem.quantite_utilisee || 0) + quantite,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', stockId);
+      // Une seule écriture côté base (l'ancien code comptait chaque utilisation deux fois), inscrite au journal
+      const { error } = await supabase.rpc('utiliser_stock_boutique', {
+        p_stock_id: stockId,
+        p_quantite: quantite,
+        p_raison: 'Utilisation en boutique'
+      });
 
       if (error) {
         console.error('Erreur mise à jour utilisation:', error);
         alert('Erreur lors de la mise à jour: ' + error.message);
       } else {
-        // Enregistrer le mouvement d'utilisation
-        await supabase
-          .from('utilisations_boutique')
-          .insert({
-            stock_boutique_id: stockId,
-            quantite_utilisee: quantite,
-            utilisateur_id: currentUser.id,
-            raison: 'Utilisation en boutique',
-            date_utilisation: new Date().toISOString()
-          });
-
         await loadData(); // Recharger les données
         alert(`${quantite} unité(s) marquée(s) comme utilisée(s)`);
       }
@@ -613,13 +601,16 @@ const saveType = async (stockId) => {
                                     <DollarSign className="h-4 w-4" />
                                   </button>
                                 )}
-                                <button
-                                  onClick={() => startEditType(stock)}
-                                  className="text-purple-600 hover:text-purple-900 p-1 hover:bg-purple-50 rounded transition-colors"
-                                  title="Modifier le type"
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </button>
+                                {/* Prix et type d'article : réservés au propriétaire et aux gérants (contrôlé aussi par la base) */}
+                                {currentUser.role === 'admin' && (
+                                  <button
+                                    onClick={() => startEditType(stock)}
+                                    className="text-purple-600 hover:text-purple-900 p-1 hover:bg-purple-50 rounded transition-colors"
+                                    title="Modifier le type"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </button>
+                                )}
                                 {activeTab === 'fournitures' && stock.stock_reel > 0 && (
                                   <button
                                     onClick={() => {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Search, Plus, Edit, Trash2, Package, Store, TrendingUp } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Search, Plus, Edit, Archive, Package, Store, TrendingUp } from 'lucide-react';
 import { Card, Modal, StatusBadge } from '../ui';
 import { supabase } from '../../lib/supabase-client';
 import { productService, uniteService, referentielService } from '../../services';
@@ -9,6 +9,10 @@ import { utils } from '../../utils/formatters';
 
 
 export default function StockManager({ currentUser }) {
+  // Clés anti-doublon : un double clic ou un nouvel essai après une coupure n'enregistre pas deux fois
+  const cleCreationRef = useRef(null);
+  const cleReapproRef = useRef(null);
+  const [motifCorrection, setMotifCorrection] = useState('');
   const [products, setProducts] = useState([]);
   const [unites, setUnites] = useState([]);
   const [referentiels, setReferentiels] = useState([]);
@@ -146,6 +150,14 @@ export default function StockManager({ currentUser }) {
     });
   };
 
+  // Une clé correspond à un formulaire précis : elle est oubliée dès que son contenu change
+  useEffect(() => {
+    cleCreationRef.current = null;
+  }, [formData]);
+  useEffect(() => {
+    cleReapproRef.current = null;
+  }, [reapproData, reapproProduct]);
+
   const loadProducts = async () => {
   try {
     const result = await productService.getAll();
@@ -194,7 +206,9 @@ export default function StockManager({ currentUser }) {
       // Calculer le prix unitaire à partir du prix total
       const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite);
       
+      if (!cleCreationRef.current) cleCreationRef.current = utils.genererCle();
       const { product, error } = await productService.createWithPriceOption({
+        cle: cleCreationRef.current,
         nom: formData.nom,
         date_achat: formData.date_achat,
         prix_achat: prixUnitaire,
@@ -208,6 +222,7 @@ export default function StockManager({ currentUser }) {
       if (error) {
         setError(error);
       } else {
+        cleCreationRef.current = null;
         await loadProducts();
         resetForm();
         setShowAddModal(false);
@@ -228,29 +243,45 @@ export default function StockManager({ currentUser }) {
 
   const handleEditProduct = async (e) => {
     e.preventDefault();
-    setSubmitting(true);
     setError('');
 
+    // Une correction de la quantité restante est inscrite au journal avec son motif
+    const nouvelleRestante = parseFloat(formData.quantite_restante);
+    const restanteModifiee = !isNaN(nouvelleRestante) && nouvelleRestante !== parseFloat(editingProduct.quantite_restante);
+    if (restanteModifiee && motifCorrection.trim().length < 3) {
+      setError('Indiquez le motif de la correction de quantité (ex. : recomptage, casse, erreur de saisie)');
+      return;
+    }
+
+    setSubmitting(true);
     try {
       const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite);
-      
-      const { product, error } = await productService.update(editingProduct.id, {
+
+      const { error } = await productService.update(editingProduct.id, {
         nom: formData.nom,
         date_achat: formData.date_achat,
-        prix_achat: prixUnitaire,
-        quantite: parseFloat(formData.quantite),
-        quantite_restante: parseFloat(formData.quantite_restante),
+        prix_achat: isFinite(prixUnitaire) ? prixUnitaire : null,
         unite_id: parseInt(formData.unite_id)
       });
-
       if (error) {
         setError(error);
-      } else {
-        await loadProducts();
-        resetForm();
-        setEditingProduct(null);
-        alert('Produit modifié avec succès');
+        return;
       }
+
+      if (restanteModifiee) {
+        const { error: erreurCorrection } = await productService.ajusterStock(editingProduct.id, nouvelleRestante, motifCorrection.trim());
+        if (erreurCorrection) {
+          setError(erreurCorrection);
+          await loadProducts();
+          return;
+        }
+      }
+
+      await loadProducts();
+      resetForm();
+      setEditingProduct(null);
+      setMotifCorrection('');
+      alert(restanteModifiee ? 'Produit modifié ; correction de quantité inscrite au journal' : 'Produit modifié avec succès');
     } catch (err) {
       console.error('Erreur:', err);
       setError('Erreur lors de la modification du produit');
@@ -259,86 +290,24 @@ export default function StockManager({ currentUser }) {
     }
   };
 
-  // 🔧 CORRECTION: Fonction de suppression fonctionnelle
- const handleDeleteProduct = async (productId, productName) => {
-  if (!confirm(`Êtes-vous sûr de vouloir supprimer "${productName}" ?\n\nCette action est irréversible.`)) {
-    return;
-  }
-
-  try {
+  // Un produit ne se supprime plus (cela effaçait son historique) : il s'archive, s'il n'a plus de stock
+  const handleArchiveProduct = async (productId, productName) => {
+    const motif = prompt(`Archiver « ${productName} » ?\n\nIl disparaîtra des listes, son historique est conservé.\nMotif (obligatoire) :`);
+    if (motif === null) return;
+    if (motif.trim().length < 3) {
+      alert('Le motif est obligatoire.');
+      return;
+    }
     setError('');
-    
-    // Première tentative de suppression
-    const { data: session } = await supabase.auth.getSession();
-    
-    const response = await fetch('/api/admin/delete-product', {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.session?.access_token}`
-      },
-      body: JSON.stringify({ productId })
-    });
-
-    const result = await response.json();
-
-    // Si le serveur demande une confirmation (status 409)
-    if (response.status === 409 && result.requireConfirmation) {
-      const confirmForce = confirm(
-        `⚠️ CONFIRMATION REQUISE ⚠️\n\n` +
-        `${result.error}\n\n` +
-        `Voulez-vous FORCER la suppression malgré ces avertissements ?\n\n` +
-        `Cette action est IRRÉVERSIBLE et peut affecter d'autres données.`
-      );
-
-      if (!confirmForce) {
-        return; // Utilisateur annule
-      }
-
-      // Suppression forcée
-      const forceResponse = await fetch('/api/admin/delete-product', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.session?.access_token}`
-        },
-        body: JSON.stringify({ productId, forceDelete: true })
-      });
-
-      const forceResult = await forceResponse.json();
-
-      if (!forceResponse.ok) {
-        setError(forceResult.error || 'Erreur lors de la suppression forcée');
-        alert('Erreur lors de la suppression forcée : ' + (forceResult.error || 'Erreur inconnue'));
-        return;
-      }
-
-      // Succès de la suppression forcée
-      alert(
-        `✅ Produit "${productName}" supprimé avec succès !\n\n` +
-        `Éléments affectés :\n${forceResult.details || 'Suppression complète'}`
-      );
-      await loadProducts();
+    const { error } = await productService.archiver(productId, motif.trim());
+    if (error) {
+      setError(error);
+      alert('Archivage impossible : ' + error);
       return;
     }
-
-    // Erreur normale
-    if (!response.ok) {
-      setError(result.error || 'Erreur lors de la suppression');
-      alert('Erreur lors de la suppression : ' + (result.error || 'Erreur inconnue'));
-      return;
-    }
-
-    // Succès direct
-    alert(`✅ Produit "${productName}" supprimé avec succès !`);
+    alert(`Produit « ${productName} » archivé.`);
     await loadProducts();
-    
-  } catch (err) {
-    console.error('Erreur suppression produit:', err);
-    setError('Erreur lors de la suppression du produit');
-    alert('Erreur lors de la suppression : ' + err.message);
-  }
-};
+  };
 
   const handleReapprovisionner = async (e) => {
     e.preventDefault();
@@ -346,7 +315,9 @@ export default function StockManager({ currentUser }) {
     setError('');
 
     try {
+      if (!cleReapproRef.current) cleReapproRef.current = utils.genererCle();
       const { product, error } = await productService.reapprovisionner(reapproProduct.id, {
+        cle: cleReapproRef.current,
         quantite_ajoutee: parseFloat(reapproData.quantite_ajoutee),
         prix_achat_total: parseFloat(reapproData.prix_achat_total),
         date_achat: reapproData.date_achat
@@ -363,8 +334,9 @@ export default function StockManager({ currentUser }) {
               `Quantité ajoutée: ${reapproData.quantite_ajoutee} ${reapproProduct.unite?.value}\n` +
               `Prix d'achat: ${utils.formatCFA(reapproData.prix_achat_total)}\n` +
               `Prix unitaire: ${utils.formatCFA(prixUnitaire)}/${reapproProduct.unite?.value}\n` +
-              `Nouveau total: ${product.quantite} ${product.unite?.value}`
+              `Nouveau stock: ${product.quantite_restante} ${reapproProduct.unite?.value}`
         );
+        cleReapproRef.current = null;
 
         setReapproProduct(null);
         setReapproData({
@@ -441,6 +413,7 @@ export default function StockManager({ currentUser }) {
 
   const startEdit = (product) => {
     setEditingProduct(product);
+    setMotifCorrection('');
     const prixTotal = (product.prix_achat || 0) * (product.quantite || 1);
     setFormData({
       nom: product.nom,
@@ -948,11 +921,11 @@ export default function StockManager({ currentUser }) {
                           )}
                           {currentUser.role === 'admin' && (
                             <button
-                              onClick={() => handleDeleteProduct(product.id, product.nom)}
+                              onClick={() => handleArchiveProduct(product.id, product.nom)}
                               className="text-red-600 hover:text-red-900 p-1 hover:bg-red-50 rounded transition-colors"
-                              title="Supprimer"
+                              title="Archiver (produit sans stock)"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Archive className="h-4 w-4" />
                             </button>
                           )}
                         </div>
@@ -1184,6 +1157,16 @@ export default function StockManager({ currentUser }) {
                   required
                   disabled={submitting}
                 />
+                {editingProduct && parseFloat(formData.quantite_restante) !== parseFloat(editingProduct.quantite_restante) && (
+                  <input
+                    type="text"
+                    value={motifCorrection}
+                    onChange={(e) => setMotifCorrection(e.target.value)}
+                    className="mt-2 w-full px-3 py-2 border border-orange-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                    placeholder="Motif de la correction (obligatoire) : recomptage, casse, erreur…"
+                    disabled={submitting}
+                  />
+                )}
               </div>
             )}
           </div>

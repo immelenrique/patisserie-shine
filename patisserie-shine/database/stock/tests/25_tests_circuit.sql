@@ -231,7 +231,7 @@ SELECT tests.verifier('circuit', 'journal : intact selon la vérification',
 SELECT tests.verifier('circuit', 'journal : lisible par le gérant', 'SELECT 1 FROM journal_stock', 'lignes>0');
 RESET ROLE;
 SELECT tests.verifier('circuit', 'journal : chaque envoi s''équilibre (somme nulle tous lieux confondus)',
-  'SELECT envoi_id FROM journal_stock GROUP BY envoi_id HAVING sum(quantite) <> 0', 'lignes=0');
+  'SELECT envoi_id FROM journal_stock WHERE envoi_id IS NOT NULL GROUP BY envoi_id HAVING sum(quantite) <> 0', 'lignes=0');
 SELECT tests.verifier('circuit', 'journal : le stock principal du pain suit le journal (30 + somme = 13)',
   'SELECT 1 FROM produits p WHERE p.id = 6 AND 30 + (SELECT sum(quantite) FROM journal_stock WHERE lieu = ''principal'' AND produit_id = 6) = p.quantite_restante', 'lignes=1');
 SELECT tests.verifier('circuit', 'journal : le transit égale les envois non reçus',

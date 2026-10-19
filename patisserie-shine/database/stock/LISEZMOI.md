@@ -94,3 +94,72 @@ réversible, et mise en production avec accord.
   pourrait lire la quantité envoyée.
 - Les envois créés avant cette partie n'existent pas : les demandes déjà validées gardent l'ancien
   fonctionnement (pas d'annulation possible depuis l'écran).
+
+---
+
+## Partie 2 : stock principal et fin des écritures directes
+
+### Ce qui était faux
+- **Écritures directes depuis le navigateur.** Le stock principal était modifié directement : création,
+  réapprovisionnement (lu puis réécrit, donc deux réappros simultanés pouvaient s'écraser), correction de
+  quantité, changement d'unité sans conversion.
+- **Suppression destructrice.** Supprimer un produit effaçait d'abord son historique, avec les droits complets
+  du serveur.
+- **Quantités modifiables sans trace.** Un gérant ou la production pouvait modifier toutes les quantités
+  (boutique, atelier, principal).
+- **Double comptage.** « Marquer comme utilisé » comptait chaque utilisation deux fois : l'écran et le
+  déclencheur ajoutaient tous les deux.
+- **Prix et historique ouverts à tous.** N'importe quel utilisateur connecté pouvait changer un prix de vente
+  ou insérer de faux mouvements d'historique.
+
+### Ce que fait `partie2_stock_principal.sql` (SQL Editor : il contient un DROP CONSTRAINT)
+- **Fonctions, seul chemin possible :**
+  - `creer_produit` et `reapprovisionner_produit` (achats) : prix moyen pondéré calculé par la base, clé
+    anti-doublon contre le double clic et le nouvel essai après une coupure ;
+  - `modifier_produit` : nom, date, prix d'achat ; l'unité ne change que si le produit n'a plus de stock
+    nulle part ;
+  - `ajuster_stock_principal` et `ajuster_stock_atelier` : propriétaire et gérants, **motif obligatoire** ;
+  - `vider_stock_atelier` : une correction motivée par produit ;
+  - `archiver_produit` : au lieu de supprimer, seulement sans stock ; l'historique est conservé ;
+  - `utiliser_stock_boutique` : une seule écriture.
+- **Journal :** il reçoit les achats, les corrections, les utilisations, les ventes et leurs annulations, et la
+  production envoyée en boutique.
+  - Les ventes sont inscrites par déclencheur, quel que soit le chemin.
+  - L'auteur d'une annulation de vente est l'admin vérifié par le serveur.
+- **Verrous :**
+  - plus personne ne modifie directement une quantité de stock, pas même les gérants, ni la quantité vendue :
+    impossible de « cacher » une vente ;
+  - le prix de vente et le type d'article sont réservés au propriétaire et aux gérants ;
+  - un produit ne se supprime plus ;
+  - l'historique (`mouvements_stock`, `entrees_boutique`, `utilisations_boutique`) n'est écrit que par la base.
+- **Vente :** `enregistrer_vente_boutique` s'exécute avec les droits du propriétaire et vérifie que le compte
+  est actif.
+- **Production vers la boutique :** le module est encore peu utilisé et sera refait. Il traverse les verrous,
+  s'inscrit au journal et n'écrase plus un prix existant par 1000 F.
+- **Route de suppression :** la route `/api/admin/delete-product` répond « 410 : remplacée par l'archivage ».
+
+### Tests
+- `PGHOST=... ./tests/lancer_stock.sh` :
+  - passage 1 : **96/96** (scénario, deux tests de concurrence réels, annulation exacte sur 315 objets) ;
+  - passage 2, sur une base neuve : **195/195** (non-régression du circuit, des ventes, des ventes sans
+    doublon et de la sécurité).
+- **Banc navigateur :**
+  - `tests/navigateur/parcours_stock.js` : **13/13** (création malgré un double clic, réappro, correction
+    motivée, archivage refusé puis accepté, vidage de l'atelier, utilisation comptée une fois) ;
+  - `parcours.js` : **28/28** avec la partie 2 appliquée.
+  - Préparer la base avec `PARTIE2=1 preparer_base.sh`.
+
+**Changements volontaires dans le scénario de sécurité :**
+- un décompte direct en caisse est refusé : la vente passe par sa fonction ;
+- la vendeuse ne change plus un prix (c'est le gérant qui le fait) ;
+- l'utilisation passe par sa fonction ;
+- la baisse du stock principal passe par `ajuster_stock_principal`.
+
+**Mise en production :**
+1. D'abord l'application : tant que la base n'est pas à jour, les nouvelles opérations affichent une erreur
+   sans rien modifier, et la route de suppression est déjà fermée.
+2. Tout de suite après, `partie2_stock_principal.sql` dans le SQL Editor.
+3. Recharger tous les écrans.
+
+Annulation : `partie2_annulation.sql` (SQL Editor). La liste élargie des types de mouvement du journal reste
+en place, car les lignes déjà écrites ne s'effacent pas.

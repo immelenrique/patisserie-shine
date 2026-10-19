@@ -296,63 +296,13 @@ export const stockAtelierService = {
    * Fonction réservée aux administrateurs
    * @returns {Object} { success, error, nombreProduitsVides }
    */
-  async viderToutLeStock() {
+  async viderToutLeStock(motif) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      // Une correction motivée par produit, inscrite au journal (propriétaire et gérants uniquement)
+      const { data, error } = await supabase.rpc('vider_stock_atelier', { p_motif: motif })
+      if (error) throw error
 
-      // Récupérer tous les stocks avant de les vider (pour le log)
-      const { data: stocksAvant, error: errorSelect } = await supabase
-        .from('stock_atelier')
-        .select('id, produit_id, quantite_disponible')
-        .gt('quantite_disponible', 0)
-
-      if (errorSelect) {
-        return { success: false, error: errorSelect.message, nombreProduitsVides: 0 }
-      }
-
-      if (!stocksAvant || stocksAvant.length === 0) {
-        return { success: true, error: null, nombreProduitsVides: 0 }
-      }
-
-      // Mettre à jour tous les stocks à 0
-      const { error: updateError } = await supabase
-        .from('stock_atelier')
-        .update({
-          quantite_disponible: 0,
-          quantite_reservee: 0,
-          updated_at: new Date().toISOString()
-        })
-        .gt('quantite_disponible', 0)
-
-      if (updateError) {
-        return { success: false, error: updateError.message, nombreProduitsVides: 0 }
-      }
-
-      // Enregistrer dans mouvements_stock pour chaque produit
-      const mouvements = stocksAvant.map(stock => ({
-        produit_id: stock.produit_id,
-        type_mouvement: 'ajustement',
-        quantite: stock.quantite_disponible,
-        quantite_avant: stock.quantite_disponible,
-        quantite_apres: 0,
-        source: 'Atelier',
-        destination: 'Vidage stock',
-        utilisateur_id: user?.id,
-        commentaire: 'Vidage complet du stock atelier - Consommation totale',
-        raison: 'Vidage administratif du stock atelier',
-        created_at: new Date().toISOString()
-      }))
-
-      await supabase
-        .from('mouvements_stock')
-        .insert(mouvements)
-
-      return {
-        success: true,
-        error: null,
-        nombreProduitsVides: stocksAvant.length
-      }
-
+      return { success: true, nombreProduitsVides: data.produits_vides, error: null }
     } catch (error) {
       console.error('Erreur dans viderToutLeStock:', error)
       return { success: false, error: error.message, nombreProduitsVides: 0 }

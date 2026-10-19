@@ -52,31 +52,80 @@ BEGIN
   RETURN v_count;
 END; $function$;
 
-CREATE OR REPLACE FUNCTION public.trigger_production_vers_boutique() RETURNS trigger LANGUAGE plpgsql AS $function$
+CREATE OR REPLACE FUNCTION public.trigger_production_vers_boutique()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
 DECLARE
   v_produit_fini_id INTEGER;
   v_prix_vente DECIMAL;
   v_unite_id INTEGER;
 BEGIN
+  -- Vérifier si la destination est "Boutique"
   IF NEW.destination = 'Boutique' AND NEW.statut = 'termine' THEN
+    
+    -- Obtenir l'unité par défaut (pièces)
     SELECT id INTO v_unite_id FROM unites WHERE value = 'pcs' OR value = 'unité' LIMIT 1;
-    IF v_unite_id IS NULL THEN v_unite_id := 1; END IF;
-    SELECT id INTO v_produit_fini_id FROM produits WHERE nom ILIKE NEW.produit LIMIT 1;
-    IF v_produit_fini_id IS NULL THEN
-      INSERT INTO produits (nom, date_achat, prix_achat, quantite, quantite_restante, unite_id, created_by)
-      VALUES (NEW.produit, COALESCE(NEW.date_production::date, CURRENT_DATE), COALESCE(NEW.cout_ingredients, 0), NEW.quantite, 0, v_unite_id, NEW.producteur_id)
-      RETURNING id INTO v_produit_fini_id;
+    IF v_unite_id IS NULL THEN
+      v_unite_id := 1; -- Valeur par défaut
     END IF;
+    
+    -- Essayer de trouver le produit fini correspondant
+    SELECT id INTO v_produit_fini_id
+    FROM produits 
+    WHERE nom ILIKE NEW.produit
+    LIMIT 1;
+    
+    -- Si le produit n'existe pas, le créer automatiquement
+    IF v_produit_fini_id IS NULL THEN
+      INSERT INTO produits (
+        nom, 
+        date_achat, 
+        prix_achat, 
+        quantite, 
+        quantite_restante,
+        unite_id,
+        created_by
+      ) VALUES (
+        NEW.produit,
+        COALESCE(NEW.date_production::date, CURRENT_DATE),
+        COALESCE(NEW.cout_ingredients, 0), -- Coût de production
+        NEW.quantite,
+        0, -- Ne pas ajouter au stock principal
+        v_unite_id,
+        NEW.producteur_id
+      ) RETURNING id INTO v_produit_fini_id;
+    END IF;
+    
+    -- Calculer un prix de vente (coût + marge de 50% par exemple)
     v_prix_vente := COALESCE(NEW.cout_ingredients, 0) * 1.5;
-    IF v_prix_vente <= 0 THEN v_prix_vente := 1000; END IF;
-    PERFORM ajouter_stock_boutique(v_produit_fini_id, NEW.quantite, 'Production', NEW.id, NEW.producteur_id);
-    UPDATE stock_boutique SET prix_vente = v_prix_vente, updated_at = NOW() WHERE produit_id = v_produit_fini_id;
+    IF v_prix_vente <= 0 THEN
+      v_prix_vente := 1000; -- Prix par défaut
+    END IF;
+    
+    -- Ajouter au stock boutique
+    PERFORM ajouter_stock_boutique(
+      v_produit_fini_id,
+      NEW.quantite,
+      'Production',
+      NEW.id,
+      NEW.producteur_id
+    );
+    
+    -- Mettre à jour le prix de vente dans stock_boutique
+    UPDATE stock_boutique 
+    SET prix_vente = v_prix_vente, updated_at = NOW()
+    WHERE produit_id = v_produit_fini_id;
+    
   END IF;
+  
   RETURN NEW;
 EXCEPTION WHEN OTHERS THEN
+  -- Log l'erreur mais ne pas empêcher la production
   RAISE WARNING 'Erreur lors de l''ajout au stock boutique: %', SQLERRM;
   RETURN NEW;
-END; $function$;
+END;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.sync_stock_boutique_nom_produit() RETURNS trigger LANGUAGE plpgsql AS $function$
 BEGIN
