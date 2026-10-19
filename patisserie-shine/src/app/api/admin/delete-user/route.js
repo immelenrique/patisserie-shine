@@ -1,7 +1,7 @@
 // src/app/api/admin/delete-user/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireAdmin } from '../../../../lib/apiAuth'
+import { requireAdmin, refuserSiSuperAdminProtege } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -33,7 +33,7 @@ export async function DELETE(request) {
     // Récupérer les informations de l'utilisateur
     const { data: targetUser, error: userError } = await supabaseAdmin
       .from('profiles')
-      .select('id, username, nom, role, actif')
+      .select('id, username, nom, role, actif, is_super_admin')
       .eq('id', userId)
       .single()
 
@@ -50,6 +50,17 @@ export async function DELETE(request) {
       console.error('❌ Tentative de suppression du propriétaire')
       return NextResponse.json(
         { error: 'Le compte propriétaire ne peut pas être supprimé' },
+        { status: 403 }
+      )
+    }
+
+    const refus = refuserSiSuperAdminProtege(auth, targetUser)
+    if (refus) return refus
+
+    // La suppression définitive efface l'historique du compte : réservée au propriétaire
+    if (permanent && !auth.profile?.is_super_admin) {
+      return NextResponse.json(
+        { error: 'La suppression définitive est réservée au propriétaire. Désactivez le compte.' },
         { status: 403 }
       )
     }
@@ -134,8 +145,8 @@ export async function DELETE(request) {
             .from('password_change_log')
             .insert({
               user_id: userId,
-              reason: 'Account deactivated by admin',
-              changed_by: null
+              reason: 'Compte désactivé par un administrateur',
+              changed_by: auth.user.id
             })
         } catch (logError) {
           console.warn('⚠️ Erreur log (non bloquant):', logError)

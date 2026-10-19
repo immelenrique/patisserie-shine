@@ -163,3 +163,72 @@ réversible, et mise en production avec accord.
 
 Annulation : `partie2_annulation.sql` (SQL Editor). La liste élargie des types de mouvement du journal reste
 en place, car les lignes déjà écrites ne s'effacent pas.
+
+---
+
+## Partie 3 : récapitulatif pour le propriétaire
+
+### Principe
+- Un écran **« Récapitulatif »**, visible seulement des super admins (rabi et proprietaire). La base refuse
+  aussi les autres comptes.
+- Rien n'est envoyé par e-mail et rien n'est stocké : `recap_periode(du, au)` calcule le récapitulatif à
+  la demande, à partir des données d'origine. Il n'y a donc rien à nettoyer, et toute période peut être
+  régénérée.
+- **Choix de la période :**
+  - par défaut, la veille ;
+  - boutons « Aujourd'hui », « 7 derniers jours », « 14 derniers jours » ;
+  - un bouton par jour pour les 14 derniers jours ;
+  - n'importe quelle période de 3 mois au plus.
+- L'écran s'imprime.
+
+### Contenu
+- **Points à vérifier :**
+  - marchandise en transit depuis plus de 24 h (état actuel) ;
+  - envois validés et réceptionnés par la même personne (un gérant qui reçoit parce que le caissier est
+    absent : c'est permis, mais signalé) ;
+  - écarts à la réception, avec le motif ;
+  - corrections de stock, avec le motif ;
+  - ventes annulées ;
+  - comptes modifiés par une autre personne (mot de passe réinitialisé, compte bloqué) ;
+  - intégrité du journal, vérifiée à chaque génération.
+- **Validations et refus :** qui a demandé, qui a validé, quantités demandées et validées, raison du refus,
+  validations de sa propre demande.
+- **Envois et réceptions :** quantités envoyées et reçues, qui a reçu, annulations.
+- **Autres sections :** demandes faites ; achats, corrections, utilisations et production ; ventes par
+  vendeur et par article ; dépenses avec leurs justificatifs ; comptes ; produits archivés.
+
+### Comptes des super admins protégés
+- **Avant :** seul le compte « proprietaire » était protégé. Un gérant pouvait réinitialiser le mot de passe
+  de rabi, puis agir sous son nom sans laisser de trace.
+- **Maintenant :**
+  - **Compte d'un super admin :** seul un super admin, ou la personne elle-même, change son mot de passe,
+    son rôle ou son statut, ou le désactive. La règle vaut dans la base (`proteger_profils`) et dans les
+    routes serveur.
+  - **Suppression définitive d'un compte :** réservée aux super admins, car elle efface l'historique du
+    compte. Les gérants désactivent.
+  - **Traces :** les routes serveur notent qui a changé un mot de passe ou bloqué un compte. Le récapitulatif
+    l'affiche.
+- **admin1** n'est plus super admin (décision du 2026-10-19). Les super admins sont rabi et proprietaire.
+
+### Fichiers
+| Fichier | Rôle | Où l'exécuter |
+|---|---|---|
+| `partie3_recapitulatif.sql` | Fonctions du récapitulatif, protection des super admins, admin1 | Directement (aucune suppression) |
+| `partie3_annulation.sql` | Retour arrière | SQL Editor (DROP) |
+
+### Tests
+- `PGHOST=... ./tests/lancer_recap.sh` :
+  - passage 1 : **48/48**. Une journée complète est jouée : écart, auto-validation, réception par le
+    valideur, refus, envoi bloqué 30 h, achat, correction, utilisation, ventes et annulation, dépense,
+    archivage, mot de passe réinitialisé. Chaque élément est retrouvé dans le récapitulatif, avec des totaux
+    identiques à la base. L'annulation est exacte sur 332 objets.
+  - passage 2 : **195/195** (non-régression des parties 1 et 2, des ventes et de la sécurité).
+- **Banc navigateur :** `tests/navigateur/parcours_recap.js` : **11/11**. Le gérant n'a pas l'onglet ; le
+  propriétaire voit les alertes, les chiffres et les refus. La base est préparée avec
+  `PARTIE2=1 PARTIE3=1 preparer_base.sh`.
+- `tests/commun.sh` regroupe la construction de la base et la non-régression, communes aux bancs des parties
+  2 et 3.
+
+**Mise en production :** après la partie 2.
+1. L'application.
+2. `partie3_recapitulatif.sql`.

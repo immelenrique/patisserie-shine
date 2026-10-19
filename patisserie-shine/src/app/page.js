@@ -14,6 +14,7 @@ import StockBoutiqueManager from '../components/stock/StockBoutiqueManager';
 import RecettesManager from '../components/production/RecettesManager';
 import DemandesManager from '../components/demandes/DemandesManager';
 import ReceptionsManager from '../components/receptions/ReceptionsManager';
+import RecapManager from '../components/recap/RecapManager';
 import ProductionManager from '../components/production/ProductionManager';
 import CaisseManager from '../components/caisse/CaisseManager';
 import ComptabiliteManager from '../components/comptabilite/ComptabiliteManager';
@@ -35,7 +36,7 @@ import {
   LogOut, User, KeyRound, LayoutDashboard, Package, 
   ShoppingBag, Factory, ChefHat, FileText, Database, 
   Calculator, Ruler, Users, UserCog, Shield, Store,
-  BookOpen, CreditCard, Crown, AlertTriangle, Truck
+  BookOpen, CreditCard, Crown, AlertTriangle, Truck, ClipboardList
 } from 'lucide-react';
 
 export default function Home() {
@@ -367,6 +368,8 @@ useEffect(() => {
     { id: 'demandes', label: 'Demandes', icon: FileText, permission: 'view_demandes' },
     // Visible pour toute personne qui travaille en boutique, à l'atelier ou qui valide les demandes
     { id: 'receptions', label: 'Réceptions', icon: Truck, anyPermission: ['view_caisse', 'view_stock_boutique', 'view_stock_atelier', 'view_production'] },
+    // Récapitulatif réservé aux super admins (la base refuse aussi les autres comptes)
+    { id: 'recap', label: 'Récapitulatif', icon: ClipboardList, superAdminOnly: true },
     { id: 'production', label: 'Production', icon: ChefHat, permission: 'view_production' },
     { id: 'caisse', label: 'Caisse', icon: CreditCard, permission: 'view_caisse' },
     { id: 'caisse-cuisine', label: 'Caisse Cuisine', icon: ChefHat, permission: 'view_caisse_cuisine' },
@@ -382,6 +385,7 @@ useEffect(() => {
   // Filtrer les onglets selon les permissions
  const availableTabs = tabs.filter(tab => {
   // Ensuite vérifier la permission spécifique
+  if (tab.superAdminOnly) return currentUser?.is_super_admin === true;
   if (tab.anyPermission) return tab.anyPermission.some(hasPermission);
   return hasPermission(tab.permission);
 });
@@ -501,6 +505,7 @@ console.log('Available:', availableTabs.map(t => t.label));
         {activeTab === 'recettes' && <RecettesManager currentUser={currentUser} />}
         {activeTab === 'demandes' && <DemandesManager currentUser={currentUser} />}
         {activeTab === 'receptions' && <ReceptionsManager currentUser={currentUser} />}
+        {activeTab === 'recap' && <RecapManager currentUser={currentUser} />}
         {activeTab === 'production' && <ProductionManager currentUser={currentUser} />}
         {activeTab === 'caisse' && <CaisseManager currentUser={currentUser} />}
         {activeTab === 'caisse-cuisine' && <CaisseCuisineManager currentUser={currentUser} />}

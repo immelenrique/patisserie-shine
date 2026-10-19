@@ -36,7 +36,7 @@ export async function authenticateRequest(request, supabaseAdmin) {
 
   const { data: profile, error: profileError } = await supabaseAdmin
     .from('profiles')
-    .select('id, username, role, actif')
+    .select('id, username, role, actif, is_super_admin')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -65,4 +65,16 @@ export async function requireAdmin(request, supabaseAdmin) {
   }
 
   return auth
+}
+
+/**
+ * Le compte d'un super admin (propriétaire) n'est géré que par un super admin, ou par lui-même :
+ * sinon un gérant pourrait changer son mot de passe et agir sous son nom.
+ * @returns {NextResponse|null} la réponse de refus, ou null si l'action est permise
+ */
+export function refuserSiSuperAdminProtege(auth, cible) {
+  if (cible?.is_super_admin && !auth.profile?.is_super_admin && auth.user.id !== cible.id) {
+    return errorResponse('Le compte d\'un super administrateur ne peut être modifié que par un super administrateur', 403)
+  }
+  return null
 }

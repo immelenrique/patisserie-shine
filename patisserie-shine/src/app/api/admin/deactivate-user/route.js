@@ -1,7 +1,7 @@
 // src/app/api/admin/deactivate-user/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireAdmin } from '../../../../lib/apiAuth'
+import { requireAdmin, refuserSiSuperAdminProtege } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -31,7 +31,7 @@ export async function POST(request) {
     // Protéger le propriétaire
     const { data: targetUser, error: targetError } = await supabaseAdmin
       .from('profiles')
-      .select('username')
+      .select('id, username, is_super_admin')
       .eq('id', userId)
       .maybeSingle()
 
@@ -49,6 +49,9 @@ export async function POST(request) {
       )
     }
 
+    const refus = refuserSiSuperAdminProtege(auth, targetUser)
+    if (refus) return refus
+
     // Désactiver l'utilisateur dans auth.users (suspension)
     const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
       userId,
@@ -62,6 +65,11 @@ export async function POST(request) {
         { status: 400 }
       )
     }
+
+    const { error: logError } = await supabaseAdmin
+      .from('password_change_log')
+      .insert({ user_id: userId, changed_by: auth.user.id, reason: 'Connexion bloquée par un administrateur' })
+    if (logError) console.warn('Trace de la désactivation non enregistrée:', logError)
 
     return NextResponse.json({
       success: true,

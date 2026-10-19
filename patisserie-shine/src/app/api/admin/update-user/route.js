@@ -1,7 +1,7 @@
 // src/app/api/admin/update-user/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireAdmin } from '../../../../lib/apiAuth'
+import { requireAdmin, refuserSiSuperAdminProtege } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -43,7 +43,7 @@ export async function PUT(request) {
     // Vérifier que l'utilisateur existe
     const { data: existingUser, error: userError } = await supabaseAdmin
       .from('profiles')
-      .select('id, username, role, nom')
+      .select('id, username, role, nom, is_super_admin')
       .eq('id', userId)
       .single()
 
@@ -62,6 +62,12 @@ export async function PUT(request) {
         { error: 'Le rôle du propriétaire ne peut pas être modifié' },
         { status: 403 }
       )
+    }
+
+    // Le rôle d'un super admin n'est changé que par un super admin
+    if (existingUser.role !== role) {
+      const refus = refuserSiSuperAdminProtege(auth, existingUser)
+      if (refus) return refus
     }
 
     // Validation du rôle
@@ -121,7 +127,7 @@ export async function PUT(request) {
         .insert({
           user_id: userId,
           reason: `Profile updated: ${existingUser.nom} → ${nom.trim()}, role: ${existingUser.role} → ${role}`,
-          changed_by: null // Modification par admin
+          changed_by: auth.user.id
         })
       console.log('📋 Log de modification ajouté')
     } catch (logError) {
