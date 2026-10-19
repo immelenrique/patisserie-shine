@@ -175,15 +175,15 @@ export default function CaisseCuisineManager({ currentUser }) {
           <h3 style="margin: 5px 0; font-size: 18px;">PÂTISSERIE SHINE</h3>
           <p style="margin: 5px 0; font-size: 14px; font-weight: bold;">🍳 CUISINE 🍳</p>
           <p style="margin: 5px 0; font-size: 12px;">Tel: +226 05 07 39 00</p>
-          <p style="margin: 5px 0; font-size: 14px;">Reçu N° ${lastReceipt.numero}</p>
-          <p style="margin: 5px 0; font-size: 12px;">${lastReceipt.date}</p>
+          <p style="margin: 5px 0; font-size: 14px;">Reçu N° ${utils.escapeHtml(lastReceipt.numero)}</p>
+          <p style="margin: 5px 0; font-size: 12px;">${utils.escapeHtml(lastReceipt.date)}</p>
         </div>
 
         <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
 
         ${lastReceipt.items.map(item => `
           <div style="margin: 8px 0;">
-            <div style="font-weight: bold;">${item.nom}</div>
+            <div style="font-weight: bold;">${utils.escapeHtml(item.nom)}</div>
             <div style="display: flex; justify-content: space-between; padding-left: 10px; font-size: 12px;">
               <span>${item.quantite} × ${utils.formatCFA(item.prix)}</span>
               <span>${utils.formatCFA(item.prix * item.quantite)}</span>
@@ -211,7 +211,7 @@ export default function CaisseCuisineManager({ currentUser }) {
         <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
 
         <div style="text-align: center; margin-top: 15px;">
-          <p style="margin: 5px 0;">Servi par: ${lastReceipt.vendeur}</p>
+          <p style="margin: 5px 0;">Servi par: ${utils.escapeHtml(lastReceipt.vendeur)}</p>
           <p style="margin: 10px 0; font-weight: bold;">MERCI DE VOTRE VISITE</p>
           <p style="margin: 5px 0; font-size: 10px;">BON APPÉTIT !</p>
         </div>
@@ -233,7 +233,7 @@ export default function CaisseCuisineManager({ currentUser }) {
       doc.write(`
         <html>
           <head>
-            <title>Reçu ${lastReceipt.numero}</title>
+            <title>Reçu ${utils.escapeHtml(lastReceipt.numero)}</title>
             <style>
               @media print {
                 body { margin: 0; padding: 10px; }
@@ -261,7 +261,7 @@ export default function CaisseCuisineManager({ currentUser }) {
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>Reçu ${lastReceipt.numero}</title>
+          <title>Reçu ${utils.escapeHtml(lastReceipt.numero)}</title>
           <style>
             @page {
               size: 80mm auto;

@@ -263,28 +263,26 @@ export default function CaisseManager({ currentUser }) {
     }
 
     try {
-      const venteData = {
+      const { vente, error } = await caisseService.enregistrerVente({
         items: panier,
-        total: totalPanier,
-        montant_donne: montantDonneNum,
-        monnaie_rendue: monnaieARendre,
-        vendeur_id: currentUser.id
-      };
-
-      const { vente, error } = await caisseService.enregistrerVente(venteData);
+        montant_donne: montantDonneNum
+      });
 
       if (error) {
         alert('Erreur lors de l\'enregistrement : ' + error);
+        // Le stock ou un prix a pu changer depuis le chargement de l'écran
+        loadData();
         return;
       }
 
+      // Le reçu reprend ce que la base a réellement enregistré (prix, total, monnaie)
       const recu = {
         numero: vente.numero_ticket,
         date: new Date().toLocaleString('fr-FR'),
-        items: panier,
-        total: totalPanier,
-        montant_donne: montantDonneNum,
-        monnaie_rendue: monnaieARendre,
+        items: vente.items,
+        total: vente.total,
+        montant_donne: vente.montant_donne,
+        monnaie_rendue: vente.monnaie_rendue,
         vendeur: currentUser.nom || currentUser.username,
         boutique: 'Pâtisserie Shine'
       };
@@ -316,15 +314,15 @@ export default function CaisseManager({ currentUser }) {
         <div style="text-align: center; margin-bottom: 20px;">
           <h3 style="margin: 5px 0; font-size: 18px;">PÂTISSERIE SHINE</h3>
           <p style="margin: 5px 0; font-size: 12px;">Tel: +226 05 07 39 00</p>
-          <p style="margin: 5px 0; font-size: 14px;">Reçu N° ${receiptData.numero}</p>
-          <p style="margin: 5px 0; font-size: 12px;">${receiptData.date}</p>
+          <p style="margin: 5px 0; font-size: 14px;">Reçu N° ${utils.escapeHtml(receiptData.numero)}</p>
+          <p style="margin: 5px 0; font-size: 12px;">${utils.escapeHtml(receiptData.date)}</p>
         </div>
         
         <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
         
         ${receiptData.items.map(item => `
           <div style="margin: 8px 0;">
-            <div style="font-weight: bold;">${item.nom}</div>
+            <div style="font-weight: bold;">${utils.escapeHtml(item.nom)}</div>
             <div style="display: flex; justify-content: space-between; padding-left: 10px; font-size: 12px;">
               <span>${item.quantite} × ${utils.formatCFA(item.prix)}</span>
               <span>${utils.formatCFA(item.prix * item.quantite)}</span>
@@ -352,7 +350,7 @@ export default function CaisseManager({ currentUser }) {
         <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
         
         <div style="text-align: center; margin-top: 15px;">
-          <p style="margin: 5px 0;">Servi par: ${receiptData.vendeur}</p>
+          <p style="margin: 5px 0;">Servi par: ${utils.escapeHtml(receiptData.vendeur)}</p>
           <p style="margin: 10px 0; font-weight: bold;">MERCI DE VOTRE VISITE</p>
           <p style="margin: 5px 0; font-size: 10px;">À bientôt !</p>
         </div>
@@ -374,7 +372,7 @@ export default function CaisseManager({ currentUser }) {
       doc.write(`
         <html>
           <head>
-            <title>Reçu ${receiptData.numero}</title>
+            <title>Reçu ${utils.escapeHtml(receiptData.numero)}</title>
             <style>
               @page { size: auto; margin: 0; }
               html, body { width: auto; margin: 0; padding: 0; }
@@ -404,7 +402,7 @@ export default function CaisseManager({ currentUser }) {
       <html>
         <head>
           <meta charset="UTF-8">
-          <title>Reçu ${receiptData.numero}</title>
+          <title>Reçu ${utils.escapeHtml(receiptData.numero)}</title>
           <style>
             @page {
               size: auto;
@@ -453,45 +451,55 @@ export default function CaisseManager({ currentUser }) {
   const effectuerCloture = async () => {
     try {
       const aujourdhui = new Date().toISOString().split('T')[0];
-      
+      const demain = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      // Uniquement les ventes validées : une vente annulée n'est pas dans la caisse
       const { data: ventes, error } = await supabase
         .from('ventes')
-        .select('*')
+        .select('id, total')
         .gte('created_at', aujourdhui + 'T00:00:00')
-        .lte('created_at', aujourdhui + 'T23:59:59')
-        .eq('vendeur_id', currentUser.id);
-      
+        .lt('created_at', demain + 'T00:00:00')
+        .eq('vendeur_id', currentUser.id)
+        .eq('statut', 'validee');
+
       if (error) throw error;
-      
-      const montantTotal = ventes.reduce((sum, v) => sum + (v.total || 0), 0);
+
+      const montantTotal = ventes.reduce((sum, v) => sum + (Number(v.total) || 0), 0);
       const nombreVentes = ventes.length;
-      
-      const montantDeclare = prompt(`Montant théorique: ${montantTotal} FCFA\nEntrez le montant réel en caisse:`);
-      
-      if (!montantDeclare) return;
-      
-      const ecart = parseFloat(montantDeclare) - montantTotal;
-      
+
+      const saisie = prompt(`Montant théorique: ${montantTotal} FCFA\nEntrez le montant réel en caisse:`);
+
+      if (saisie === null || saisie.trim() === '') return;
+
+      const montantDeclare = parseFloat(saisie.replace(',', '.'));
+      if (isNaN(montantDeclare)) {
+        alert('Montant invalide');
+        return;
+      }
+
+      const ecart = montantDeclare - montantTotal;
+
       const { error: clotureError } = await supabase
         .from('arrets_caisse')
         .insert({
           vendeur_id: currentUser.id,
           date_arret: aujourdhui,
-          montant_theorique: montantTotal,
-          montant_declare: parseFloat(montantDeclare),
-          ecart: ecart,
+          heure_fin: new Date().toISOString(),
           nombre_ventes: nombreVentes,
-          details_ventes: { ventes: ventes.map(v => v.id) },
+          chiffre_affaires: montantTotal,
+          montant_attendu: montantTotal,
+          montant_declare: montantDeclare,
+          ecart: ecart,
           statut: 'termine'
         });
-      
+
       if (clotureError) throw clotureError;
-      
+
       alert(`Clôture effectuée!\nÉcart: ${ecart} FCFA ${ecart === 0 ? '✓' : ecart > 0 ? '(excédent)' : '(manque)'}`);
-      
+
     } catch (error) {
       console.error('Erreur clôture:', error);
-      alert('Erreur lors de la clôture');
+      alert('Erreur lors de la clôture : ' + (error.message || error));
     }
   };
 
@@ -880,7 +888,11 @@ export default function CaisseManager({ currentUser }) {
                               setLastReceipt({
                                 numero: vente.numero_ticket,
                                 date: new Date(vente.created_at).toLocaleString('fr-FR'),
-                                items: vente.items,
+                                items: (vente.items || []).map(ligne => ({
+                                  nom: ligne.nom_produit,
+                                  prix: ligne.prix_unitaire,
+                                  quantite: ligne.quantite
+                                })),
                                 total: vente.total,
                                 montant_donne: vente.montant_donne,
                                 monnaie_rendue: vente.monnaie_rendue,

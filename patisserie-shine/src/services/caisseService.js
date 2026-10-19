@@ -19,6 +19,7 @@ export const caisseService = {
           nom_produit,
           quantite_disponible,
           quantite_vendue,
+          quantite_utilisee,
           prix_vente,
           produits (
             nom,
@@ -36,7 +37,7 @@ export const caisseService = {
       }
 
       const produitsFormates = (stockBoutique || []).map(item => {
-        const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0)
+        const stockReel = (item.quantite_disponible || 0) - (item.quantite_vendue || 0) - (item.quantite_utilisee || 0)
         return {
           id: item.produit_id,
           nom_produit: item.nom_produit || item.produits?.nom || 'Produit',
@@ -55,86 +56,22 @@ export const caisseService = {
   },
 
   /**
-   * Enregistre une vente complète avec ses articles
-   * @param {Object} venteData - Données de la vente { total, montant_donne, monnaie_rendue, vendeur_id, items[] }
-   * @returns {Object} { vente, error }
+   * Enregistre une vente complète avec ses articles, en une seule transaction côté base
+   * (fonction enregistrer_vente_boutique) : stock vérifié et verrouillé, prix et total calculés
+   * par la base, tout ou rien.
+   * @param {Object} venteData - { items: [{ id, quantite }], montant_donne }
+   * @returns {Object} { vente, error } - vente.items : [{ id, nom, prix, quantite, total }]
    */
   async enregistrerVente(venteData) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data, error } = await supabase.rpc('enregistrer_vente_boutique', {
+        p_items: venteData.items.map(item => ({ id: item.id, quantite: item.quantite })),
+        p_montant_donne: venteData.montant_donne
+      })
 
-      if (!user) {
-        return { vente: null, error: 'Utilisateur non connecté' }
-      }
+      if (error) throw error
 
-      const numeroTicket = 'V-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5)
-
-      // Créer la vente
-      const { data: vente, error: venteError } = await supabase
-        .from('ventes')
-        .insert({
-          numero_ticket: numeroTicket,
-          total: venteData.total,
-          montant_donne: venteData.montant_donne,
-          monnaie_rendue: venteData.monnaie_rendue,
-          vendeur_id: venteData.vendeur_id || user.id,
-          statut: 'validee'
-        })
-        .select()
-        .single()
-
-      if (venteError) throw venteError
-
-      // Traiter chaque article
-      for (const item of venteData.items) {
-        // Insérer la ligne de vente
-        await supabase
-          .from('lignes_vente')
-          .insert({
-            vente_id: vente.id,
-            produit_id: item.id,
-            nom_produit: item.nom,
-            quantite: item.quantite,
-            prix_unitaire: item.prix,
-            total: item.quantite * item.prix
-          })
-
-        // Insérer dans les sorties boutique
-        await supabase
-          .from('sorties_boutique')
-          .insert({
-            vente_id: vente.id,
-            produit_id: item.id,
-            quantite: item.quantite,
-            prix_unitaire: item.prix,
-            total: item.quantite * item.prix
-          })
-
-        // Mettre à jour le stock boutique
-        const { data: stockActuel } = await supabase
-          .from('stock_boutique')
-          .select('quantite_vendue')
-          .eq('produit_id', item.id)
-          .single()
-
-        if (stockActuel) {
-          await supabase
-            .from('stock_boutique')
-            .update({
-              quantite_vendue: (stockActuel.quantite_vendue || 0) + item.quantite,
-              updated_at: new Date().toISOString()
-            })
-            .eq('produit_id', item.id)
-        }
-      }
-
-      return {
-        vente: {
-          ...vente,
-          items: venteData.items
-        },
-        error: null
-      }
+      return { vente: data, error: null }
     } catch (error) {
       console.error('Erreur enregistrerVente:', error)
       return { vente: null, error: error.message }
@@ -283,8 +220,10 @@ export const caisseService = {
           quantite,
           prix_unitaire,
           total,
-          created_at
+          created_at,
+          ventes!inner(statut)
         `)
+        .eq('ventes.statut', 'validee')
         .gte('created_at', dateDebut + 'T00:00:00.000Z')
         .lte('created_at', dateFin + 'T23:59:59.999Z')
         .order('created_at', { ascending: false })

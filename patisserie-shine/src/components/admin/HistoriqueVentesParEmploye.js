@@ -121,7 +121,7 @@ export default function HistoriqueEmployeVentes({ currentUser }) {
     const contenuFacture = `
       <html>
         <head>
-          <title>Facture ${venteSelectionnee.numero_ticket}</title>
+          <title>Facture ${utils.escapeHtml(venteSelectionnee.numero_ticket)}</title>
           <style>
             body { 
               font-family: 'Courier New', monospace; 
@@ -171,9 +171,9 @@ export default function HistoriqueEmployeVentes({ currentUser }) {
         <body onload="window.print(); window.close();">
           <div class="header">
             <h1>🧁 PÂTISSERIE SHINE</h1>
-            <p>Facture N° ${venteSelectionnee.numero_ticket}</p>
+            <p>Facture N° ${utils.escapeHtml(venteSelectionnee.numero_ticket)}</p>
             <p>${new Date(venteSelectionnee.created_at).toLocaleString('fr-FR')}</p>
-            <p>Vendeur: ${venteSelectionnee.vendeur?.nom || 'N/A'}</p>
+            <p>Vendeur: ${utils.escapeHtml(venteSelectionnee.vendeur?.nom || 'N/A')}</p>
           </div>
 
           <div class="section">
@@ -184,8 +184,8 @@ export default function HistoriqueEmployeVentes({ currentUser }) {
             </div>
             ${(venteSelectionnee.items || []).map(item => `
               <div class="ligne">
-                <span class="produit-nom">${item.nom_produit}</span>
-                <span class="produit-qte">${item.quantite}</span>
+                <span class="produit-nom">${utils.escapeHtml(item.nom_produit)}</span>
+                <span class="produit-qte">${utils.escapeHtml(item.quantite)}</span>
                 <span class="produit-prix">${utils.formatCFA(item.total)}</span>
               </div>
             `).join('')}
