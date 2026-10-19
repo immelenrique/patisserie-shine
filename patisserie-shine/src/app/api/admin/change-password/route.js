@@ -1,7 +1,7 @@
 // src/app/api/admin/change-password/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireAdmin } from '../../../../lib/apiAuth'
+import { requireAdmin, refuserSiSuperAdminProtege } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -38,7 +38,7 @@ export async function POST(request) {
     // Le mot de passe du propriétaire ne peut être changé que par lui-même
     const { data: targetUser, error: targetError } = await supabaseAdmin
       .from('profiles')
-      .select('username')
+      .select('id, username, is_super_admin')
       .eq('id', userId)
       .maybeSingle()
 
@@ -56,6 +56,9 @@ export async function POST(request) {
       )
     }
 
+    const refus = refuserSiSuperAdminProtege(auth, targetUser)
+    if (refus) return refus
+
     // Changer le mot de passe via l'admin API
     const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
       userId,
@@ -69,6 +72,16 @@ export async function POST(request) {
         { status: 400 }
       )
     }
+
+    // Trace pour le récapitulatif du propriétaire : qui a changé le mot de passe de qui
+    const { error: logError } = await supabaseAdmin
+      .from('password_change_log')
+      .insert({
+        user_id: userId,
+        changed_by: auth.user.id,
+        reason: auth.user.id === userId ? 'Mot de passe changé' : 'Mot de passe réinitialisé par un administrateur'
+      })
+    if (logError) console.warn('Trace du changement de mot de passe non enregistrée:', logError)
 
     return NextResponse.json({
       success: true,

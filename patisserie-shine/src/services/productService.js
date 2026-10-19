@@ -25,7 +25,8 @@ export const productService = {
         return { products: [], error: error.message }
       }
 
-      return { products: data || [], error: null }
+      // Les produits archivés (actif = false) gardent leur historique mais disparaissent des listes
+      return { products: (data || []).filter(p => p.actif !== false), error: null }
     } catch (error) {
       console.error('Erreur dans getAll produits:', error)
       return { products: [], error: error.message }
@@ -99,40 +100,19 @@ export const productService = {
    */
   async createWithPriceOption(productData) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      // Une seule opération côté base, inscrite au journal (auteur et heure fixés par la base)
+      const { data, error } = await supabase.rpc('creer_produit', {
+        p_nom: productData.nom,
+        p_date_achat: productData.date_achat,
+        p_quantite: productData.quantite,
+        p_prix_total: productData.prix_achat_total,
+        p_unite_id: productData.unite_id,
+        p_prix_vente: productData.definir_prix_vente ? productData.prix_vente : null,
+        p_cle: productData.cle || null
+      })
+      if (error) throw error
 
-      // Créer le produit
-      const { data: produit, error: produitError } = await supabase
-        .from('produits')
-        .insert({
-          nom: productData.nom,
-          date_achat: productData.date_achat,
-          prix_achat: productData.prix_achat,
-          quantite: productData.quantite,
-          quantite_restante: productData.quantite,
-          unite_id: productData.unite_id,
-          created_by: user?.id
-        })
-        .select('*, unite:unites(id, value, label)')
-        .single()
-
-      if (produitError) {
-        return { product: null, error: produitError.message }
-      }
-
-      // Si prix de vente défini
-      if (productData.definir_prix_vente && productData.prix_vente) {
-        await supabase
-          .from('prix_vente_produits')
-          .insert({
-            produit_id: produit.id,
-            prix: productData.prix_vente,
-            marge_pourcentage: ((productData.prix_vente - productData.prix_achat) / productData.prix_achat) * 100,
-            actif: true
-          })
-      }
-
-      return { product: produit, error: null }
+      return { product: { id: data.produit_id }, error: null }
     } catch (error) {
       console.error('Erreur dans createWithPriceOption:', error)
       return { product: null, error: error.message }
@@ -147,29 +127,61 @@ export const productService = {
    */
   async update(productId, updates) {
     try {
-      const { data, error } = await supabase
-        .from('produits')
-        .update({
-          nom: updates.nom,
-          date_achat: updates.date_achat,
-          prix_achat: updates.prix_achat,
-          quantite: updates.quantite,
-          quantite_restante: updates.quantite_restante,
-          unite_id: updates.unite_id,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', productId)
-        .select('*, unite:unites(id, value, label)')
-        .single()
+      // Nom, date, prix d'achat et unité. Les quantités se corrigent avec ajusterStock (motif obligatoire).
+      const { error } = await supabase.rpc('modifier_produit', {
+        p_produit_id: productId,
+        p_nom: updates.nom,
+        p_date_achat: updates.date_achat,
+        p_prix_achat: updates.prix_achat,
+        p_unite_id: updates.unite_id
+      })
+      if (error) throw error
 
-      if (error) {
-        return { product: null, error: error.message }
-      }
-
-      return { product: data, error: null }
+      return { product: { id: productId }, error: null }
     } catch (error) {
       console.error('Erreur dans update:', error)
       return { product: null, error: error.message }
+    }
+  },
+
+  /**
+   * Corrige la quantité restante du stock principal (recomptage, casse, erreur…)
+   * @param {number} productId - ID du produit
+   * @param {number} nouvelleQuantite - Quantité réellement présente
+   * @param {string} motif - Motif obligatoire, inscrit au journal
+   * @returns {Object} { ecart, error }
+   */
+  async ajusterStock(productId, nouvelleQuantite, motif) {
+    try {
+      const { data, error } = await supabase.rpc('ajuster_stock_principal', {
+        p_produit_id: productId,
+        p_nouvelle_quantite: nouvelleQuantite,
+        p_motif: motif
+      })
+      if (error) throw error
+
+      return { ecart: data.ecart, error: null }
+    } catch (error) {
+      console.error('Erreur dans ajusterStock:', error)
+      return { ecart: null, error: error.message }
+    }
+  },
+
+  /**
+   * Archive un produit sans stock : il disparaît des listes, son historique est conservé
+   * @param {number} productId - ID du produit
+   * @param {string} motif - Motif obligatoire
+   * @returns {Object} { error }
+   */
+  async archiver(productId, motif) {
+    try {
+      const { error } = await supabase.rpc('archiver_produit', { p_produit_id: productId, p_motif: motif })
+      if (error) throw error
+
+      return { error: null }
+    } catch (error) {
+      console.error('Erreur dans archiver:', error)
+      return { error: error.message }
     }
   },
 
@@ -184,65 +196,18 @@ export const productService = {
    */
   async reapprovisionner(productId, reapproData) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      // Prix moyen pondéré et quantités calculés par la base, en une opération ; la clé évite un double
+      // réapprovisionnement en cas de double clic ou de nouvel essai après une coupure
+      const { data, error } = await supabase.rpc('reapprovisionner_produit', {
+        p_produit_id: productId,
+        p_quantite: parseFloat(reapproData.quantite_ajoutee),
+        p_prix_total: parseFloat(reapproData.prix_achat_total),
+        p_date_achat: reapproData.date_achat || null,
+        p_cle: reapproData.cle || null
+      })
+      if (error) throw error
 
-      // 1. Récupérer le produit actuel
-      const { data: produitActuel, error: fetchError } = await supabase
-        .from('produits')
-        .select('*, unite:unites(id, value, label)')
-        .eq('id', productId)
-        .single()
-
-      if (fetchError || !produitActuel) {
-        return { product: null, error: 'Produit non trouvé' }
-      }
-
-      // 2. Calculer le nouveau prix d'achat moyen pondéré
-      const quantiteAjoutee = parseFloat(reapproData.quantite_ajoutee)
-      const prixAchatNouveauTotal = parseFloat(reapproData.prix_achat_total)
-      const prixAchatNouveauUnitaire = prixAchatNouveauTotal / quantiteAjoutee
-
-      const quantiteAncienne = parseFloat(produitActuel.quantite)
-      const prixAchatAncien = parseFloat(produitActuel.prix_achat || 0)
-
-      // Prix moyen pondéré
-      const quantiteTotale = quantiteAncienne + quantiteAjoutee
-      const valeurTotaleAncienne = quantiteAncienne * prixAchatAncien
-      const valeurTotaleNouvelle = quantiteAjoutee * prixAchatNouveauUnitaire
-      const prixMoyenPondere = (valeurTotaleAncienne + valeurTotaleNouvelle) / quantiteTotale
-
-      // 3. Mettre à jour le produit
-      const { data: produitMisAJour, error: updateError } = await supabase
-        .from('produits')
-        .update({
-          quantite: quantiteTotale,
-          quantite_restante: parseFloat(produitActuel.quantite_restante) + quantiteAjoutee,
-          prix_achat: prixMoyenPondere,
-          date_achat: reapproData.date_achat || produitActuel.date_achat,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', productId)
-        .select('*, unite:unites(id, value, label)')
-        .single()
-
-      if (updateError) {
-        return { product: null, error: updateError.message }
-      }
-
-      // 4. Enregistrer le mouvement de stock
-      await supabase
-        .from('mouvements_stock')
-        .insert({
-          produit_id: productId,
-          type_mouvement: 'entree',
-          quantite: quantiteAjoutee,
-          prix_unitaire: prixAchatNouveauUnitaire,
-          motif: `Réapprovisionnement - ${quantiteAjoutee} ${produitActuel.unite?.value || ''}`,
-          utilisateur_id: user?.id,
-          created_at: new Date().toISOString()
-        })
-
-      return { product: produitMisAJour, error: null }
+      return { product: { id: productId, quantite_restante: data.quantite_restante, deja_enregistre: data.deja_enregistre }, error: null }
     } catch (error) {
       console.error('Erreur dans reapprovisionner:', error)
       return { product: null, error: error.message }

@@ -12,6 +12,10 @@ D="$P -d shine_e2e"
 for f in 00_emulation_supabase 01_schema 02_policies 03_functions_triggers 05_seed; do $D -f $B/$f.sql >/dev/null || { echo "ECHEC $f"; exit 1; }; done
 for f in phase1_fermer_acces_anonyme phase2_droits_entre_employes corrections_1_fonctions corrections_2_roles ventes_atomiques ventes_idempotence; do $D -f $SEC/$f.sql >/dev/null || { echo "ECHEC $f"; exit 1; }; done
 $D -f $M/partie1_circuit_demandes.sql >/dev/null && $D -f $M/partie1_contrainte_annulee.sql >/dev/null || { echo "ECHEC partie 1"; exit 1; }
+# Partie 2 si demandée (PARTIE2=1)
+if [ "${PARTIE2:-0}" = 1 ]; then $D -f $M/partie2_stock_principal.sql >/dev/null || { echo "ECHEC partie 2"; exit 1; }; fi
+# Partie 3 si demandée (PARTIE3=1, avec la partie 2)
+if [ "${PARTIE3:-0}" = 1 ]; then $D -f $M/partie3_recapitulatif.sql >/dev/null || { echo "ECHEC partie 3"; exit 1; }; fi
 $D >/dev/null <<'SQL'
 INSERT INTO produits (id, nom, prix_achat, quantite, quantite_restante, unite_id) VALUES (6, 'Pain', 0, 30, 30, 1);
 INSERT INTO prix_vente_produits (produit_id, prix, actif) VALUES (6, 500, true);
@@ -20,6 +24,9 @@ INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
  ('f0000000-0000-4000-8000-000000000012', 'caissier2@shine.local', '{"username":"caissier2","nom":"Caissier 2"}');
 UPDATE profiles SET role = 'employe_production' WHERE username = 'prod';
 UPDATE profiles SET force_password_change = false;
+-- Une fourniture en boutique (article non vendable), pour l'écran « marquer comme utilisé »
+INSERT INTO produits (id, nom, prix_achat, quantite, quantite_restante, unite_id) VALUES (7, 'Sachets', 0, 100, 0, 1);
+INSERT INTO stock_boutique (produit_id, nom_produit, quantite_disponible, quantite_vendue, quantite_utilisee, prix_vente, type_produit) VALUES (7, 'Sachets', 100, 0, 0, NULL, 'fourniture');
 DELETE FROM lignes_vente WHERE id > 100;
 CREATE ROLE authenticator LOGIN PASSWORD 'e2e' NOINHERIT;
 GRANT anon, authenticated, service_role TO authenticator;

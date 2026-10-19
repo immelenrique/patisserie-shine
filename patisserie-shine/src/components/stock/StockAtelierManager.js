@@ -208,11 +208,18 @@ export default function StockAtelierManager({ currentUser }) {
 
     if (!doubleConfirmation) return;
 
+    const motif = prompt('Motif (obligatoire, inscrit au journal) : ex. « consommé en production de la semaine »');
+    if (motif === null) return;
+    if (motif.trim().length < 3) {
+      alert('Le motif est obligatoire.');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
     try {
-      const result = await stockAtelierService.viderToutLeStock();
+      const result = await stockAtelierService.viderToutLeStock(motif.trim());
 
       if (result.error) {
         alert('Erreur lors du vidage du stock: ' + result.error);
