@@ -15,6 +15,7 @@ import RecettesManager from '../components/production/RecettesManager';
 import DemandesManager from '../components/demandes/DemandesManager';
 import ReceptionsManager from '../components/receptions/ReceptionsManager';
 import RecapManager from '../components/recap/RecapManager';
+import AFaireManager from '../components/afaire/AFaireManager';
 import ProductionManager from '../components/production/ProductionManager';
 import CaisseManager from '../components/caisse/CaisseManager';
 import ComptabiliteManager from '../components/comptabilite/ComptabiliteManager';
@@ -36,8 +37,24 @@ import {
   LogOut, User, KeyRound, LayoutDashboard, Package, 
   ShoppingBag, Factory, ChefHat, FileText, Database, 
   Calculator, Ruler, Users, UserCog, Shield, Store,
-  BookOpen, CreditCard, Crown, AlertTriangle, Truck, ClipboardList
+  BookOpen, CreditCard, Crown, AlertTriangle, Truck, ClipboardList, ListChecks
 } from 'lucide-react';
+
+// Libellés affichés à la place des rôles techniques
+const LIBELLES_ROLES = { admin: 'Gérant', employe_boutique: 'Boutique', employe_production: 'Production', employe_cuisine: 'Cuisine' };
+
+// Au-delà de 7 onglets, la barre est regroupée par tâche : une rangée de groupes, puis les onglets du groupe ouvert
+const ONGLETS_SANS_GROUPES = 7;
+const GROUPES = [
+  { id: 'a-faire', label: 'À faire', icon: ListChecks, onglets: ['a-faire'] },
+  { id: 'pilotage', label: 'Pilotage', icon: LayoutDashboard, onglets: ['dashboard', 'recap', 'comptabilite'] },
+  { id: 'circuit', label: 'Demandes et réceptions', icon: Truck, onglets: ['demandes', 'receptions'] },
+  { id: 'stock', label: 'Stocks', icon: Package, onglets: ['stock', 'stock-atelier', 'stock-boutique', 'stock-cuisine', 'referentiel', 'unites'] },
+  { id: 'ventes', label: 'Ventes', icon: CreditCard, onglets: ['caisse', 'caisse-cuisine'] },
+  { id: 'production', label: 'Production', icon: ChefHat, onglets: ['production', 'recettes'] },
+  { id: 'depenses', label: 'Dépenses', icon: Receipt, onglets: ['depenses'] },
+  { id: 'equipe', label: 'Équipe', icon: Users, onglets: ['equipe', 'users', 'permissions'] }
+];
 
 export default function Home() {
   const router = useRouter();
@@ -48,7 +65,8 @@ export default function Home() {
   const [sessionError, setSessionError] = useState(false);
   
   // État navigation
-  const [activeTab, setActiveTab] = useState('dashboard');
+  // Chacun arrive sur ce qui l'attend
+  const [activeTab, setActiveTab] = useState('a-faire');
   
   // États permissions
   const [userPermissions, setUserPermissions] = useState([]);
@@ -358,6 +376,7 @@ useEffect(() => {
 };
   // Configuration des onglets
   const tabs = [
+    { id: 'a-faire', label: 'À faire', icon: ListChecks, toujours: true },
     { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, permission: 'view_dashboard' },
     { id: 'stock', label: 'Stock Principal', icon: Package, permission: 'view_stock' },
     { id: 'referentiel', label: 'Référentiel Produits', icon: Database, permission: 'view_referentiel' },
@@ -385,10 +404,19 @@ useEffect(() => {
   // Filtrer les onglets selon les permissions
  const availableTabs = tabs.filter(tab => {
   // Ensuite vérifier la permission spécifique
+  if (tab.toujours) return true;
   if (tab.superAdminOnly) return currentUser?.is_super_admin === true;
   if (tab.anyPermission) return tab.anyPermission.some(hasPermission);
   return hasPermission(tab.permission);
 });
+  const groupee = availableTabs.length > ONGLETS_SANS_GROUPES;
+  const groupesVisibles = GROUPES
+    .map(g => ({ ...g, ongletsVisibles: g.onglets.map(id => availableTabs.find(t => t.id === id)).filter(Boolean) }))
+    .filter(g => g.ongletsVisibles.length > 0);
+  // Un onglet ajouté plus tard sans groupe reste accessible
+  const sansGroupe = availableTabs.filter(t => !GROUPES.some(g => g.onglets.includes(t.id)));
+  if (sansGroupe.length > 0) groupesVisibles.push({ id: 'autres', label: 'Autres', icon: FileText, ongletsVisibles: sansGroupe });
+  const groupeActif = groupesVisibles.find(g => g.ongletsVisibles.some(t => t.id === activeTab));
 console.log('=== TABS RESULT ===');
 console.log('Available:', availableTabs.map(t => t.label));
 
@@ -417,7 +445,7 @@ console.log('Available:', availableTabs.map(t => t.label));
       {/* Header */}
      <header className="bg-white shadow-sm border-b border-orange-200">
   <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-    <div className="flex justify-between items-center py-4">
+    <div className="flex flex-wrap justify-between items-center gap-2 py-4">
       <div className="flex items-center">
         <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-orange-400 bg-clip-text text-transparent">
           Pâtisserie Shine
@@ -427,12 +455,12 @@ console.log('Available:', availableTabs.map(t => t.label));
         )}
       </div>
       
-      <div className="flex items-center space-x-4">
-        <div className="flex items-center space-x-2 text-sm text-gray-600">
-          <User className="w-4 h-4" />
-          <span>{currentUser.nom || currentUser.username}</span>
-          <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs">
-            {currentUser.role}
+      <div className="flex items-center gap-1 sm:gap-4">
+        <div className="flex items-center gap-2 text-sm text-gray-600">
+          <User className="w-4 h-4 hidden sm:block" />
+          <span className="hidden sm:inline">{currentUser.nom || currentUser.username}</span>
+          <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs">
+            {currentUser.is_super_admin ? 'Propriétaire' : LIBELLES_ROLES[currentUser.role] || currentUser.role}
           </span>
         </div>
         
@@ -459,36 +487,58 @@ console.log('Available:', availableTabs.map(t => t.label));
 </header>
 
       {/* Navigation */}
-      <nav className="bg-white shadow-sm border-b">
+      <nav className="bg-white shadow-sm border-b" aria-label="Navigation principale">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-1 overflow-x-auto py-2">
-            {availableTabs.map(tab => {
-              const Icon = tab.icon;
+          <div className="flex flex-wrap gap-1 py-2">
+            {(groupee ? groupesVisibles : availableTabs).map(item => {
+              const Icon = item.icon;
+              const actif = groupee ? item.id === groupeActif?.id : activeTab === item.id;
               return (
                 <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-                    activeTab === tab.id
-                      ? 'bg-orange-100 text-orange-700'
-                      : 'text-gray-600 hover:bg-gray-100'
+                  key={item.id}
+                  onClick={() => setActiveTab(groupee ? item.ongletsVisibles[0].id : item.id)}
+                  aria-current={actif ? 'page' : undefined}
+                  className={`flex items-center px-4 min-h-[44px] rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+                    actif
+                      ? 'bg-orange-100 text-orange-800'
+                      : 'text-gray-700 hover:bg-gray-100'
                   }`}
                 >
                   <Icon className="w-4 h-4 mr-2" />
-                  {tab.label}
-                  {tab.superAdminOnly && (
+                  {item.label}
+                  {item.superAdminOnly && (
                     <Shield className="w-3 h-3 ml-1 text-yellow-500" />
                   )}
                 </button>
               );
             })}
           </div>
+          {groupee && groupeActif && groupeActif.ongletsVisibles.length > 1 && (
+            <div className="flex flex-wrap gap-1 pb-2 border-t pt-2">
+              {groupeActif.ongletsVisibles.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
+                  className={`flex items-center px-3 min-h-[40px] rounded-lg text-sm whitespace-nowrap ${
+                    activeTab === tab.id ? 'bg-orange-700 text-white font-medium' : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  {tab.label}
+                  {tab.superAdminOnly && <Shield className={`w-3 h-3 ml-1 ${activeTab === tab.id ? 'text-yellow-200' : 'text-yellow-500'}`} />}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </nav>
 
       {/* Content - CORRIGÉ avec les bons noms de composants */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
+        {activeTab === 'a-faire' && (
+          <AFaireManager currentUser={currentUser} hasPermission={hasPermission} onNaviguer={setActiveTab} />
+        )}
         {activeTab === 'dashboard' && (
           <Dashboard
             currentUser={currentUser}

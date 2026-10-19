@@ -5,9 +5,10 @@ import { supabase } from '../../lib/supabase-client';
 import { stockBoutiqueService, caisseService } from '../../services';
 import { utils } from '../../utils/formatters';
 import { Store, Package, AlertTriangle, TrendingUp, TrendingDown, Edit, Check, X, DollarSign, ShoppingCart, Eye, EyeOff, Archive, Boxes } from 'lucide-react';
-import { Card, StatCard, Modal } from '../ui';
+import { Card, StatCard, Modal, useSaisie } from '../ui';
 
 export default function StockBoutiqueManager({ currentUser }) {
+  const [fenetreSaisie, demander] = useSaisie();
   const [stockBoutique, setStockBoutique] = useState([]);
   const [historique, setHistorique] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -155,27 +156,26 @@ const saveType = async (stockId) => {
 };
 
   // Marquer l'utilisation d'un produit non-vendable
-  const markAsUsed = async (stockId, quantiteUtilisee) => {
-    const quantite = parseFloat(quantiteUtilisee);
-    if (!quantite || quantite <= 0) {
-      alert('Veuillez entrer une quantité valide');
-      return;
-    }
+  const markAsUsed = async (stockItem) => {
+    const saisie = await demander({
+      titre: `Utilisation : ${stockItem.nom_produit}`,
+      message: `Disponible : ${stockItem.stock_reel}. L'utilisation est inscrite au journal à votre nom.`,
+      champs: [
+        { nom: 'quantite', label: 'Quantité utilisée', type: 'number', max: stockItem.stock_reel },
+        { nom: 'raison', label: 'Pour quoi', placeholder: 'ex. emballage des commandes' }
+      ],
+      confirmer: 'Enregistrer'
+    });
+    if (!saisie) return;
+    const quantite = saisie.quantite;
+    const stockId = stockItem.id;
 
     try {
-      const stockItem = stockBoutique.find(s => s.id === stockId);
-      if (!stockItem) return;
-
-      if (quantite > stockItem.stock_reel) {
-        alert('Quantité supérieure au stock disponible');
-        return;
-      }
-
       // Une seule écriture côté base (l'ancien code comptait chaque utilisation deux fois), inscrite au journal
       const { error } = await supabase.rpc('utiliser_stock_boutique', {
         p_stock_id: stockId,
         p_quantite: quantite,
-        p_raison: 'Utilisation en boutique'
+        p_raison: saisie.raison || 'Utilisation en boutique'
       });
 
       if (error) {
@@ -258,6 +258,7 @@ const saveType = async (stockId) => {
   return (
     <div className="space-y-6">
       {/* En-tête */}
+      {fenetreSaisie}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center">
@@ -613,10 +614,7 @@ const saveType = async (stockId) => {
                                 )}
                                 {activeTab === 'fournitures' && stock.stock_reel > 0 && (
                                   <button
-                                    onClick={() => {
-                                      const quantite = prompt(`Quantité utilisée de "${stock.nom_produit}" (max: ${stock.stock_reel}):`);
-                                      if (quantite) markAsUsed(stock.id, quantite);
-                                    }}
+                                    onClick={() => markAsUsed(stock)}
                                     className="text-orange-600 hover:text-orange-900 p-1 hover:bg-orange-50 rounded transition-colors"
                                     title="Marquer comme utilisé"
                                   >
