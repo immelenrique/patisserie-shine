@@ -1,7 +1,7 @@
 // src/app/api/auth/change-initial-password/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { headers } from 'next/headers'
+import { authenticateRequest } from '../../../../lib/apiAuth'
 
 // Client admin avec les privilèges service_role
 const supabaseAdmin = createClient(
@@ -17,9 +17,15 @@ const supabaseAdmin = createClient(
 
 export async function POST(request) {
   try {
-    const { userId, newPassword } = await request.json()
+    // L'utilisateur ne peut changer que son propre mot de passe :
+    // l'identifiant vient du jeton, jamais du corps de la requête
+    const auth = await authenticateRequest(request, supabaseAdmin)
+    if (auth.error) return auth.error
+
+    const userId = auth.user.id
+    const { newPassword } = await request.json()
     
-    if (!userId || !newPassword) {
+    if (!newPassword) {
       return NextResponse.json(
         { error: 'Données manquantes' },
         { status: 400 }

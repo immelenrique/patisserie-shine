@@ -134,33 +134,26 @@ export const authService = {
   },
 
   /**
-   * Changer le mot de passe initial
+   * Changer le mot de passe initial de l'utilisateur connecté
    * @param {string} newPassword - Nouveau mot de passe
-   * @param {string} userId - ID utilisateur (optionnel)
    * @returns {Promise<{success: boolean, message?: string, error?: string}>}
    */
-  async changeInitialPassword(newPassword, userId) {
+  async changeInitialPassword(newPassword) {
     try {
-      let userIdToUse = userId
-      
-      if (!userIdToUse) {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          userIdToUse = user.id
-        }
-      }
-      
-      if (!userIdToUse) {
-        return { success: false, error: 'Utilisateur non identifié' }
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        return { success: false, error: 'Session expirée. Veuillez vous reconnecter.' }
       }
 
+      // L'API identifie l'utilisateur à partir du jeton de session
       const response = await fetch('/api/auth/change-initial-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
         },
         body: JSON.stringify({
-          userId: userIdToUse,
           newPassword: newPassword
         })
       })

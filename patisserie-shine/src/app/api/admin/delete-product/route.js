@@ -1,6 +1,7 @@
 // src/app/api/admin/delete-product/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireAdmin } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,21 +16,15 @@ const supabaseAdmin = createClient(
 
 export async function DELETE(request) {
   try {
+    const auth = await requireAdmin(request, supabaseAdmin)
+    if (auth.error) return auth.error
+
     const { productId, forceDelete } = await request.json()
     
     if (!productId) {
       return NextResponse.json(
         { error: 'ID du produit requis' },
         { status: 400 }
-      )
-    }
-
-    // Vérifier que l'utilisateur est admin
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: 'Token d\'autorisation manquant' },
-        { status: 401 }
       )
     }
 

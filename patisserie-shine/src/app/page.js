@@ -331,8 +331,7 @@ useEffect(() => {
     // Pour le changement initial, utiliser changeInitialPassword
     if (passwordChangeRequired) {
       const result = await authService.changeInitialPassword(
-        passwordData.newPassword,
-        currentUser?.id
+        passwordData.newPassword
       );
       
       if (result.error) {

@@ -1,6 +1,7 @@
 // src/app/api/admin/delete-user/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireAdmin } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,6 +16,9 @@ const supabaseAdmin = createClient(
 
 export async function DELETE(request) {
   try {
+    const auth = await requireAdmin(request, supabaseAdmin)
+    if (auth.error) return auth.error
+
     const { userId, permanent = false } = await request.json()
     
     console.log('🗑️ Suppression utilisateur demandée:', { userId, permanent })
@@ -23,15 +27,6 @@ export async function DELETE(request) {
       return NextResponse.json(
         { error: 'ID utilisateur requis' },
         { status: 400 }
-      )
-    }
-
-    // Vérifier l'autorisation
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: 'Token d\'autorisation manquant' },
-        { status: 401 }
       )
     }
 

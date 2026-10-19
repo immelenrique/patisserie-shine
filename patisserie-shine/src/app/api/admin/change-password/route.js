@@ -1,6 +1,7 @@
 // src/app/api/admin/change-password/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireAdmin } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,6 +16,9 @@ const supabaseAdmin = createClient(
 
 export async function POST(request) {
   try {
+    const auth = await requireAdmin(request, supabaseAdmin)
+    if (auth.error) return auth.error
+
     const { userId, newPassword } = await request.json()
     
     if (!userId || !newPassword) {
@@ -28,6 +32,27 @@ export async function POST(request) {
       return NextResponse.json(
         { error: 'Le mot de passe doit contenir au moins 6 caractères' },
         { status: 400 }
+      )
+    }
+
+    // Le mot de passe du propriétaire ne peut être changé que par lui-même
+    const { data: targetUser, error: targetError } = await supabaseAdmin
+      .from('profiles')
+      .select('username')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (targetError) {
+      return NextResponse.json(
+        { error: 'Impossible de vérifier l\'utilisateur ciblé' },
+        { status: 500 }
+      )
+    }
+
+    if (targetUser?.username === 'proprietaire' && auth.user.id !== userId) {
+      return NextResponse.json(
+        { error: 'Le mot de passe du propriétaire ne peut pas être modifié' },
+        { status: 403 }
       )
     }
 
