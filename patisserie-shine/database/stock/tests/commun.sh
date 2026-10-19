@@ -15,6 +15,7 @@ construire() {
   $P -d postgres -c "DROP ROLE IF EXISTS anon" -c "DROP ROLE IF EXISTS authenticated" -c "DROP ROLE IF EXISTS service_role" >/dev/null 2>&1
   $P -d postgres -c "CREATE DATABASE shine_test" >/dev/null
   for f in 00_emulation_supabase 01_schema 02_policies 03_functions_triggers 05_seed; do $D -f $B/$f.sql >/dev/null || { echo "ECHEC $f"; exit 1; }; done
+  $D -f $S/stockage_emulation.sql >/dev/null || { echo "ECHEC stockage_emulation"; exit 1; }
   for f in phase1_fermer_acces_anonyme phase2_droits_entre_employes corrections_1_fonctions corrections_2_roles ventes_atomiques ventes_idempotence; do $D -f $SEC/$f.sql >/dev/null || { echo "ECHEC $f"; exit 1; }; done
   $D -f $M/partie1_circuit_demandes.sql >/dev/null && $D -f $M/partie1_contrainte_annulee.sql >/dev/null || { echo "ECHEC partie 1"; exit 1; }
   $D >/dev/null <<'SQL'

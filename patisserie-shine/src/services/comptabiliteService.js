@@ -19,27 +19,63 @@ export const comptabiliteService = {
       let depensesStock = 0
       let detailsDepensesStock = []
 
-      // 1. Dépenses d'achat de matières premières (achats de produits)
+      // 1. Achats de stock. Depuis la partie 4, chaque achat crée sa dépense (montant réellement payé) :
+      //    on additionne ces dépenses. Avant le premier achat suivi, il ne reste que l'ancienne estimation
+      //    (prix moyen × quantité cumulée, comptée à la date du dernier achat), signalée comme telle.
+      let debutSuivi = null
       try {
-        const { data: produits, error: produitsError } = await supabase
-          .from('produits')
-          .select('nom, prix_achat, quantite, date_achat, created_at')
-          .gte('date_achat', dateDebut)
-          .lte('date_achat', dateFin)
-
-        if (!produitsError && produits) {
-          depensesStock = produits.reduce((sum, p) =>
-            sum + ((p.prix_achat || 0) * (p.quantite || 0)), 0
-          )
-          detailsDepensesStock = produits.map(p => ({
-            date: p.date_achat || p.created_at,
+        const { data: achats, error: achatsError } = await supabase
+          .from('depenses_comptables')
+          .select('description, montant, date_depense')
+          .not('achat_journal_id', 'is', null)
+          .gte('date_depense', dateDebut)
+          .lte('date_depense', dateFin)
+        if (!achatsError) {
+          const { data: premier } = await supabase
+            .from('depenses_comptables')
+            .select('date_depense')
+            .not('achat_journal_id', 'is', null)
+            .order('date_depense', { ascending: true })
+            .limit(1)
+          debutSuivi = premier?.[0]?.date_depense || null
+          depensesStock = (achats || []).reduce((sum, d) => sum + (Number(d.montant) || 0), 0)
+          detailsDepensesStock = (achats || []).map(d => ({
+            date: d.date_depense,
             type: 'achat_matiere_premiere',
-            description: `Achat ${p.nom} - ${p.quantite} unités`,
-            montant: (p.prix_achat || 0) * (p.quantite || 0)
+            description: d.description,
+            montant: Number(d.montant) || 0
           }))
         }
-      } catch (stockErr) {
-        console.warn('Erreur calcul dépenses stock:', stockErr)
+      } catch (achatsErr) {
+        console.warn('Erreur lecture des achats de stock:', achatsErr)
+      }
+
+      // Partie de la période antérieure au suivi des achats (ou toute la période si aucun achat n'est suivi)
+      const finEstimation = debutSuivi && debutSuivi <= dateFin
+        ? new Date(new Date(debutSuivi + 'T12:00:00Z').getTime() - 86400000).toISOString().slice(0, 10)
+        : dateFin
+      if (finEstimation >= dateDebut) {
+        try {
+          const { data: produits, error: produitsError } = await supabase
+            .from('produits')
+            .select('nom, prix_achat, quantite, date_achat, created_at')
+            .gte('date_achat', dateDebut)
+            .lte('date_achat', finEstimation)
+
+          if (!produitsError && produits) {
+            depensesStock += produits.reduce((sum, p) =>
+              sum + ((p.prix_achat || 0) * (p.quantite || 0)), 0
+            )
+            detailsDepensesStock = detailsDepensesStock.concat(produits.map(p => ({
+              date: p.date_achat || p.created_at,
+              type: 'achat_matiere_premiere',
+              description: `Estimation (avant suivi des achats) : ${p.nom} - ${p.quantite} unités`,
+              montant: (p.prix_achat || 0) * (p.quantite || 0)
+            })))
+          }
+        } catch (stockErr) {
+          console.warn('Erreur calcul dépenses stock:', stockErr)
+        }
       }
 
       // 2. Coût des ingrédients utilisés en production (consommations réelles)
@@ -116,11 +152,21 @@ export const comptabiliteService = {
       let detailsAutres = []
 
       try {
-        const { data: depenses, error: depensesError } = await supabase
+        // Les achats de stock sont déjà comptés au point 1
+        let { data: depenses, error: depensesError } = await supabase
           .from('depenses_comptables')
           .select('*')
+          .is('achat_journal_id', null)
           .gte('date_depense', dateDebut)
           .lte('date_depense', dateFin)
+        if (depensesError && debutSuivi === null) {
+          // Base sans la partie 4 : aucune dépense n'est encore liée à un achat
+          ({ data: depenses, error: depensesError } = await supabase
+            .from('depenses_comptables')
+            .select('*')
+            .gte('date_depense', dateDebut)
+            .lte('date_depense', dateFin))
+        }
 
         if (!depensesError && depenses) {
           autresDepenses = depenses.reduce((sum, d) => sum + (d.montant || 0), 0)

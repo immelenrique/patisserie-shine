@@ -4,9 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase-client';
 import {
   AlertTriangle, Clock, UserCheck, FileText, Truck, Package, CreditCard, Receipt,
-  Users, Archive, Printer, RefreshCw, ShieldCheck, ShieldAlert
+  Users, Archive, Printer, RefreshCw, ShieldCheck, ShieldAlert, ShoppingBag
 } from 'lucide-react';
 import { Card } from '../ui';
+import { recuService } from '../../services';
 import { utils } from '../../utils/formatters';
 
 const FUSEAU = 'Africa/Ouagadougou';
@@ -136,7 +137,8 @@ function Contenu({ recap, titre }) {
   const comptesParAutre = (recap.comptes || []).filter(x => x.par_autre);
   const autoValidations = (recap.decisions || []).filter(d => d.auto_validation);
   const nbPoints = (alertes.transit_24h || []).length + (alertes.meme_personne || []).length + (alertes.ecarts || []).length
-    + corrections.length + (ventes.annulations || []).length + comptesParAutre.length + (journal.intact === false ? 1 : 0);
+    + corrections.length + (ventes.annulations || []).length + comptesParAutre.length + (journal.intact === false ? 1 : 0)
+    + (alertes.achats_sans_recu || []).length + (alertes.recus_disparus || []).length + (alertes.depenses_modifiees || []).length;
 
   return (
     <div className="space-y-6">
@@ -184,6 +186,17 @@ function Contenu({ recap, titre }) {
 
           <Liste titre="Comptes modifiés par une autre personne" lignes={comptesParAutre}
             rendu={(x) => <>{heure(x.le)} — compte <b>{x.compte || '-'}</b> : {x.action} (par {x.par})</>} />
+
+          <Liste titre="Achats sans reçu" lignes={alertes.achats_sans_recu}
+            rendu={(a) => <>{heure(a.le)} — {a.description} : <b>{utils.formatCFA(a.montant)}</b>, par {a.par || '-'}</>} />
+
+          <Liste titre="Reçus disparus du stockage (état actuel)" lignes={alertes.recus_disparus}
+            rendu={(x) => <>Dépense n°{x.depense_id} ({x.description}, {utils.formatCFA(x.montant)}) : le fichier « {x.fichier} » ajouté le {heure(x.ajoute_le)} n'existe plus</>} />
+
+          <Liste titre="Dépenses modifiées ou supprimées" lignes={alertes.depenses_modifiees}
+            rendu={(x) => <>{heure(x.le)} — dépense n°{x.depense_id} « {x.description} » <b>{x.action === 'suppression' ? 'supprimée' : 'modifiée'}</b> par {x.par || '-'}
+              {x.action === 'suppression' ? ` (montant : ${utils.formatCFA(x.montant_avant)})` : ` : ${(x.champs || []).join(', ')}`}
+              {x.action === 'modification' && x.montant_avant !== x.montant_apres && x.montant_apres !== null && ` (montant ${utils.formatCFA(x.montant_avant)} → ${utils.formatCFA(x.montant_apres)})`}</>} />
 
           {autoValidations.length > 0 && (
             <p className="text-sm text-gray-600">
@@ -259,6 +272,19 @@ function Contenu({ recap, titre }) {
         </div>
       </Section>
 
+      {/* Achats de stock, avec leurs reçus */}
+      {recap.achats && (
+        <Section icone={ShoppingBag} titre={`Achats de stock : ${utils.formatCFA(c.achats)}`}>
+          <Tableau entetes={['Heure', 'Achat', 'Montant', 'Par', 'Reçu']} lignes={recap.achats}
+            rendu={(a) => [heure(a.le), a.description, utils.formatCFA(a.montant), a.par || '-',
+              a.recus.length === 0
+                ? <span className="text-orange-800 font-medium">aucun</span>
+                : <div className="flex flex-wrap gap-2">{a.recus.map((r, i) => r.present
+                    ? <BoutonRecu key={i} chemin={r.chemin} />
+                    : <span key={i} className="text-red-700 font-medium">fichier disparu</span>)}</div>]} />
+        </Section>
+      )}
+
       {/* Dépenses */}
       <Section icone={Receipt} titre={`Dépenses : ${utils.formatCFA(depenses.total)}`}>
         <Tableau entetes={['Date', 'Type', 'Description', 'Montant', 'Justificatifs', 'Par']} lignes={depenses.lignes}
@@ -278,6 +304,30 @@ function Contenu({ recap, titre }) {
         </Section>
       </div>
     </div>
+  );
+}
+
+// Ouvre le reçu dans un nouvel onglet, par un lien temporaire (l'espace des reçus est privé)
+function BoutonRecu({ chemin }) {
+  const [chargement, setChargement] = useState(false);
+  const ouvrir = async () => {
+    // L'onglet est ouvert tout de suite (sinon le navigateur le bloque), puis dirigé vers le reçu
+    const onglet = window.open('', '_blank');
+    setChargement(true);
+    const { url, error } = await recuService.lien(chemin);
+    setChargement(false);
+    if (error || !url) {
+      onglet?.close();
+      alert('Reçu indisponible : ' + (error || 'lien introuvable'));
+      return;
+    }
+    if (onglet) onglet.location.href = url; else window.location.href = url;
+  };
+  return (
+    <button type="button" onClick={ouvrir} disabled={chargement}
+      className="text-sm font-medium text-orange-800 underline min-h-[32px] disabled:opacity-50">
+      {chargement ? 'Ouverture…' : 'Voir le reçu'}
+    </button>
   );
 }
 

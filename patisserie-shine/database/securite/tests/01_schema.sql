@@ -132,6 +132,8 @@ ALTER TABLE lignes_vente ADD FOREIGN KEY (vente_id) REFERENCES ventes(id) ON DEL
 ALTER TABLE lignes_vente ADD FOREIGN KEY (produit_id) REFERENCES produits(id) ON DELETE SET NULL;
 ALTER TABLE sorties_boutique ADD FOREIGN KEY (vente_id) REFERENCES ventes(id) ON DELETE CASCADE;
 ALTER TABLE ventes ADD FOREIGN KEY (vendeur_id) REFERENCES profiles(id) ON DELETE SET NULL;
+ALTER TABLE depenses_comptables ADD CONSTRAINT depenses_comptables_reference_produit_id_fkey FOREIGN KEY (reference_produit_id) REFERENCES produits(id) ON DELETE SET NULL;
+ALTER TABLE depenses_comptables ADD CONSTRAINT depenses_comptables_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES profiles(id);
 ALTER TABLE stock_boutique ADD FOREIGN KEY (produit_id) REFERENCES produits(id) ON DELETE CASCADE;
 ALTER TABLE stock_boutique ADD FOREIGN KEY (transfere_par) REFERENCES profiles(id) ON DELETE SET NULL;
 ALTER TABLE stock_atelier ADD FOREIGN KEY (produit_id) REFERENCES produits(id) ON DELETE CASCADE;

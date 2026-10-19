@@ -232,3 +232,40 @@ en place, car les lignes déjà écrites ne s'effacent pas.
 **Mise en production :** après la partie 2.
 1. L'application.
 2. `partie3_recapitulatif.sql`.
+
+---
+
+## Partie 4 : chaque achat est une dépense, avec son reçu
+
+### Ce qui était faux
+- **Achats sans trace financière :** un achat (création ou réapprovisionnement) ne créait aucune dépense, et aucun reçu ne pouvait lui être lié.
+- **Comptabilité fausse :** les achats étaient estimés en multipliant le prix moyen par la quantité cumulée de tout l'historique du produit, et comptés dans la période du dernier réapprovisionnement.
+- **Dépenses modifiables sans trace :** une dépense pouvait être modifiée ou supprimée sans que personne ne le sache.
+
+### Ce que fait `partie4_achats_recus.sql` (aucune suppression : exécutable directement)
+- **Dépense créée par l'achat :** `creer_produit` et `reapprovisionner_produit` créent, dans la même opération, la dépense de l'achat. Elle contient le montant payé, la date et l'auteur, et elle est reliée à sa ligne du journal du stock (`achat_journal_id`). La clé anti-doublon vaut aussi pour la dépense.
+- **`joindre_recu` :** ajoute un reçu (photo ou PDF) que la personne a elle-même déposé dans l'espace privé `depenses-pieces-jointes`. Peuvent le faire l'auteur de la dépense, le propriétaire ou un gérant. On ajoute, on ne retire jamais, et le même fichier n'est ajouté qu'une fois.
+- **Dépense d'achat verrouillée :** son montant, sa date, son produit et son auteur ne se modifient pas, elle ne se supprime pas, et ses reçus ne se retirent pas. La description reste modifiable, et la modification est tracée.
+- **`journal_depenses` (ajout seul) :** chaque création, modification ou suppression de dépense y est inscrite, avec l'auteur et l'état avant et après.
+- **Récapitulatif :** il présente les achats et leurs reçus, consultables par un lien temporaire. Il signale en points à vérifier les achats sans reçu, les reçus disparus du stockage et les dépenses modifiées ou supprimées. L'ajout d'un reçu n'est pas signalé.
+
+### Application
+- **Formulaires de création et de réapprovisionnement :** bouton « Prendre le reçu en photo », qui ouvre l'appareil photo sur téléphone. La photo est réduite avant l'envoi, pour passer avec une connexion faible. Elle est déposée avant l'achat : si l'envoi échoue, rien n'est enregistré et l'on peut réessayer.
+- **« À faire » :** une section « Achats sans reçu » (7 jours) avec le bouton « Ajouter le reçu ».
+- **Dépenses :** les dépenses d'achat portent la mention « Achat de stock », sans bouton modifier ni supprimer.
+- **Comptabilité :** les achats de stock sont la somme des dépenses d'achat. Pour une période antérieure au premier achat suivi, l'ancienne estimation reste affichée, avec la mention « Estimation (avant suivi des achats) ».
+
+### Limite
+Les fichiers sont gardés par le service de stockage de Supabase, qui appartient à Supabase et pas à la base. La base ne peut donc pas empêcher qu'un fichier y soit supprimé. En revanche, la référence au reçu reste dans la dépense, et un fichier disparu est signalé au propriétaire.
+
+### Tests
+- `PGHOST=... ./tests/lancer_achats.sh` :
+  - passage 1 : **39/39** (scénario, deux tests de concurrence réels), annulation exacte sur 335 objets ;
+  - passages 2 à 4, sur des bases neuves : non-régression **195/195**, stock **66/66**, récapitulatif **47/47**.
+- `tests/stockage_emulation.sql` imite le schéma `storage` de Supabase. La passerelle du banc navigateur imite le dépôt de fichiers, le lien signé et la suppression, avec les mêmes règles que la production : on ne dépose que dans son propre dossier.
+- **Banc navigateur :** `parcours_achats.js` **14/14** (réapprovisionnement avec photo malgré un double clic, reçu ajouté après coup depuis « À faire », écran Dépenses verrouillé, récapitulatif et « Voir le reçu »). Les autres parcours passent avec la partie 4 : 28/28, 14/14, 11/11, 22/22. La base est préparée avec `PARTIE2=1 PARTIE3=1 PARTIE4=1 preparer_base.sh`.
+- La copie de test de la base reçoit les deux liens de la production entre une dépense, son produit et son auteur.
+
+**Mise en production :** d'abord `partie4_achats_recus.sql`, puis l'application. Dans l'autre sens, l'ancienne application fonctionne encore : elle ignore simplement la dépense créée, et la base refuse d'elle-même toute modification d'une dépense d'achat.
+
+Annulation : `partie4_annulation.sql` (SQL Editor). Les dépenses déjà créées restent, comme dépenses ordinaires.
