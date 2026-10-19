@@ -93,9 +93,9 @@ SELECT set_config('request.jwt.claims', '{"role":"anon"}', false);
 SELECT tests.verifier(:'phase', 'anon toujours bloqué',        'SELECT * FROM profiles', 'erreur');
 SELECT tests.verifier(:'phase', 'anon : aucune fonction exécutable',
   'SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = ''public'' AND has_function_privilege(''anon'', p.oid, ''EXECUTE'')', 'lignes=0');
-SELECT tests.verifier(:'phase', 'connectés : nombre de fonctions exécutables',
-  'SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = ''public'' AND has_function_privilege(''authenticated'', p.oid, ''EXECUTE'')',
-  CASE WHEN :'phase' = 'p2' THEN 'lignes=7' ELSE 'lignes>0' END);
+SELECT tests.verifier(:'phase', 'connectés : aucune fonction hors liste autorisée',
+  'SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = ''public'' AND has_function_privilege(''authenticated'', p.oid, ''EXECUTE'') AND p.proname NOT IN (''est_utilisateur_actif'', ''est_admin'', ''notify_all_admins'', ''send_notification'', ''ajouter_stock_boutique'', ''decrement_stock'', ''safe_delete_user'', ''enregistrer_vente_boutique'')',
+  CASE WHEN :'phase' = 'p2' THEN 'lignes=0' ELSE 'lignes>0' END);
 RESET ROLE;
 
 -- ===================== 7. Effets réels des déclencheurs pendant cette phase =====================

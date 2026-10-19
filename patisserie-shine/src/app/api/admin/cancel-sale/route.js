@@ -3,14 +3,13 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireAdmin } from '../../../../lib/apiAuth'
 
-// Utiliser la service_role_key si disponible, sinon la clé anon
-// La service_role_key bypass les RLS, la clé anon nécessite des politiques RLS
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
+// Clé service_role obligatoire : l'annulation passe par la fonction annuler_vente_boutique,
+// exécutable uniquement par le serveur
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
-  supabaseKey,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
   {
     auth: {
       autoRefreshToken: false,
@@ -49,209 +48,42 @@ export async function POST(request) {
       )
     }
 
-    // Vérifier l'authentification
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: 'Token d\'autorisation manquant' },
-        { status: 401 }
-      )
-    }
+    // Vérifier que l'appelant est un administrateur actif
+    const auth = await requireAdmin(request, supabaseAdmin)
+    if (auth.error) return auth.error
+    const { user } = auth
 
-    const token = authHeader.replace('Bearer ', '')
+    // Annulation en une seule transaction : verrou sur la vente (pas de double annulation),
+    // contrôle du statut et du délai de 7 jours, restauration du stock, traçabilité
+    const { data: resultat, error: annulationError } = await supabaseAdmin.rpc('annuler_vente_boutique', {
+      p_vente_id: venteId,
+      p_motif: motif.trim(),
+      p_annule_par: user.id
+    })
 
-    // Vérifier que l'utilisateur est admin
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
-
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Utilisateur non authentifié' },
-        { status: 401 }
-      )
-    }
-
-    // Vérifier le rôle admin
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile || profile.role !== 'admin') {
-      return NextResponse.json(
-        { error: 'Permission refusée. Seuls les administrateurs peuvent annuler des ventes.' },
-        { status: 403 }
-      )
-    }
-
-    // Récupérer la vente
-    const { data: vente, error: venteError } = await supabaseAdmin
-      .from('ventes')
-      .select('id, numero_ticket, total, statut, created_at, vendeur_id')
-      .eq('id', venteId)
-      .single()
-
-    if (venteError || !vente) {
-      return NextResponse.json(
-        { error: 'Vente introuvable' },
-        { status: 404 }
-      )
-    }
-
-    // Vérifier le statut
-    if (vente.statut === 'annulee') {
-      return NextResponse.json(
-        { error: 'Cette vente a déjà été annulée' },
-        { status: 409 }
-      )
-    }
-
-    if (vente.statut !== 'validee') {
-      return NextResponse.json(
-        { error: `Impossible d'annuler une vente avec le statut: ${vente.statut}` },
-        { status: 409 }
-      )
-    }
-
-    // Vérifier le délai de 7 jours
-    const venteDate = new Date(vente.created_at)
-    const aujourdhui = new Date()
-    const differenceJours = Math.floor((aujourdhui - venteDate) / (1000 * 60 * 60 * 24))
-
-    if (differenceJours > 7) {
-      return NextResponse.json(
-        {
-          error: 'Délai dépassé',
-          details: `Cette vente date de ${differenceJours} jours. Le délai maximum d'annulation est de 7 jours.`
-        },
-        { status: 409 }
-      )
-    }
-
-    // Récupérer les lignes de vente
-    const { data: lignesVente, error: lignesError } = await supabaseAdmin
-      .from('lignes_vente')
-      .select('*')
-      .eq('vente_id', venteId)
-
-    if (lignesError || !lignesVente || lignesVente.length === 0) {
-      return NextResponse.json(
-        { error: 'Impossible de récupérer les articles de la vente' },
-        { status: 500 }
-      )
-    }
-
-    // TRANSACTION : Restaurer les stocks
-    const produitsRestores = []
-    const erreurs = []
-
-    for (const ligne of lignesVente) {
-      try {
-        // 1. Récupérer le stock actuel
-        const { data: stockActuel, error: stockError } = await supabaseAdmin
-          .from('stock_boutique')
-          .select('quantite_vendue, quantite_disponible, nom_produit')
-          .eq('produit_id', ligne.produit_id)
-          .single()
-
-        if (stockError || !stockActuel) {
-          erreurs.push(`Produit ${ligne.nom_produit}: stock introuvable`)
-          continue
-        }
-
-        // 2. Décrémenter quantite_vendue
-        const nouvelleQuantiteVendue = Math.max(0, (stockActuel.quantite_vendue || 0) - ligne.quantite)
-
-        const { error: updateStockError } = await supabaseAdmin
-          .from('stock_boutique')
-          .update({
-            quantite_vendue: nouvelleQuantiteVendue,
-            updated_at: new Date().toISOString()
-          })
-          .eq('produit_id', ligne.produit_id)
-
-        if (updateStockError) {
-          erreurs.push(`Produit ${ligne.nom_produit}: erreur mise à jour stock`)
-          continue
-        }
-
-        // 3. Créer un mouvement de stock pour traçabilité
-        await supabaseAdmin
-          .from('mouvements_stock')
-          .insert({
-            produit_id: ligne.produit_id,
-            type_mouvement: 'restauration_annulation',
-            quantite: ligne.quantite,
-            commentaire: `Annulation vente ${vente.numero_ticket}`,
-            utilisateur_id: user.id,
-            reference_id: venteId
-          })
-
-        produitsRestores.push({
-          nom: ligne.nom_produit,
-          quantite: ligne.quantite
-        })
-      } catch (error) {
-        erreurs.push(`Produit ${ligne.nom_produit}: ${error.message}`)
+    if (annulationError) {
+      // P0002 : vente introuvable ; 55000 : déjà annulée, statut ou délai ; 22023 : motif invalide
+      const status = annulationError.code === 'P0002' ? 404
+        : annulationError.code === '55000' ? 409
+        : annulationError.code === '22023' ? 400
+        : 500
+      if (status === 500) {
+        console.error('Erreur annulation vente:', annulationError)
       }
-    }
-
-    // Marquer la vente comme annulée
-    // Créer un client Supabase avec le token de l'utilisateur pour passer les RLS
-    const supabaseWithAuth = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      {
-        global: {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      }
-    )
-
-    const { error: updateVenteError } = await supabaseWithAuth
-      .from('ventes')
-      .update({
-        statut: 'annulee'
-      })
-      .eq('id', venteId)
-
-    if (updateVenteError) {
-      console.error('Erreur détaillée UPDATE vente:', updateVenteError)
       return NextResponse.json(
-        {
-          error: 'Erreur lors de la mise à jour du statut de la vente',
-          details: updateVenteError.message || updateVenteError.toString()
-        },
-        { status: 500 }
+        { error: status === 500 ? 'Erreur lors de l\'annulation de la vente' : annulationError.message },
+        { status }
       )
-    }
-
-    // Enregistrer l'annulation dans la table d'audit
-    const { error: auditError } = await supabaseAdmin
-      .from('annulations_ventes')
-      .insert({
-        vente_id: venteId,
-        numero_ticket: vente.numero_ticket,
-        montant_annule: vente.total,
-        motif: motif.trim(),
-        annule_par: user.id,
-        annule_le: new Date().toISOString()
-      })
-
-    if (auditError) {
-      console.error('Erreur enregistrement audit:', auditError)
     }
 
     return NextResponse.json({
       success: true,
-      message: `Vente ${vente.numero_ticket} annulée avec succès`,
+      message: `Vente ${resultat.numero_ticket} annulée avec succès`,
       details: {
-        numero_ticket: vente.numero_ticket,
-        montant: vente.total,
-        produitsRestores: produitsRestores,
-        erreurs: erreurs.length > 0 ? erreurs : null
+        numero_ticket: resultat.numero_ticket,
+        montant: resultat.montant,
+        produitsRestores: resultat.produitsRestores,
+        erreurs: resultat.erreurs
       }
     })
 
@@ -280,38 +112,9 @@ export async function GET(request) {
       )
     }
 
-    // Vérifier l'authentification
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: 'Token d\'autorisation manquant' },
-        { status: 401 }
-      )
-    }
-
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
-
-    if (userError || !user) {
-      return NextResponse.json(
-        { error: 'Utilisateur non authentifié' },
-        { status: 401 }
-      )
-    }
-
-    // Vérifier le rôle admin
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (!profile || profile.role !== 'admin') {
-      return NextResponse.json(
-        { error: 'Permission refusée' },
-        { status: 403 }
-      )
-    }
+    // Vérifier que l'appelant est un administrateur actif
+    const auth = await requireAdmin(request, supabaseAdmin)
+    if (auth.error) return auth.error
 
     // Récupérer la vente
     const { data: vente, error: venteError } = await supabaseAdmin

@@ -90,6 +90,18 @@ export const utils = {
    * @param {number} montant - Montant à formater
    * @returns {string} Montant formaté (ex: "1 000 CFA")
    */
+  /**
+   * Échappe un texte avant de l'insérer dans du HTML construit à la main (reçus imprimés)
+   */
+  escapeHtml(texte) {
+    return String(texte ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  },
+
   formatMontant(montant) {
     return this.formatCFA(montant)
   }

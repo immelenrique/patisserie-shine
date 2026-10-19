@@ -100,8 +100,53 @@ non-régression complète de la phase 2, et 0 écart après annulation.
 - Annulation : `corrections_1_annulation.sql`.
 
 ## `corrections_2_roles.sql`
-**À exécuter dans le SQL Editor**, car le script contient des `DROP CONSTRAINT`.
+**Appliqué en production le 2026-10-19** via le SQL Editor (le script contient des `DROP CONSTRAINT`).
 - Les deux contraintes contradictoires sur `profiles.role` sont remplacées par une seule, qui accepte les
   4 rôles proposés par l'écran Utilisateurs : admin, employe_boutique, employe_production, employe_cuisine.
 - Annulation : `corrections_2_annulation.sql`. Elle n'est possible que si aucun profil n'a reçu entre-temps
   le rôle employe_production ou employe_cuisine.
+
+---
+
+# Ventes atomiques (2026-10-19)
+
+**`ventes_atomiques.sql` a été appliqué en production le 2026-10-19.** Le code qui l'utilise est livré dans la
+même pull request.
+
+## Ce qui était faux
+- **Vente en plusieurs étapes** : une vente était écrite depuis le navigateur en plusieurs appels séparés, et
+  les erreurs étaient ignorées. Résultat constaté en production : 19 ventes validées sans aucune ligne, et
+  31 ventes dont le total ne correspond pas à leurs lignes.
+- **Prix et stock non contrôlés** : le prix et le total venaient du navigateur, et le stock n'était pas vérifié
+  côté serveur. On compte 5 produits en stock négatif en boutique.
+- **Annulation double** : le stock était rendu avant que la vente soit marquée annulée, sans verrou. Deux
+  annulations simultanées rendaient donc le stock deux fois.
+- **Clôture de caisse** : elle écrivait des colonnes inexistantes dans `arrets_caisse`, et échouait toujours
+  (la table contient 0 ligne). Elle comptait aussi les ventes annulées.
+- **Meilleures ventes** : le classement comptait les ventes annulées.
+- **Reçus imprimés** : les noms de produits et de vendeurs y étaient insérés sans échappement (faille XSS).
+- **Réimpression** : depuis l'historique, elle affichait des articles vides.
+
+## Ce qui change
+- **`enregistrer_vente_boutique`**, appelée par la caisse en une seule transaction :
+  - le stock est verrouillé, puis vérifié (disponible − vendu − utilisé) ;
+  - le prix et le total sont calculés par la base ;
+  - soit tout est enregistré, soit rien.
+- **`annuler_vente_boutique`**, réservée au serveur et appelée par `/api/admin/cancel-sale` :
+  - la vente est verrouillée, ce qui empêche une double annulation ;
+  - le statut et le délai de 7 jours sont contrôlés ;
+  - le stock est rendu et l'annulation est tracée.
+- **Clôture** : elle ne compte que les ventes validées et écrit dans les vraies colonnes de `arrets_caisse`.
+- **Classement** : les meilleures ventes ne comptent que les ventes validées.
+- **Reçus** : les 3 reçus et factures imprimés sont échappés (`utils.escapeHtml`).
+
+## Tests
+`PGHOST=... ./tests/lancer_ventes.sh` donne 88 vérifications sur 88 conformes, dont 2 tests de concurrence réels :
+- **dernier article** : deux caisses vendent le même au même instant ; une seule vente passe ;
+- **double annulation** : la même vente est annulée deux fois en même temps ; une seule annulation passe, et
+  le stock n'est rendu qu'une fois.
+
+Les données historiques incohérentes (ventes sans lignes, totaux faux, stocks négatifs) n'ont **pas** été
+modifiées. Leur correction demande une décision métier.
+
+Annulation : remettre l'ancien code, puis exécuter `ventes_atomiques_annulation.sql` (SQL Editor).
