@@ -81,7 +81,27 @@ du droit `PUBLIC`. L'impact était nul : `est_admin` répond « non » pour un v
 déclencheur ne peut pas être appelée directement. Le script et les tests ont été corrigés en conséquence.
 
 ## Encore à traiter
-- Le déclencheur d'audit cassé sur `prix_vente_produits` (colonne `prix_vente` inexistante).
-- Les rôles incohérents : deux contraintes CHECK contradictoires sur `profiles.role`.
 - Les droits fins par écran pour les employés, aujourd'hui gérés par `user_permissions` côté application.
-- 103 fonctions sans `search_path` fixé (alerte Supabase de durcissement).
+
+---
+
+# Corrections de la base (2026-10-19)
+
+Tests : `PGHOST=... ./tests/lancer_corrections.sh` donne 80 vérifications sur 80 conformes, dont la
+non-régression complète de la phase 2, et 0 écart après annulation.
+
+## `corrections_1_fonctions.sql`
+**Appliqué en production le 2026-10-19.**
+- `audit_prix_changes_advanced` lit désormais les colonnes de façon générique. Les prix de
+  `prix_vente_produits` peuvent de nouveau être créés et modifiés. Auparavant, l'erreur était
+  `record "old" has no field "prix_vente"`. L'audit enregistre maintenant le nom du produit et l'auteur.
+- `search_path = public, extensions` est fixé sur toutes les fonctions qui n'en avaient pas (102). C'est
+  la valeur qu'elles utilisaient déjà, donc leur comportement ne change pas.
+- Annulation : `corrections_1_annulation.sql`.
+
+## `corrections_2_roles.sql`
+**À exécuter dans le SQL Editor**, car le script contient des `DROP CONSTRAINT`.
+- Les deux contraintes contradictoires sur `profiles.role` sont remplacées par une seule, qui accepte les
+  4 rôles proposés par l'écran Utilisateurs : admin, employe_boutique, employe_production, employe_cuisine.
+- Annulation : `corrections_2_annulation.sql`. Elle n'est possible que si aucun profil n'a reçu entre-temps
+  le rôle employe_production ou employe_cuisine.
