@@ -84,11 +84,18 @@ CREATE FUNCTION tests.photographier(p_moment text) RETURNS void LANGUAGE sql AS 
   SELECT p_moment, 'table ' || c.relname, c.relrowsecurity::text || ' ' || coalesce(c.relacl::text, '')
     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r','v','S')
   UNION ALL
-  SELECT p_moment, 'fonction ' || p.proname, coalesce(p.proacl::text, 'defaut') || ' ' || md5(pg_get_functiondef(p.oid))
+  SELECT p_moment, 'fonction ' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')', coalesce(p.proacl::text, 'defaut') || ' ' || coalesce(p.proconfig::text, '') || ' ' || md5(regexp_replace(pg_get_functiondef(p.oid), '\s+', '', 'g'))
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public'
   UNION ALL
   SELECT p_moment, 'regle ' || tablename || ' ' || policyname, cmd || ' ' || permissive || ' ' || coalesce(qual, '') || ' ' || coalesce(with_check, '')
     FROM pg_policies WHERE schemaname = 'public'
   UNION ALL
-  SELECT p_moment, 'defaut ' || defaclobjtype::text, defaclacl::text FROM pg_default_acl;
+  SELECT p_moment, 'defaut ' || coalesce(n.nspname, '(global)') || ' ' || defaclobjtype::text, defaclacl::text
+    FROM pg_default_acl d LEFT JOIN pg_namespace n ON n.oid = d.defaclnamespace
+  UNION ALL
+  SELECT p_moment, 'declencheur ' || tgname, tgrelid::regclass::text || ' ' || tgfoid::regproc::text
+    FROM pg_trigger WHERE NOT tgisinternal
+  UNION ALL
+  SELECT p_moment, 'vue ' || c.relname, coalesce(c.reloptions::text, '')
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'v';
 $$;

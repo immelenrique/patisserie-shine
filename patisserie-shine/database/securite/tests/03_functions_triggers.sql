@@ -225,21 +225,46 @@ BEGIN
   UPDATE produits SET quantite_restante = quantite_restante - p_quantite, updated_at = NOW() WHERE id = p_produit_id;
 END; $function$;
 
-CREATE OR REPLACE FUNCTION public.safe_delete_user(p_user_id uuid) RETURNS json LANGUAGE plpgsql SECURITY DEFINER AS $function$
-DECLARE v_result JSON; v_user_name TEXT;
+CREATE OR REPLACE FUNCTION public.safe_delete_user(p_user_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $function$
+DECLARE
+  v_result JSON;
+  v_user_name TEXT;
 BEGIN
+  -- Récupérer le nom pour le log
   SELECT nom INTO v_user_name FROM profiles WHERE id = p_user_id;
+
+  -- Supprimer l'utilisateur auth (si possible)
   BEGIN
     DELETE FROM auth.users WHERE id = p_user_id;
-  EXCEPTION WHEN OTHERS THEN NULL;
+  EXCEPTION
+    WHEN OTHERS THEN
+      NULL; -- Ignorer si déjà supprimé
   END;
+
+  -- Supprimer le profil (les contraintes ON DELETE feront le reste)
   DELETE FROM profiles WHERE id = p_user_id;
-  v_result := json_build_object('success', true, 'message', format('Utilisateur "%s" supprimé.', COALESCE(v_user_name, 'Sans nom')));
+
+  v_result := json_build_object(
+    'success', true,
+    'message', format('Utilisateur "%s" supprimé. Tout l''historique est conservé avec références anonymisées (NULL).', COALESCE(v_user_name, 'Sans nom'))
+  );
+
   RETURN v_result;
-EXCEPTION WHEN OTHERS THEN
-  v_result := json_build_object('success', false, 'error', SQLERRM, 'detail', SQLSTATE);
-  RETURN v_result;
-END; $function$;
+
+EXCEPTION
+  WHEN OTHERS THEN
+    v_result := json_build_object(
+      'success', false,
+      'error', SQLERRM,
+      'detail', SQLSTATE
+    );
+    RETURN v_result;
+END;
+$function$;
 
 -- handle_new_user : version ACTUELLE de production (le rôle vient des métadonnées fournies à l'inscription)
 CREATE OR REPLACE FUNCTION public.handle_new_user() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $function$
