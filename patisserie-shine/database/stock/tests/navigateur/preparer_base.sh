@@ -10,12 +10,15 @@ $P -d postgres -c "DROP ROLE IF EXISTS authenticator" -c "DROP ROLE IF EXISTS an
 $P -d postgres -c "CREATE DATABASE shine_e2e" >/dev/null
 D="$P -d shine_e2e"
 for f in 00_emulation_supabase 01_schema 02_policies 03_functions_triggers 05_seed; do $D -f $B/$f.sql >/dev/null || { echo "ECHEC $f"; exit 1; }; done
+$D -f $N/../stockage_emulation.sql >/dev/null || { echo "ECHEC stockage_emulation"; exit 1; }
 for f in phase1_fermer_acces_anonyme phase2_droits_entre_employes corrections_1_fonctions corrections_2_roles ventes_atomiques ventes_idempotence; do $D -f $SEC/$f.sql >/dev/null || { echo "ECHEC $f"; exit 1; }; done
 $D -f $M/partie1_circuit_demandes.sql >/dev/null && $D -f $M/partie1_contrainte_annulee.sql >/dev/null || { echo "ECHEC partie 1"; exit 1; }
 # Partie 2 si demandée (PARTIE2=1)
 if [ "${PARTIE2:-0}" = 1 ]; then $D -f $M/partie2_stock_principal.sql >/dev/null || { echo "ECHEC partie 2"; exit 1; }; fi
 # Partie 3 si demandée (PARTIE3=1, avec la partie 2)
 if [ "${PARTIE3:-0}" = 1 ]; then $D -f $M/partie3_recapitulatif.sql >/dev/null || { echo "ECHEC partie 3"; exit 1; }; fi
+# Partie 4 si demandée (PARTIE4=1, avec les parties 2 et 3)
+if [ "${PARTIE4:-0}" = 1 ]; then $D -f $M/partie4_achats_recus.sql >/dev/null || { echo "ECHEC partie 4"; exit 1; }; fi
 $D >/dev/null <<'SQL'
 INSERT INTO produits (id, nom, prix_achat, quantite, quantite_restante, unite_id) VALUES (6, 'Pain', 0, 30, 30, 1);
 INSERT INTO prix_vente_produits (produit_id, prix, actif) VALUES (6, 500, true);

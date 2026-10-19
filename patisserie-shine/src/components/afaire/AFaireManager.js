@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase-client';
-import { Truck, ClipboardCheck, AlertTriangle, CreditCard, FileText, RefreshCw, ChevronRight } from 'lucide-react';
+import { Truck, ClipboardCheck, AlertTriangle, CreditCard, FileText, RefreshCw, ChevronRight, Camera } from 'lucide-react';
+import { recuService } from '../../services';
 import { Card, useSaisie } from '../ui';
 
 const LIEUX = { principal: 'Stock principal', atelier: 'Atelier', boutique: 'Boutique' };
@@ -28,6 +29,10 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
   const [loading, setLoading] = useState(true);
   const [erreur, setErreur] = useState('');
   const [enCours, setEnCours] = useState(null);
+  const [achatsSansRecu, setAchatsSansRecu] = useState([]);
+  const [envoiRecu, setEnvoiRecu] = useState(null);
+  const recuInputRef = useRef(null);
+  const recuCibleRef = useRef(null);
   const enCoursRef = useRef(false);
   const [fenetreSaisie, demander] = useSaisie();
 
@@ -74,6 +79,17 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
       setEnvois((rEnvois.data || []).map(e => ({ ...e, valideur: noms[e.valideur_id], receptionnaire: noms[e.receptionnaire_id] })));
       setMesDemandes(rMes.data || []);
       setAValider(rValider?.data || []);
+      // Achats des 7 derniers jours sans reçu (les siens ; tous pour le propriétaire et les gérants).
+      // Sans la partie 4 en base, la colonne n'existe pas encore : la section reste simplement vide.
+      const rAchats = await supabase.from('depenses_comptables')
+        .select('id, description, montant, date_depense, created_at, utilisateur_id')
+        .not('achat_journal_id', 'is', null)
+        .eq('pieces_jointes', '[]')
+        .gte('created_at', depuis7j)
+        .order('created_at', { ascending: false })
+        .limit(30);
+      if (rAchats.error) console.warn('Achats sans reçu indisponibles:', rAchats.error.message);
+      setAchatsSansRecu(rAchats.error ? [] : (rAchats.data || []));
       setErreur('');
     } catch (err) {
       console.error('Erreur chargement À faire:', err);
@@ -126,7 +142,21 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
     return { etape: 3, libelle: 'Validée, en route' };
   };
 
-  const nbTaches = bloques.length + aReceptionner.length + aValider.length + ecarts.length;
+  const choisirRecu = (depense) => {
+    recuCibleRef.current = depense;
+    recuInputRef.current?.click();
+  };
+  const envoyerRecu = async (fichier) => {
+    const depense = recuCibleRef.current;
+    if (!fichier || !depense) return;
+    setEnvoiRecu(depense.id);
+    const { error } = await recuService.ajouter(depense.id, fichier, currentUser.id);
+    setEnvoiRecu(null);
+    if (error) alert('Le reçu n\'a pas pu être joint : ' + error);
+    await charger();
+  };
+
+  const nbTaches = bloques.length + aReceptionner.length + aValider.length + ecarts.length + achatsSansRecu.length;
 
   if (loading) {
     return (
@@ -202,7 +232,22 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
         </Section>
       )}
 
-      {/* 4. Écarts constatés (48 h) */}
+      {/* 4. Achats sans reçu (7 jours) */}
+      <input ref={recuInputRef} type="file" accept="image/*,application/pdf" capture="environment" className="sr-only"
+        aria-label="Photo du reçu" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; envoyerRecu(f); }} />
+      {achatsSansRecu.length > 0 && (
+        <Section icone={Camera} titre={`Achats sans reçu (${achatsSansRecu.length})`}>
+          {achatsSansRecu.map(d => (
+            <Ligne key={d.id}
+              titre={d.description}
+              texte={`${new Intl.NumberFormat('fr-FR').format(d.montant)} F · acheté le ${new Date(d.date_depense + 'T12:00:00').toLocaleDateString('fr-FR')}`}
+              note={`Enregistré ${depuis(d.created_at)}${d.utilisateur_id === currentUser.id ? ' par vous' : ''} · signalé au propriétaire tant qu'il n'a pas de reçu`}
+              action={{ libelle: envoiRecu === d.id ? 'Envoi…' : 'Ajouter le reçu', disabled: envoiRecu !== null, onClick: () => choisirRecu(d) }} />
+          ))}
+        </Section>
+      )}
+
+      {/* 5. Écarts constatés (48 h) */}
       {ecarts.length > 0 && (
         <Section icone={AlertTriangle} titre={`Écarts à la réception, 48 dernières heures (${ecarts.length})`}>
           {ecarts.map(e => (
@@ -216,7 +261,7 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
         </Section>
       )}
 
-      {/* 5. Mes demandes : où en est chacune */}
+      {/* 6. Mes demandes : où en est chacune */}
       <Section icone={FileText} titre="Mes demandes (7 derniers jours)"
         lien={hasPermission('view_demandes') ? { libelle: 'Nouvelle demande', onClick: () => onNaviguer('demandes') } : null}>
         {mesDemandes.length === 0 ? (

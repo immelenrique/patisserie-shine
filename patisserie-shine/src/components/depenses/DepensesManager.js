@@ -297,16 +297,7 @@ const DepensesManager = ({ currentUser }) => {
     }
 
     try {
-      // Supprimer du storage
-      const { error: storageError } = await supabase.storage
-        .from('depenses-pieces-jointes')
-        .remove([fichierChemin]);
-
-      if (storageError) {
-        console.error('Erreur suppression storage:', storageError);
-      }
-
-      // Mettre à jour la dépense
+      // La dépense d'abord : si la base refuse (reçu d'un achat de stock), le fichier reste en place
       const depense = depenses.find(d => d.id === depenseId);
       const newPiecesJointes = (depense.pieces_jointes || []).filter((_, i) => i !== fichierIndex);
 
@@ -316,6 +307,14 @@ const DepensesManager = ({ currentUser }) => {
         .eq('id', depenseId);
 
       if (error) throw error;
+
+      const { error: storageError } = await supabase.storage
+        .from('depenses-pieces-jointes')
+        .remove([fichierChemin]);
+
+      if (storageError) {
+        console.error('Erreur suppression storage:', storageError);
+      }
 
       alert('✅ Fichier supprimé');
       chargerDepenses();
@@ -368,21 +367,20 @@ const DepensesManager = ({ currentUser }) => {
     }
 
     try {
-      // Supprimer les fichiers associés
-      if (depense.pieces_jointes && depense.pieces_jointes.length > 0) {
-        const filePaths = depense.pieces_jointes.map(f => f.chemin);
-        await supabase.storage
-          .from('depenses-pieces-jointes')
-          .remove(filePaths);
-      }
-
-      // Supprimer la dépense
+      // La dépense d'abord (la base refuse pour un achat de stock), puis ses fichiers
       const { error } = await supabase
         .from('depenses_comptables')
         .delete()
         .eq('id', depense.id);
 
       if (error) throw error;
+
+      if (depense.pieces_jointes && depense.pieces_jointes.length > 0) {
+        const filePaths = depense.pieces_jointes.map(f => f.chemin);
+        await supabase.storage
+          .from('depenses-pieces-jointes')
+          .remove(filePaths);
+      }
 
       alert('✅ Dépense supprimée avec succès');
       chargerDepenses();
@@ -664,20 +662,27 @@ const DepensesManager = ({ currentUser }) => {
                           >
                             <Eye size={16} />
                           </button>
-                          <button
-                            onClick={() => ouvrirModification(depense)}
-                            className="text-blue-600 hover:text-blue-800"
-                            title="Modifier"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button
-                            onClick={() => supprimerDepense(depense)}
-                            className="text-red-600 hover:text-red-800"
-                            title="Supprimer"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          {/* La dépense d'un achat de stock est créée par l'achat : ni modifiable ni supprimable */}
+                          {depense.achat_journal_id ? (
+                            <span className="text-xs font-medium text-blue-900 bg-blue-100 rounded-full px-2 py-1" title="Créée par l'achat : non modifiable">Achat de stock</span>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => ouvrirModification(depense)}
+                                className="text-blue-600 hover:text-blue-800"
+                                title="Modifier"
+                              >
+                                <Edit2 size={16} />
+                              </button>
+                              <button
+                                onClick={() => supprimerDepense(depense)}
+                                className="text-red-600 hover:text-red-800"
+                                title="Supprimer"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1003,13 +1008,15 @@ const DepensesManager = ({ currentUser }) => {
                           >
                             <Download size={16} />
                           </button>
-                          <button
-                            onClick={() => supprimerFichier(selectedDepense.id, fichier.chemin, index)}
-                            className="text-red-500 hover:text-red-700"
-                            title="Supprimer"
-                          >
-                            <Trash2 size={16} />
-                          </button>
+                          {!selectedDepense.achat_journal_id && (
+                            <button
+                              onClick={() => supprimerFichier(selectedDepense.id, fichier.chemin, index)}
+                              className="text-red-500 hover:text-red-700"
+                              title="Supprimer"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}

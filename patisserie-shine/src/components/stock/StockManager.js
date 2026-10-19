@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Search, Plus, Edit, Archive, Package, Store, TrendingUp } from 'lucide-react';
 import { Card, Modal, StatusBadge, useSaisie } from '../ui';
 import { supabase } from '../../lib/supabase-client';
-import { productService, uniteService, referentielService } from '../../services';
+import { productService, uniteService, referentielService, recuService } from '../../services';
+import ChampRecu from '../achats/ChampRecu';
 import { utils } from '../../utils/formatters';
 
 
@@ -13,6 +14,9 @@ export default function StockManager({ currentUser }) {
   // Clés anti-doublon : un double clic ou un nouvel essai après une coupure n'enregistre pas deux fois
   const cleCreationRef = useRef(null);
   const cleReapproRef = useRef(null);
+  // Photo du reçu de l'achat en cours (création ou réapprovisionnement)
+  const [recuCreation, setRecuCreation] = useState(null);
+  const [recuReappro, setRecuReappro] = useState(null);
   const [motifCorrection, setMotifCorrection] = useState('');
   const [products, setProducts] = useState([]);
   const [unites, setUnites] = useState([]);
@@ -154,10 +158,24 @@ export default function StockManager({ currentUser }) {
   // Une clé correspond à un formulaire précis : elle est oubliée dès que son contenu change
   useEffect(() => {
     cleCreationRef.current = null;
-  }, [formData]);
+  }, [formData, recuCreation]);
   useEffect(() => {
     cleReapproRef.current = null;
-  }, [reapproData, reapproProduct]);
+  }, [reapproData, reapproProduct, recuReappro]);
+
+  // Le reçu est déposé AVANT l'achat (si le dépôt échoue, rien n'est enregistré et l'on peut réessayer),
+  // puis joint à la dépense que la base vient de créer
+  const deposerRecu = async (fichier, cle) => {
+    if (!fichier) return { fichier: null, error: null };
+    const { fichier: depose, error } = await recuService.deposer(fichier, currentUser.id, cle);
+    if (error) return { fichier: null, error: `La photo du reçu n'a pas pu être envoyée (${error}). Réessayez, ou retirez la photo pour enregistrer l'achat sans reçu.` };
+    return { fichier: depose, error: null };
+  };
+  const joindreRecu = async (depenseId, fichier) => {
+    if (!fichier || !depenseId) return '';
+    const { error } = await recuService.joindre(depenseId, fichier);
+    return error ? `\n\n⚠️ Le reçu n'a pas pu être joint (${error}). Ajoutez-le depuis « À faire ».` : '\n\n📎 Reçu joint à la dépense.';
+  };
 
   const loadProducts = async () => {
   try {
@@ -208,6 +226,11 @@ export default function StockManager({ currentUser }) {
       const prixUnitaire = parseFloat(formData.prix_achat_total) / parseFloat(formData.quantite);
       
       if (!cleCreationRef.current) cleCreationRef.current = utils.genererCle();
+      const recu = await deposerRecu(recuCreation, cleCreationRef.current);
+      if (recu.error) {
+        setError(recu.error);
+        return;
+      }
       const { product, error } = await productService.createWithPriceOption({
         cle: cleCreationRef.current,
         nom: formData.nom,
@@ -223,15 +246,16 @@ export default function StockManager({ currentUser }) {
       if (error) {
         setError(error);
       } else {
+        const noteRecu = await joindreRecu(product.depense_id, recu.fichier);
         cleCreationRef.current = null;
         await loadProducts();
         resetForm();
         setShowAddModal(false);
         
         if (formData.definir_prix_vente) {
-          alert(`Produit créé avec succès !\n\nAjouté au stock principal avec prix de vente défini: ${utils.formatCFA(parseFloat(formData.prix_vente))}\n\nPour l'ajouter à la boutique, un employé doit faire une demande vers "Boutique".`);
+          alert(`Produit créé avec succès !\n\nAjouté au stock principal avec prix de vente défini: ${utils.formatCFA(parseFloat(formData.prix_vente))}\n\nPour l'ajouter à la boutique, un employé doit faire une demande vers "Boutique".` + noteRecu);
         } else {
-          alert('Produit créé avec succès dans le stock principal !');
+          alert('Produit créé avec succès dans le stock principal ! La dépense de l\'achat est enregistrée.' + noteRecu);
         }
       }
     } catch (err) {
@@ -318,6 +342,11 @@ export default function StockManager({ currentUser }) {
 
     try {
       if (!cleReapproRef.current) cleReapproRef.current = utils.genererCle();
+      const recu = await deposerRecu(recuReappro, cleReapproRef.current);
+      if (recu.error) {
+        setError(recu.error);
+        return;
+      }
       const { product, error } = await productService.reapprovisionner(reapproProduct.id, {
         cle: cleReapproRef.current,
         quantite_ajoutee: parseFloat(reapproData.quantite_ajoutee),
@@ -328,6 +357,7 @@ export default function StockManager({ currentUser }) {
       if (error) {
         setError(error);
       } else {
+        const noteRecu = await joindreRecu(product.depense_id, recu.fichier);
         await loadProducts();
 
         const prixUnitaire = parseFloat(reapproData.prix_achat_total) / parseFloat(reapproData.quantite_ajoutee);
@@ -336,8 +366,9 @@ export default function StockManager({ currentUser }) {
               `Quantité ajoutée: ${reapproData.quantite_ajoutee} ${reapproProduct.unite?.value}\n` +
               `Prix d'achat: ${utils.formatCFA(reapproData.prix_achat_total)}\n` +
               `Prix unitaire: ${utils.formatCFA(prixUnitaire)}/${reapproProduct.unite?.value}\n` +
-              `Nouveau stock: ${product.quantite_restante} ${reapproProduct.unite?.value}`
+              `Nouveau stock: ${product.quantite_restante} ${reapproProduct.unite?.value}` + noteRecu
         );
+        setRecuReappro(null);
         cleReapproRef.current = null;
 
         setReapproProduct(null);
@@ -359,6 +390,7 @@ export default function StockManager({ currentUser }) {
 
   const startReappro = (product) => {
     setReapproProduct(product);
+    setRecuReappro(null);
     setReapproData({
       quantite_ajoutee: '',
       prix_achat_total: '',
@@ -444,6 +476,7 @@ export default function StockManager({ currentUser }) {
     setSelectedReferentiel(null);
     setSearch('');
     setError('');
+    setRecuCreation(null);
   };
 
   const handleCloseModal = () => {
@@ -1244,6 +1277,8 @@ export default function StockManager({ currentUser }) {
             </div>
           )}
           
+          {!editingProduct && <ChampRecu id="recu-creation" fichier={recuCreation} onChange={setRecuCreation} />}
+
           <div className="flex space-x-4 pt-4">
             <button 
               type="submit" 
@@ -1492,6 +1527,8 @@ export default function StockManager({ currentUser }) {
               </div>
             </div>
           )}
+
+          <ChampRecu id="recu-reappro" fichier={recuReappro} onChange={setRecuReappro} />
 
           <div className="flex space-x-4 pt-4">
             <button

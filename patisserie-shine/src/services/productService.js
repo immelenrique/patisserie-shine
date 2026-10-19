@@ -112,7 +112,7 @@ export const productService = {
       })
       if (error) throw error
 
-      return { product: { id: data.produit_id }, error: null }
+      return { product: { id: data.produit_id, depense_id: data.depense_id ?? null, deja_enregistre: data.deja_enregistre }, error: null }
     } catch (error) {
       console.error('Erreur dans createWithPriceOption:', error)
       return { product: null, error: error.message }
@@ -207,7 +207,7 @@ export const productService = {
       })
       if (error) throw error
 
-      return { product: { id: productId, quantite_restante: data.quantite_restante, deja_enregistre: data.deja_enregistre }, error: null }
+      return { product: { id: productId, quantite_restante: data.quantite_restante, deja_enregistre: data.deja_enregistre, depense_id: data.depense_id ?? null }, error: null }
     } catch (error) {
       console.error('Erreur dans reapprovisionner:', error)
       return { product: null, error: error.message }

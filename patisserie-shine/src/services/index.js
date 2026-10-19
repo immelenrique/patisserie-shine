@@ -30,6 +30,7 @@ export { cashierDashboardService } from './cashierDashboardService'
 
 // ========== Services Comptabilité ==========
 export { comptabiliteService } from './comptabiliteService'
+export { recuService } from './recuService'
 
 // ========== Services Ventes & Historique ==========
 export { historiqueVentesService } from './historiqueVentesService'
