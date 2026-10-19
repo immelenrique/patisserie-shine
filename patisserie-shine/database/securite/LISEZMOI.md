@@ -116,7 +116,7 @@ même pull request.
 ## Ce qui était faux
 - **Vente en plusieurs étapes** : une vente était écrite depuis le navigateur en plusieurs appels séparés, et
   les erreurs étaient ignorées. Résultat constaté en production : 19 ventes validées sans aucune ligne, et
-  31 ventes dont le total ne correspond pas à leurs lignes.
+  11 ventes dont le total ne correspond pas à leurs lignes (et 4 autres avec un écart d'arrondi de 0,02 F).
 - **Prix et stock non contrôlés** : le prix et le total venaient du navigateur, et le stock n'était pas vérifié
   côté serveur. On compte 5 produits en stock négatif en boutique.
 - **Annulation double** : le stock était rendu avant que la vente soit marquée annulée, sans verrou. Deux
@@ -150,3 +150,50 @@ Les données historiques incohérentes (ventes sans lignes, totaux faux, stocks 
 modifiées. Leur correction demande une décision métier.
 
 Annulation : remettre l'ancien code, puis exécuter `ventes_atomiques_annulation.sql` (SQL Editor).
+
+---
+
+# Ventes en double (2026-10-19)
+
+## Ce qui était faux
+Le bouton « Finaliser la Vente » restait actif pendant l'enregistrement, avec le panier et le montant toujours
+remplis. Chaque clic supplémentaire envoyait donc une nouvelle vente. C'était le cas dans la caisse boutique
+comme dans la caisse cuisine, et la vente atomique ne l'empêche pas : chaque clic est une vente valide.
+
+Constat en production (lecture seule) : 302 ventes validées sur 25 222 (1,2 %, environ 1,6 million FCFA)
+reprennent la vente précédente du même vendeur, avec le même panier et le même montant donné, à moins de
+60 secondes d'écart :
+- 154 sont à moins de 5 secondes d'écart, ce qui correspond à des doubles clics ;
+- 148 sont entre 5 et 60 secondes d'écart, ce qui correspond à des clics répétés sur un réseau lent.
+
+Exemples :
+- le 11/11/2025, 23 ventes identiques « Pain campagne x5 » ont été enregistrées en 17 secondes ;
+- les 5 stocks négatifs viennent de deux paniers cuisine enregistrés deux fois chacun, le 03/12/2025
+  (ventes 5329/5330 et 5331/5332) ;
+- les ventes 528/529 et 564/565 sont des paniers identiques à 40 400 F et 37 400 F, enregistrés à
+  17 secondes d'intervalle.
+
+Ces chiffres sont des **suspicions**, pas des certitudes. Un même petit article peut réellement être vendu
+deux fois de suite à deux clients différents.
+
+Dans la caisse cuisine, le reçu imprimé automatiquement était celui de la vente précédente : rien n'était
+imprimé à la première vente.
+
+## Ce qui change
+- Un verrou synchrone (`useRef`) ignore tout clic tant que la vente est en cours d'envoi. Le bouton est
+  désactivé et affiche « Enregistrement… ». Il redevient actif dès la réponse, même en cas d'erreur.
+- La caisse cuisine imprime le reçu de la vente qui vient d'être enregistrée.
+
+## Vérification
+Test dans Chromium sur les vrais écrans de caisse, avec un faux serveur qui répond en 3 secondes. Pour
+2 ventes, l'utilisateur clique 5 fois sur le bouton à chaque fois :
+
+| Code       | Boutique             | Cuisine                                          |
+|------------|----------------------|--------------------------------------------------|
+| Avant      | 10 ventes enregistrées | 10 ventes enregistrées, reçus faux             |
+| Après      | 2 ventes enregistrées  | 2 ventes enregistrées, reçus 0001 puis 0002    |
+
+En cas de refus du serveur (stock insuffisant), le message s'affiche une seule fois, le panier est conservé,
+le bouton redevient actif et un nouvel essai fonctionne.
+
+Les doublons historiques n'ont **pas** été modifiés. Leur traitement demande une décision métier.
