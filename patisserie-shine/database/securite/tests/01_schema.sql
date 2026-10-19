@@ -144,6 +144,10 @@ ALTER TABLE notifications ADD FOREIGN KEY (emetteur_id) REFERENCES profiles(id) 
 ALTER TABLE password_change_log ADD FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE;
 ALTER TABLE demandes_groupees ADD FOREIGN KEY (demandeur_id) REFERENCES profiles(id) ON DELETE SET NULL;
 ALTER TABLE demandes ADD FOREIGN KEY (demande_groupee_id) REFERENCES demandes_groupees(id) ON DELETE CASCADE;
+ALTER TABLE demandes ADD CONSTRAINT demandes_demandeur_id_fkey FOREIGN KEY (demandeur_id) REFERENCES profiles(id) ON DELETE SET NULL;
+ALTER TABLE demandes ADD CONSTRAINT demandes_produit_id_fkey FOREIGN KEY (produit_id) REFERENCES produits(id) ON DELETE SET NULL;
+ALTER TABLE demandes ADD CONSTRAINT demandes_valideur_id_fkey FOREIGN KEY (valideur_id) REFERENCES profiles(id) ON DELETE SET NULL;
+ALTER TABLE demandes_groupees ADD CONSTRAINT demandes_groupees_valideur_id_fkey FOREIGN KEY (valideur_id) REFERENCES profiles(id) ON DELETE SET NULL;
 ALTER TABLE utilisations_boutique ADD FOREIGN KEY (stock_boutique_id) REFERENCES stock_boutique(id) ON DELETE CASCADE;
 ALTER TABLE annulations_ventes ADD FOREIGN KEY (vente_id) REFERENCES ventes(id) ON DELETE CASCADE;
 

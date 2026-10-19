@@ -13,6 +13,7 @@ import StockAtelierManager from '../components/stock/StockAtelierManager';
 import StockBoutiqueManager from '../components/stock/StockBoutiqueManager';
 import RecettesManager from '../components/production/RecettesManager';
 import DemandesManager from '../components/demandes/DemandesManager';
+import ReceptionsManager from '../components/receptions/ReceptionsManager';
 import ProductionManager from '../components/production/ProductionManager';
 import CaisseManager from '../components/caisse/CaisseManager';
 import ComptabiliteManager from '../components/comptabilite/ComptabiliteManager';
@@ -34,7 +35,7 @@ import {
   LogOut, User, KeyRound, LayoutDashboard, Package, 
   ShoppingBag, Factory, ChefHat, FileText, Database, 
   Calculator, Ruler, Users, UserCog, Shield, Store,
-  BookOpen, CreditCard, Crown, AlertTriangle
+  BookOpen, CreditCard, Crown, AlertTriangle, Truck
 } from 'lucide-react';
 
 export default function Home() {
@@ -364,6 +365,8 @@ useEffect(() => {
     { id: 'stock-cuisine', label: 'Stock Cuisine', icon: ChefHat, permission: 'view_stock_cuisine' },
     { id: 'recettes', label: 'Recettes', icon: BookOpen, permission: 'view_recettes' },
     { id: 'demandes', label: 'Demandes', icon: FileText, permission: 'view_demandes' },
+    // Visible pour toute personne qui travaille en boutique, à l'atelier ou qui valide les demandes
+    { id: 'receptions', label: 'Réceptions', icon: Truck, anyPermission: ['view_caisse', 'view_stock_boutique', 'view_stock_atelier', 'view_production'] },
     { id: 'production', label: 'Production', icon: ChefHat, permission: 'view_production' },
     { id: 'caisse', label: 'Caisse', icon: CreditCard, permission: 'view_caisse' },
     { id: 'caisse-cuisine', label: 'Caisse Cuisine', icon: ChefHat, permission: 'view_caisse_cuisine' },
@@ -379,6 +382,7 @@ useEffect(() => {
   // Filtrer les onglets selon les permissions
  const availableTabs = tabs.filter(tab => {
   // Ensuite vérifier la permission spécifique
+  if (tab.anyPermission) return tab.anyPermission.some(hasPermission);
   return hasPermission(tab.permission);
 });
 console.log('=== TABS RESULT ===');
@@ -496,6 +500,7 @@ console.log('Available:', availableTabs.map(t => t.label));
         {activeTab === 'stock-cuisine' && <StockCuisineManager currentUser={currentUser} />}
         {activeTab === 'recettes' && <RecettesManager currentUser={currentUser} />}
         {activeTab === 'demandes' && <DemandesManager currentUser={currentUser} />}
+        {activeTab === 'receptions' && <ReceptionsManager currentUser={currentUser} />}
         {activeTab === 'production' && <ProductionManager currentUser={currentUser} />}
         {activeTab === 'caisse' && <CaisseManager currentUser={currentUser} />}
         {activeTab === 'caisse-cuisine' && <CaisseCuisineManager currentUser={currentUser} />}

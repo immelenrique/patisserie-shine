@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { stockAtelierService, productService } from '../../services';
 import { utils } from '../../utils/formatters';
 import { Package, Plus, Search, ArrowRight, AlertTriangle, History, Trash2 } from 'lucide-react';
@@ -20,6 +20,11 @@ export default function StockAtelierManager({ currentUser }) {
   const [selectedStock, setSelectedStock] = useState(null);
   const [transferQuantity, setTransferQuantity] = useState('');
   const [transferring, setTransferring] = useState(false);
+  // Clé de l'envoi en cours de saisie : oubliée dès que le produit ou la quantité change
+  const cleTransfertRef = useRef(null);
+  useEffect(() => {
+    cleTransfertRef.current = null;
+  }, [selectedStock, transferQuantity]);
 
   useEffect(() => {
     loadData();
@@ -148,15 +153,20 @@ export default function StockAtelierManager({ currentUser }) {
     setError('');
 
     try {
+      // Même clé pour tous les essais de ce formulaire : un double clic ou un nouvel essai
+      // après une coupure ne crée pas un second envoi
+      if (!cleTransfertRef.current) cleTransfertRef.current = utils.genererCle();
       const result = await stockAtelierService.transfererVersBoutique(
         selectedStock.produit_id,
-        quantity
+        quantity,
+        cleTransfertRef.current
       );
 
       if (result.error) {
         setError(result.error);
       } else {
-        alert('Transfert effectué avec succès !');
+        cleTransfertRef.current = null;
+        alert('Envoi enregistré : la marchandise est en transit.\nElle sera ajoutée au stock boutique quand un caissier l\'aura réceptionnée (écran « Réceptions »).');
         setShowTransferModal(false);
         setSelectedStock(null);
         setTransferQuantity('');

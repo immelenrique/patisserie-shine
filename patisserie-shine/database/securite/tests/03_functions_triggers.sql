@@ -112,22 +112,50 @@ BEGIN
   RETURN NEW;
 END; $function$;
 
-CREATE OR REPLACE FUNCTION public.log_mouvement_stock() RETURNS trigger LANGUAGE plpgsql AS $function$
-DECLARE v_quantite_avant NUMERIC; v_quantite_apres NUMERIC; v_type_mouvement VARCHAR;
+CREATE OR REPLACE FUNCTION public.log_mouvement_stock()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_quantite_avant NUMERIC;
+  v_quantite_apres NUMERIC;
+  v_type_mouvement VARCHAR;
 BEGIN
+  -- Déterminer le type de mouvement
   IF TG_OP = 'UPDATE' THEN
     IF NEW.quantite_restante < OLD.quantite_restante THEN
-      v_type_mouvement := 'sortie'; v_quantite_avant := OLD.quantite_restante; v_quantite_apres := NEW.quantite_restante;
+      v_type_mouvement := 'sortie';
+      v_quantite_avant := OLD.quantite_restante;
+      v_quantite_apres := NEW.quantite_restante;
     ELSIF NEW.quantite_restante > OLD.quantite_restante THEN
-      v_type_mouvement := 'entree'; v_quantite_avant := OLD.quantite_restante; v_quantite_apres := NEW.quantite_restante;
+      v_type_mouvement := 'entree';
+      v_quantite_avant := OLD.quantite_restante;
+      v_quantite_apres := NEW.quantite_restante;
     ELSE
-      RETURN NEW;
+      RETURN NEW; -- Pas de changement de quantité
     END IF;
-    INSERT INTO mouvements_stock (produit_id, type_mouvement, quantite, quantite_avant, quantite_apres, created_at)
-    VALUES (NEW.id, v_type_mouvement, ABS(NEW.quantite_restante - OLD.quantite_restante), v_quantite_avant, v_quantite_apres, NOW());
+
+    -- Enregistrer le mouvement
+    INSERT INTO mouvements_stock (
+      produit_id,
+      type_mouvement,
+      quantite,
+      quantite_avant,
+      quantite_apres,
+      created_at
+    ) VALUES (
+      NEW.id,
+      v_type_mouvement,
+      ABS(NEW.quantite_restante - OLD.quantite_restante),
+      v_quantite_avant,
+      v_quantite_apres,
+      NOW()
+    );
   END IF;
+
   RETURN NEW;
-END; $function$;
+END;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.notify_new_demande() RETURNS trigger LANGUAGE plpgsql AS $function$
 DECLARE v_demandeur_nom VARCHAR; v_message TEXT; v_details TEXT;

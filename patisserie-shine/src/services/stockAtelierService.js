@@ -230,100 +230,24 @@ export const stockAtelierService = {
   },
 
   /**
-   * Transfère du stock de l'atelier vers la boutique
-   * @param {string} produitId - ID du produit
-   * @param {number} quantite - Quantité à transférer
-   * @param {number} prixVente - Prix de vente (optionnel)
-   * @returns {Object} { success, error }
+   * Envoie du stock de l'atelier vers la boutique, en une seule opération côté base.
+   * La marchandise part « en transit » : la boutique n'est créditée qu'à la réception,
+   * faite par une autre personne que l'expéditeur.
+   * @param {number} produitId - ID du produit
+   * @param {number} quantite - Quantité à envoyer
+   * @param {string} cle - Identifiant du formulaire : un nouvel essai ne crée pas un second envoi
+   * @returns {Object} { success, envoiId, error }
    */
-  async transfererVersBoutique(produitId, quantite, prixVente = null) {
+  async transfererVersBoutique(produitId, quantite, cle = null) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { data, error } = await supabase.rpc('envoyer_atelier_vers_boutique', {
+        p_lignes: [{ produit_id: produitId, quantite }],
+        p_cle: cle
+      })
 
-      // Vérifier le stock disponible
-      const { data: stockAtelier } = await supabase
-        .from('stock_atelier')
-        .select('id, quantite_disponible')
-        .eq('produit_id', produitId)
-        .single()
+      if (error) throw error
 
-      if (!stockAtelier || stockAtelier.quantite_disponible < quantite) {
-        return {
-          success: false,
-          error: 'Stock insuffisant dans l\'atelier'
-        }
-      }
-
-      // Réduire le stock atelier
-      const { error: updateError } = await supabase
-        .from('stock_atelier')
-        .update({
-          quantite_disponible: stockAtelier.quantite_disponible - quantite,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', stockAtelier.id)
-
-      if (updateError) {
-        return { success: false, error: updateError.message }
-      }
-
-      // Ajouter au stock boutique
-      const { data: stockBoutique } = await supabase
-        .from('stock_boutique')
-        .select('id, quantite_disponible')
-        .eq('produit_id', produitId)
-        .single()
-
-      if (stockBoutique) {
-        // Mettre à jour le stock existant
-        const updateData = {
-          quantite_disponible: (stockBoutique.quantite_disponible || 0) + quantite,
-          updated_at: new Date().toISOString()
-        }
-
-        // Ajouter le prix_vente si fourni
-        if (prixVente !== null) {
-          updateData.prix_vente = prixVente
-        }
-
-        await supabase
-          .from('stock_boutique')
-          .update(updateData)
-          .eq('id', stockBoutique.id)
-      } else {
-        // Créer un nouveau stock boutique
-        const insertData = {
-          produit_id: produitId,
-          quantite_disponible: quantite,
-          transfere_par: user?.id,
-          created_at: new Date().toISOString()
-        }
-
-        // Ajouter le prix_vente si fourni
-        if (prixVente !== null) {
-          insertData.prix_vente = prixVente
-        }
-
-        await supabase
-          .from('stock_boutique')
-          .insert(insertData)
-      }
-
-      // Enregistrer dans mouvements_stock si la table existe
-      await supabase
-        .from('mouvements_stock')
-        .insert({
-          produit_id: produitId,
-          type_mouvement: 'transfert',
-          quantite: quantite,
-          source: 'Atelier',
-          destination: 'Boutique',
-          utilisateur_id: user?.id,
-          created_at: new Date().toISOString()
-        })
-
-      return { success: true, error: null }
-
+      return { success: true, envoiId: data?.envoi_id, error: null }
     } catch (error) {
       console.error('Erreur dans transfererVersBoutique:', error)
       return { success: false, error: error.message }
