@@ -197,3 +197,59 @@ En cas de refus du serveur (stock insuffisant), le message s'affiche une seule f
 le bouton redevient actif et un nouvel essai fonctionne.
 
 Les doublons historiques n'ont **pas** été modifiés. Leur traitement demande une décision métier.
+
+---
+
+# Ventes sans doublon après une coupure (2026-10-19)
+
+## Ce qui restait faux
+Le verrou du bouton empêche les clics répétés. Il ne couvre pas le cas suivant : la vente arrive à la base et
+y est enregistrée, mais la réponse se perd en chemin.
+
+Testé dans Chromium avec le code alors en production : **un seul clic et une seule coupure donnent deux ventes
+enregistrées**. Le navigateur renvoie de lui-même la requête quand la connexion tombe. Si la coupure dure, la
+caisse affiche une erreur, la vendeuse reclique et la vente est enregistrée une seconde fois.
+
+## Ce que fait `ventes_idempotence.sql`
+Le script ne contient aucune suppression : il s'applique directement.
+- **Colonne `ventes.cle_idempotence`** (uuid) : elle est unique lorsqu'elle est renseignée. La caisse crée
+  une clé par panier, la renvoie à chaque nouvel essai du même panier et l'oublie dès que le panier ou le
+  montant change.
+- **`enregistrer_vente_boutique(p_items, p_montant_donne, p_cle)`** : si la clé existe déjà pour ce vendeur,
+  la fonction renvoie la vente existante avec `deja_enregistree = true`, sans rien écrire ni décompter.
+  Deux envois simultanés de la même clé sont mis en file par un verrou : le second attend la fin du premier,
+  puis reçoit la même vente.
+  - Une clé utilisée par un autre vendeur est refusée.
+  - Un refus (stock insuffisant, par exemple) ne consomme pas la clé.
+- **L'ancienne version à 2 paramètres** reste disponible pour les caisses pas encore rechargées. Elle appelle
+  la nouvelle sans clé, son comportement est donc inchangé.
+
+## Côté caisse
+- La clé est envoyée avec chaque vente.
+- En cas de coupure, la caisse affiche : « Connexion perdue : la vente a peut-être été enregistrée. Vérifiez
+  la connexion puis cliquez de nouveau sur « Finaliser la Vente » : elle ne sera pas comptée deux fois. »
+- Le panier est conservé.
+- Limite : si la page est rechargée entre la coupure et le nouvel essai, la clé est perdue.
+
+## Tests
+`PGHOST=... ./tests/lancer_idempotence.sh` : **134 vérifications sur 134 conformes**, et 0 écart sur
+283 objets après annulation. Le lot couvre :
+- le nouvel essai du même panier ;
+- l'envoi simultané ;
+- l'autre vendeur ;
+- le refus suivi d'un nouvel essai ;
+- l'envoi sans clé ;
+- les droits ;
+- la non-régression des ventes atomiques et de la phase 2, refaite après annulation.
+
+Test dans Chromium (faux serveur qui enregistre la vente puis coupe la connexion) :
+
+| Situation                         | Avant              | Après                                            |
+|-----------------------------------|--------------------|--------------------------------------------------|
+| 1 clic, 1 coupure                 | 2 ventes           | 1 vente, reçu normal                             |
+| Coupure longue puis nouveau clic  | 2 ventes           | 1 vente : message, puis reçu de la même vente    |
+| Vente suivante (autre panier)     | —                  | nouvelle clé, nouvelle vente                     |
+| 5 clics en rafale                 | 1 vente (verrou)   | 1 vente                                          |
+
+Annulation : remettre l'ancien code de la caisse, puis exécuter `ventes_idempotence_annulation.sql`
+dans le SQL Editor.

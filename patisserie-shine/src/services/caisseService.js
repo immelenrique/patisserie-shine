@@ -64,9 +64,12 @@ export const caisseService = {
    */
   async enregistrerVente(venteData) {
     try {
+      // La clé identifie le panier : renvoyée lors d'un nouvel essai, elle évite d'enregistrer
+      // deux fois une vente dont la réponse s'est perdue
       const { data, error } = await supabase.rpc('enregistrer_vente_boutique', {
         p_items: venteData.items.map(item => ({ id: item.id, quantite: item.quantite })),
-        p_montant_donne: venteData.montant_donne
+        p_montant_donne: venteData.montant_donne,
+        p_cle: venteData.cle || null
       })
 
       if (error) throw error
@@ -74,7 +77,8 @@ export const caisseService = {
       return { vente: data, error: null }
     } catch (error) {
       console.error('Erreur enregistrerVente:', error)
-      return { vente: null, error: error.message }
+      // Sans code d'erreur, la base n'a pas répondu (coupure réseau) : la vente a pu être enregistrée
+      return { vente: null, error: error.message, coupure: !error.code }
     }
   },
 
