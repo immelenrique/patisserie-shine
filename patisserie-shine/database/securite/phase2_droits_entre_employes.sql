@@ -209,4 +209,9 @@ END $$;
 -- ---------------------------------------------------------------------
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
+-- est_admin et proteger_profils ont été créées avant l'étape 7 : elles ont hérité du droit
+-- PUBLIC par défaut. On le retire (corrigé en production le 2026-10-19 juste après l'application).
+REVOKE EXECUTE ON FUNCTION public.est_admin(), public.proteger_profils() FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.proteger_profils() FROM authenticated;
+
 COMMIT;

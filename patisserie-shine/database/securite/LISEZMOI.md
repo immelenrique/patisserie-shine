@@ -49,3 +49,39 @@ Deux bugs existaient déjà, indépendamment de RLS :
 Simplifications des tests : les deux fonctions d'audit des prix sont abrégées (elles écrivent dans les mêmes tables,
 avec les mêmes droits), seules les clés étrangères utiles au scénario sont recréées, et deux fonctions dangereuses
 non utilisées sont représentées par des bouchons.
+
+---
+
+# Phase 2 : droits entre utilisateurs connectés
+
+**État : appliquée en production le 2026-10-19** (via le SQL Editor de Supabase). La connexion Supabase
+de l'assistant met en attente les instructions `DROP` jusqu'à une confirmation qui n'aboutissait pas.
+
+## Ce que fait `phase2_droits_entre_employes.sql`
+1. **Fonctions** : un employé connecté ne peut plus exécuter que 7 fonctions :
+   - `est_utilisateur_actif` et `est_admin` (utilisées par les règles RLS) ;
+   - `notify_all_admins`, `send_notification` et `ajouter_stock_boutique` (appelées par les déclencheurs) ;
+   - `decrement_stock` et `safe_delete_user` (appelées par l'application).
+2. **`safe_delete_user`** : réservée aux admins actifs. Elle refuse le compte propriétaire et son propre compte.
+3. **`profiles`** : seuls les admins écrivent ; aucune suppression n'est possible depuis le navigateur.
+   Le déclencheur `proteger_profils` exige d'être super admin pour modifier ce droit. Lui seul peut changer
+   le rôle ou le statut du propriétaire. Le nom d'utilisateur ne peut plus être modifié.
+4. **Ventes, lignes de vente, sorties, entrées boutique, arrêts de caisse** : les employés ajoutent et lisent ;
+   seuls les admins modifient ou suppriment. L'audit des prix devient inaltérable.
+5. **Vues** : les 23 vues passent en `security_invoker` et respectent RLS.
+6. **Compte actif** : il est exigé aussi sur les 20 tables qui avaient déjà RLS.
+7. **Fonctions futures** : elles ne sont plus exécutables par `PUBLIC` (donc par `anon`) par défaut.
+
+## Tests
+`PGHOST=... ./tests/lancer_phase2.sh` : 162 vérifications sur 162 conformes, et 0 écart sur 241 objets
+après annulation.
+
+Correction appliquée après coup : `est_admin` et `proteger_profils`, créées avant l'étape 7, avaient hérité
+du droit `PUBLIC`. L'impact était nul : `est_admin` répond « non » pour un visiteur, et une fonction de
+déclencheur ne peut pas être appelée directement. Le script et les tests ont été corrigés en conséquence.
+
+## Encore à traiter
+- Le déclencheur d'audit cassé sur `prix_vente_produits` (colonne `prix_vente` inexistante).
+- Les rôles incohérents : deux contraintes CHECK contradictoires sur `profiles.role`.
+- Les droits fins par écran pour les employés, aujourd'hui gérés par `user_permissions` côté application.
+- 103 fonctions sans `search_path` fixé (alerte Supabase de durcissement).
