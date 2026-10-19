@@ -1,6 +1,7 @@
 // src/app/api/admin/users/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireAdmin } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,6 +16,9 @@ const supabaseAdmin = createClient(
 
 export async function GET(request) {
   try {
+    const auth = await requireAdmin(request, supabaseAdmin)
+    if (auth.error) return auth.error
+
     // Récupérer tous les utilisateurs avec leurs profils
     const { data: profiles, error: profilesError } = await supabaseAdmin
       .from('profiles')
@@ -60,3 +64,6 @@ export async function GET(request) {
     )
   }
 }
+
+// Toujours exécuter à la requête : la réponse dépend du jeton de l'appelant
+export const dynamic = 'force-dynamic'

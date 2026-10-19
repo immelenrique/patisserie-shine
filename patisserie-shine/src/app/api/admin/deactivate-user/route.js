@@ -1,6 +1,7 @@
 // src/app/api/admin/deactivate-user/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireAdmin } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,12 +16,36 @@ const supabaseAdmin = createClient(
 
 export async function POST(request) {
   try {
+    const auth = await requireAdmin(request, supabaseAdmin)
+    if (auth.error) return auth.error
+
     const { userId } = await request.json()
     
     if (!userId) {
       return NextResponse.json(
         { error: 'ID utilisateur requis' },
         { status: 400 }
+      )
+    }
+
+    // Protéger le propriétaire
+    const { data: targetUser, error: targetError } = await supabaseAdmin
+      .from('profiles')
+      .select('username')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (targetError) {
+      return NextResponse.json(
+        { error: 'Impossible de vérifier l\'utilisateur ciblé' },
+        { status: 500 }
+      )
+    }
+
+    if (targetUser?.username === 'proprietaire') {
+      return NextResponse.json(
+        { error: 'Le compte propriétaire ne peut pas être désactivé' },
+        { status: 403 }
       )
     }
 

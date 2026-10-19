@@ -1,6 +1,7 @@
 // src/app/api/admin/update-user/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireAdmin } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -15,6 +16,9 @@ const supabaseAdmin = createClient(
 
 export async function PUT(request) {
   try {
+    const auth = await requireAdmin(request, supabaseAdmin)
+    if (auth.error) return auth.error
+
     const { userId, nom, telephone, role } = await request.json()
     
     console.log('🔄 Mise à jour utilisateur demandée:', { userId, nom, role })
@@ -33,16 +37,6 @@ export async function PUT(request) {
       return NextResponse.json(
         { error: 'Nom et rôle sont obligatoires' },
         { status: 400 }
-      )
-    }
-
-    // Vérifier que l'utilisateur demandeur a les permissions
-    const authHeader = request.headers.get('authorization')
-    if (!authHeader) {
-      console.error('❌ Token d\'autorisation manquant')
-      return NextResponse.json(
-        { error: 'Token d\'autorisation manquant' },
-        { status: 401 }
       )
     }
 

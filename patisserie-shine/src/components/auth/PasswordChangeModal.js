@@ -36,12 +36,8 @@ export default function PasswordChangeModal({ isOpen, user, onPasswordChanged, o
   setChanging(true);
 
   try {
-    // Passer l'ID de l'utilisateur si disponible
-    const userId = user?.id;
-    
     const result = await authService.changeInitialPassword(
-      passwords.newPassword, 
-      userId
+      passwords.newPassword
     );
     
     if (result.error) {
