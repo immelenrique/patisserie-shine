@@ -49,20 +49,37 @@ SELECT receptionner_envoi(:e1, '[{"produit_id":6,"quantite_recue":8,"motif":"2 p
     const session = { access_token: jeton(id, email), refresh_token: 'r', token_type: 'bearer', expires_in: 7200, expires_at: Math.floor(Date.now() / 1000) + 7200, user: { id, email, aud: 'authenticated', role: 'authenticated' } }
     await page.addInitScript((s) => { localStorage.setItem('sb-127-auth-token', s) }, JSON.stringify(session))
     await page.goto(APP)
-    await page.getByRole('button', { name: 'Tableau de bord', exact: true }).first().waitFor({ timeout: 90000 })
+    await page.getByRole('button', { name: 'À faire', exact: true }).first().waitFor({ timeout: 90000 })
     return page
+  }
+  // Navigation regroupée (plus de 7 onglets) : ouvrir le groupe si l'onglet n'est pas visible
+  const GROUPE_DE = { 'Demandes': 'Demandes et réceptions', 'Réceptions': 'Demandes et réceptions', 'Stock Principal': 'Stocks', 'Stock Atelier': 'Stocks', 'Stock Boutique': 'Stocks', 'Récapitulatif': 'Pilotage', 'Tableau de bord': 'Pilotage' }
+  const onglet = async (page, nom) => {
+    const bouton = page.getByRole('button', { name: nom, exact: true })
+    if (await bouton.count() === 0 && GROUPE_DE[nom]) { await page.getByRole('button', { name: GROUPE_DE[nom], exact: true }).first().click(); await page.waitForTimeout(500) }
+    await bouton.first().click(); await page.waitForTimeout(1500)
+  }
+  // Fenêtre de saisie de l'application (remplace prompt) : remplit les champs dans l'ordre et confirme
+  const saisir = async (page, ...valeurs) => {
+    const fenetre = page.locator('div.fixed form')
+    await fenetre.waitFor({ timeout: 10000 })
+    const champs = fenetre.locator('input')
+    for (let i = 0; i < valeurs.length; i++) await champs.nth(i).fill(valeurs[i])
+    await fenetre.locator('button[type="submit"]').click()
   }
   const texte = async (page, t) => (await page.getByText(t).count()) > 0
 
   // 1. Le gérant n'a pas l'onglet
   let p = await ouvrir('chef')
   await p.waitForTimeout(1500)
-  verifier('1. gérant : pas d\'onglet Récapitulatif', (await p.getByRole('button', { name: 'Récapitulatif', exact: true }).count()) === 0)
+  await p.getByRole('button', { name: 'Pilotage', exact: true }).first().click()
+  await p.waitForTimeout(500)
+  verifier('1. gérant : pas d\'onglet Récapitulatif (groupe Pilotage ouvert)', (await p.getByRole('button', { name: 'Tableau de bord', exact: true }).count()) === 1 && (await p.getByRole('button', { name: 'Récapitulatif', exact: true }).count()) === 0)
   await p.context().close()
 
   // 2. Le propriétaire ouvre l'écran : la veille s'affiche par défaut, sans activité
   p = await ouvrir('proprietaire')
-  await p.getByRole('button', { name: 'Récapitulatif', exact: true }).first().click()
+  await onglet(p, 'Récapitulatif')
   await p.getByText(/Récapitulatif .* généré le/).waitFor({ timeout: 20000 })
   verifier('2. propriétaire : la veille par défaut, rien d\'anormal', await texte(p, 'Rien d\'anormal sur la période.'))
 

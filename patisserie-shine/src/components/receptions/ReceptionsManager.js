@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase-client';
 import { Truck, PackageCheck, AlertTriangle, RotateCcw, Clock } from 'lucide-react';
-import { Card, Modal } from '../ui';
+import { Card, Modal, useSaisie } from '../ui';
 
 const LIEUX = { principal: 'Stock principal', atelier: 'Atelier', boutique: 'Boutique' };
 
@@ -11,6 +11,7 @@ const LIEUX = { principal: 'Stock principal', atelier: 'Atelier', boutique: 'Bou
 // S'il y a un écart, la base le signale ; on recompte ou on indique un motif, puis on confirme.
 // Le stock de destination n'est crédité qu'à ce moment, de la quantité réellement comptée.
 export default function ReceptionsManager({ currentUser }) {
+  const [fenetreSaisie, demander] = useSaisie();
   const [enTransit, setEnTransit] = useState([]);
   const [recents, setRecents] = useState([]);
   const [noms, setNoms] = useState({});
@@ -125,13 +126,15 @@ export default function ReceptionsManager({ currentUser }) {
   };
 
   const annuler = async (envoi) => {
-    const motif = prompt('Motif de l\'annulation (obligatoire) :');
-    if (motif === null) return;
-    if (motif.trim().length < 3) {
-      alert('Le motif est obligatoire.');
-      return;
-    }
-    const { error } = await supabase.rpc('annuler_envoi', { p_envoi_id: envoi.id, p_motif: motif.trim() });
+    const saisie = await demander({
+      titre: `Annuler l'envoi n°${envoi.id}`,
+      message: `La marchandise revient au ${LIEUX[envoi.origine].toLowerCase()}. L'annulation est inscrite au journal avec son motif.`,
+      champs: [{ nom: 'motif', label: 'Motif de l\'annulation', obligatoire: true }],
+      confirmer: 'Annuler l\'envoi',
+      danger: true
+    });
+    if (!saisie) return;
+    const { error } = await supabase.rpc('annuler_envoi', { p_envoi_id: envoi.id, p_motif: saisie.motif });
     alert(error ? '❌ Annulation impossible : ' + error.message : `Envoi annulé : la marchandise revient au ${LIEUX[envoi.origine].toLowerCase()}.`);
     await charger();
   };
@@ -147,6 +150,7 @@ export default function ReceptionsManager({ currentUser }) {
   return (
     <div className="space-y-6">
       <div>
+      {fenetreSaisie}
         <h2 className="text-2xl font-bold">Réceptions</h2>
         <p className="text-sm text-gray-600">
           Comptez ce qui est réellement arrivé : le stock n'est mis à jour qu'à la réception.

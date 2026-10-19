@@ -30,10 +30,24 @@ const verifier = (nom, ok, detail = '') => { resultats.push({ ok, nom, detail })
     const session = { access_token: jeton(id, email), refresh_token: 'r', token_type: 'bearer', expires_in: 7200, expires_at: Math.floor(Date.now() / 1000) + 7200, user: { id, email, aud: 'authenticated', role: 'authenticated' } }
     await page.addInitScript((s) => { localStorage.setItem('sb-127-auth-token', s); window.open = () => null }, JSON.stringify(session))
     await page.goto(APP)
-    await page.getByRole('button', { name: 'Demandes', exact: true }).first().waitFor({ timeout: 90000 })
+    await page.getByRole('button', { name: 'À faire', exact: true }).first().waitFor({ timeout: 90000 })
     return page
   }
-  const onglet = async (page, nom) => { await page.getByRole('button', { name: nom, exact: true }).first().click(); await page.waitForTimeout(1500) }
+  // Navigation regroupée (plus de 7 onglets) : ouvrir le groupe si l'onglet n'est pas visible
+  const GROUPE_DE = { 'Demandes': 'Demandes et réceptions', 'Réceptions': 'Demandes et réceptions', 'Stock Principal': 'Stocks', 'Stock Atelier': 'Stocks', 'Stock Boutique': 'Stocks', 'Récapitulatif': 'Pilotage', 'Tableau de bord': 'Pilotage' }
+  const onglet = async (page, nom) => {
+    const bouton = page.getByRole('button', { name: nom, exact: true })
+    if (await bouton.count() === 0 && GROUPE_DE[nom]) { await page.getByRole('button', { name: GROUPE_DE[nom], exact: true }).first().click(); await page.waitForTimeout(500) }
+    await bouton.first().click(); await page.waitForTimeout(1500)
+  }
+  // Fenêtre de saisie de l'application (remplace prompt) : remplit les champs dans l'ordre et confirme
+  const saisir = async (page, ...valeurs) => {
+    const fenetre = page.locator('div.fixed form')
+    await fenetre.waitFor({ timeout: 10000 })
+    const champs = fenetre.locator('input')
+    for (let i = 0; i < valeurs.length; i++) await champs.nth(i).fill(valeurs[i])
+    await fenetre.locator('button[type="submit"]').click()
+  }
   const dernierDialogue = (page) => page.dialogues[page.dialogues.length - 1] || ''
 
   // 1. La vendeuse demande 10 pains pour la boutique
@@ -161,8 +175,8 @@ const verifier = (nom, ok, detail = '') => { resultats.push({ ok, nom, detail })
   verifier('6. sucre envoyé (40 -> 36)', sql('SELECT quantite_restante FROM produits WHERE id = 3') === '36.00')
   await p.getByRole('button', { name: /^Traitées/ }).click()
   await p.waitForTimeout(800)
-  p.reponsePrompt = 'Erreur : la boutique n\'a pas besoin de sucre'
   await p.locator(`tr:has-text("#${g3}") button[title^="Annuler l'envoi"]`).click()
+  await saisir(p, 'Erreur : la boutique n\'a pas besoin de sucre')
   await p.waitForTimeout(2500)
   verifier('6. annulation : sucre rendu (36 -> 40)', sql('SELECT quantite_restante FROM produits WHERE id = 3') === '40.00', dernierDialogue(p))
   verifier('6. demande et lignes annulées', sql(`SELECT g.statut || '/' || string_agg(d.statut, ',') FROM demandes_groupees g JOIN demandes d ON d.demande_groupee_id = g.id WHERE g.id = ${g3} GROUP BY g.statut`) === 'annulee/annulee')

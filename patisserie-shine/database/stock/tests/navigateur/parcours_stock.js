@@ -31,10 +31,24 @@ const verifier = (nom, ok, detail = '') => { resultats.push({ ok, nom, detail })
     const session = { access_token: jeton(id, email), refresh_token: 'r', token_type: 'bearer', expires_in: 7200, expires_at: Math.floor(Date.now() / 1000) + 7200, user: { id, email, aud: 'authenticated', role: 'authenticated' } }
     await page.addInitScript((s) => { localStorage.setItem('sb-127-auth-token', s); window.open = () => null }, JSON.stringify(session))
     await page.goto(APP)
-    await page.getByRole('button', { name: 'Tableau de bord', exact: true }).first().waitFor({ timeout: 90000 })
+    await page.getByRole('button', { name: 'À faire', exact: true }).first().waitFor({ timeout: 90000 })
     return page
   }
-  const onglet = async (page, nom) => { await page.getByRole('button', { name: nom, exact: true }).first().click(); await page.waitForTimeout(1500) }
+  // Navigation regroupée (plus de 7 onglets) : ouvrir le groupe si l'onglet n'est pas visible
+  const GROUPE_DE = { 'Demandes': 'Demandes et réceptions', 'Réceptions': 'Demandes et réceptions', 'Stock Principal': 'Stocks', 'Stock Atelier': 'Stocks', 'Stock Boutique': 'Stocks', 'Récapitulatif': 'Pilotage', 'Tableau de bord': 'Pilotage' }
+  const onglet = async (page, nom) => {
+    const bouton = page.getByRole('button', { name: nom, exact: true })
+    if (await bouton.count() === 0 && GROUPE_DE[nom]) { await page.getByRole('button', { name: GROUPE_DE[nom], exact: true }).first().click(); await page.waitForTimeout(500) }
+    await bouton.first().click(); await page.waitForTimeout(1500)
+  }
+  // Fenêtre de saisie de l'application (remplace prompt) : remplit les champs dans l'ordre et confirme
+  const saisir = async (page, ...valeurs) => {
+    const fenetre = page.locator('div.fixed form')
+    await fenetre.waitFor({ timeout: 10000 })
+    const champs = fenetre.locator('input')
+    for (let i = 0; i < valeurs.length; i++) await champs.nth(i).fill(valeurs[i])
+    await fenetre.locator('button[type="submit"]').click()
+  }
   const dernier = (page) => page.dialogues[page.dialogues.length - 1] || ''
   const ligne = (page, nom) => page.locator('tr').filter({ has: page.getByText(nom, { exact: true }) }).first()
 
@@ -73,8 +87,8 @@ const verifier = (nom, ok, detail = '') => { resultats.push({ ok, nom, detail })
   verifier('3. correction : sucre 35, journal -5 avec le motif', sql("SELECT quantite_restante || '/' || (SELECT quantite || ':' || motif FROM journal_stock WHERE produit_id = 3 AND nature = 'ajustement' ORDER BY id DESC LIMIT 1) FROM produits WHERE id = 3") === '35.00/-5.00:Sac déchiré')
 
   // 4. Archivage : refusé pour le pain (en stock), accepté pour le sucre une fois à zéro
-  p.reponsePrompt = 'Plus vendu'
   await ligne(p, 'Pain').locator('button[title^="Archiver"]').click()
+  await saisir(p, 'Plus vendu')
   await p.waitForTimeout(2000)
   verifier('4. archivage du pain refusé (il reste du stock)', dernier(p).includes('Il reste'), dernier(p))
   await ligne(p, 'Sucre').locator('button[title="Modifier"]').click()
@@ -83,14 +97,15 @@ const verifier = (nom, ok, detail = '') => { resultats.push({ ok, nom, detail })
   await p.getByRole('button', { name: 'Modifier le produit' }).click()
   await p.waitForTimeout(2500)
   await ligne(p, 'Sucre').locator('button[title^="Archiver"]').click()
+  await saisir(p, 'Plus vendu')
   await p.waitForTimeout(2500)
   verifier('4. sucre archivé, historique conservé', sql("SELECT actif || '/' || (SELECT count(*) FROM mouvements_stock WHERE produit_id = 3) FROM produits WHERE id = 3").startsWith('false/') && sql('SELECT count(*) FROM mouvements_stock WHERE produit_id = 3') !== '0')
   verifier('4. sucre retiré de la liste', await p.locator('tr').filter({ has: p.getByText('Sucre', { exact: true }) }).count() === 0)
 
   // 5. Vidage du stock atelier avec motif
   await onglet(p, 'Stock Atelier')
-  p.reponsePrompt = 'Consommé en production de la semaine'
   await p.getByRole('button', { name: /Vider Tout le Stock/ }).click()
+  await saisir(p, 'Consommé en production de la semaine')
   await p.waitForTimeout(2500)
   verifier('5. atelier vidé, inscrit au journal avec le motif', sql("SELECT coalesce(sum(quantite_disponible), 0) || '/' || (SELECT count(*) FROM journal_stock WHERE lieu = 'atelier' AND motif = 'Consommé en production de la semaine') FROM stock_atelier") === '0/1')
   await p.context().close()
@@ -101,10 +116,11 @@ const verifier = (nom, ok, detail = '') => { resultats.push({ ok, nom, detail })
   await p.getByRole('button', { name: /Fournitures & Emballages/ }).click()
   await p.waitForTimeout(800)
   verifier('6. la vendeuse ne voit pas « Modifier le type »', await p.locator('button[title="Modifier le type"]').count() === 0)
-  p.reponsePrompt = '3'
   await p.locator('tr', { hasText: 'Sachets' }).first().locator('button[title="Marquer comme utilisé"]').click()
+  await saisir(p, '3', 'Emballage des commandes')
   await p.waitForTimeout(2500)
   verifier('6. utilisation comptée une seule fois (3)', sql("SELECT quantite_utilisee FROM stock_boutique WHERE produit_id = 7") === '3', dernier(p))
+  verifier('6. la raison saisie est inscrite au journal', sql("SELECT motif FROM journal_stock WHERE nature = 'utilisation' ORDER BY id DESC LIMIT 1") === 'Emballage des commandes')
   await p.context().close()
 
   // 7. Intégrité

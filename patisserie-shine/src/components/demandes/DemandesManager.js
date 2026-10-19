@@ -10,9 +10,10 @@ import {
   FileCheck, FileX, Eye, Archive, RotateCcw,
   FileText, AlertCircle
 } from 'lucide-react';
-import { Card, Modal, StatusBadge } from '../ui';
+import { Card, Modal, StatusBadge, useSaisie } from '../ui';
 
 export default function DemandesManager({ currentUser }) {
+  const [fenetreSaisie, demander] = useSaisie();
   // ============ ÉTATS ============
   const [activeTab, setActiveTab] = useState('en_attente');
   const [demandes, setDemandes] = useState([]);
@@ -389,14 +390,16 @@ export default function DemandesManager({ currentUser }) {
       alert('Seul un envoi pas encore réceptionné peut être annulé.');
       return;
     }
-    const motif = prompt('Motif de l\'annulation (obligatoire) :');
-    if (motif === null) return;
-    if (motif.trim().length < 3) {
-      alert('Le motif est obligatoire.');
-      return;
-    }
+    const saisie = await demander({
+      titre: `Annuler l'envoi n°${envoi.id}`,
+      message: 'La marchandise revient au stock principal. L\'annulation est inscrite au journal avec son motif.',
+      champs: [{ nom: 'motif', label: 'Motif de l\'annulation', obligatoire: true }],
+      confirmer: 'Annuler l\'envoi',
+      danger: true
+    });
+    if (!saisie) return;
 
-    const { error } = await supabase.rpc('annuler_envoi', { p_envoi_id: envoi.id, p_motif: motif.trim() });
+    const { error } = await supabase.rpc('annuler_envoi', { p_envoi_id: envoi.id, p_motif: saisie.motif });
     if (error) {
       alert('❌ Annulation impossible : ' + error.message);
     } else {
@@ -407,9 +410,15 @@ export default function DemandesManager({ currentUser }) {
 
   // ============ REFUS DE DEMANDE ============
   const handleRejectGroupedDemande = async (demandeGroupeeId) => {
-    if (!confirm('Êtes-vous sûr de vouloir refuser cette demande ?')) return;
-    const raison = prompt('Raison du refus (optionnel):');
-    if (raison === null) return;
+    const saisie = await demander({
+      titre: 'Refuser la demande',
+      message: 'Rien ne sort du stock. Le demandeur est prévenu.',
+      champs: [{ nom: 'raison', label: 'Raison du refus', placeholder: 'ex. déjà livré ce matin' }],
+      confirmer: 'Refuser',
+      danger: true
+    });
+    if (!saisie) return;
+    const raison = saisie.raison;
 
     const { error } = await supabase.rpc('refuser_demande', { p_groupe_id: demandeGroupeeId, p_raison: raison });
     if (error) {
@@ -609,6 +618,7 @@ export default function DemandesManager({ currentUser }) {
   return (
     <div className="space-y-6">
       {/* Header */}
+      {fenetreSaisie}
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Gestion des Demandes</h2>
         

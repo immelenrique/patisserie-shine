@@ -6,9 +6,10 @@ import { useState, useEffect, useRef } from 'react';
 import { stockAtelierService, productService } from '../../services';
 import { utils } from '../../utils/formatters';
 import { Package, Plus, Search, ArrowRight, AlertTriangle, History, Trash2 } from 'lucide-react';
-import { Card, Modal } from '../ui';
+import { Card, Modal, useSaisie } from '../ui';
 
 export default function StockAtelierManager({ currentUser }) {
+  const [fenetreSaisie, demander] = useSaisie();
   // États - TOUJOURS initialiser avec des tableaux vides
   const [stocks, setStocks] = useState([]);
   const [produits, setProduits] = useState([]);
@@ -188,38 +189,22 @@ export default function StockAtelierManager({ currentUser }) {
       return;
     }
 
-    // Demander une confirmation
-    const confirmation = window.confirm(
-      '⚠️ ATTENTION ⚠️\n\n' +
-      'Vous êtes sur le point de VIDER TOUT LE STOCK ATELIER.\n' +
-      'Toutes les quantités seront mises à 0.\n\n' +
-      'Cette action est irréversible.\n\n' +
-      'Voulez-vous vraiment continuer ?'
-    );
-
-    if (!confirmation) return;
-
-    // Double confirmation
-    const doubleConfirmation = window.confirm(
-      'Confirmation finale:\n\n' +
-      'Êtes-vous ABSOLUMENT SÛR de vouloir vider tout le stock atelier ?\n\n' +
-      'Tapez OK pour confirmer.'
-    );
-
-    if (!doubleConfirmation) return;
-
-    const motif = prompt('Motif (obligatoire, inscrit au journal) : ex. « consommé en production de la semaine »');
-    if (motif === null) return;
-    if (motif.trim().length < 3) {
-      alert('Le motif est obligatoire.');
-      return;
-    }
+    // Une seule fenêtre : ce qui va se passer, et le motif inscrit au journal pour chaque produit
+    const saisie = await demander({
+      titre: 'Vider tout le stock atelier',
+      message: 'Toutes les quantités de l\'atelier passent à 0. Chaque produit reçoit une correction inscrite au journal avec ce motif.',
+      champs: [{ nom: 'motif', label: 'Motif', obligatoire: true, placeholder: 'ex. consommé en production de la semaine' }],
+      confirmer: 'Vider le stock atelier',
+      danger: true
+    });
+    if (!saisie) return;
+    const motif = saisie.motif;
 
     setLoading(true);
     setError('');
 
     try {
-      const result = await stockAtelierService.viderToutLeStock(motif.trim());
+      const result = await stockAtelierService.viderToutLeStock(motif);
 
       if (result.error) {
         alert('Erreur lors du vidage du stock: ' + result.error);
@@ -252,6 +237,7 @@ export default function StockAtelierManager({ currentUser }) {
   return (
     <div className="space-y-6">
       {/* En-tête */}
+      {fenetreSaisie}
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Stock Atelier (Production)</h2>
         <div className="flex items-center space-x-4">

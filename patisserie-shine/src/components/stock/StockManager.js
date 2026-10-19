@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Search, Plus, Edit, Archive, Package, Store, TrendingUp } from 'lucide-react';
-import { Card, Modal, StatusBadge } from '../ui';
+import { Card, Modal, StatusBadge, useSaisie } from '../ui';
 import { supabase } from '../../lib/supabase-client';
 import { productService, uniteService, referentielService } from '../../services';
 import { utils } from '../../utils/formatters';
 
 
 export default function StockManager({ currentUser }) {
+  const [fenetreSaisie, demander] = useSaisie();
   // Clés anti-doublon : un double clic ou un nouvel essai après une coupure n'enregistre pas deux fois
   const cleCreationRef = useRef(null);
   const cleReapproRef = useRef(null);
@@ -292,14 +293,15 @@ export default function StockManager({ currentUser }) {
 
   // Un produit ne se supprime plus (cela effaçait son historique) : il s'archive, s'il n'a plus de stock
   const handleArchiveProduct = async (productId, productName) => {
-    const motif = prompt(`Archiver « ${productName} » ?\n\nIl disparaîtra des listes, son historique est conservé.\nMotif (obligatoire) :`);
-    if (motif === null) return;
-    if (motif.trim().length < 3) {
-      alert('Le motif est obligatoire.');
-      return;
-    }
+    const saisie = await demander({
+      titre: `Archiver « ${productName} »`,
+      message: 'Le produit disparaît des listes ; son historique est conservé. Possible seulement s\'il n\'a plus de stock nulle part.',
+      champs: [{ nom: 'motif', label: 'Motif', obligatoire: true, placeholder: 'ex. plus commandé chez le fournisseur' }],
+      confirmer: 'Archiver'
+    });
+    if (!saisie) return;
     setError('');
-    const { error } = await productService.archiver(productId, motif.trim());
+    const { error } = await productService.archiver(productId, saisie.motif);
     if (error) {
       setError(error);
       alert('Archivage impossible : ' + error);
@@ -569,6 +571,7 @@ export default function StockManager({ currentUser }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+      {fenetreSaisie}
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Stock Principal</h2>
           <p className="text-gray-600">Suivi des matières premières et inventaire</p>
