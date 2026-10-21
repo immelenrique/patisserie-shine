@@ -134,6 +134,7 @@ ALTER TABLE sorties_boutique ADD FOREIGN KEY (vente_id) REFERENCES ventes(id) ON
 ALTER TABLE ventes ADD FOREIGN KEY (vendeur_id) REFERENCES profiles(id) ON DELETE SET NULL;
 ALTER TABLE depenses_comptables ADD CONSTRAINT depenses_comptables_reference_produit_id_fkey FOREIGN KEY (reference_produit_id) REFERENCES produits(id) ON DELETE SET NULL;
 ALTER TABLE depenses_comptables ADD CONSTRAINT depenses_comptables_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES profiles(id);
+
 ALTER TABLE stock_boutique ADD FOREIGN KEY (produit_id) REFERENCES produits(id) ON DELETE CASCADE;
 ALTER TABLE stock_boutique ADD FOREIGN KEY (transfere_par) REFERENCES profiles(id) ON DELETE SET NULL;
 ALTER TABLE stock_atelier ADD FOREIGN KEY (produit_id) REFERENCES produits(id) ON DELETE CASCADE;
@@ -164,3 +165,74 @@ ALTER TABLE produits_cuisine ENABLE ROW LEVEL SECURITY; ALTER TABLE recettes ENA
 ALTER TABLE referentiel_produits ENABLE ROW LEVEL SECURITY; ALTER TABLE role_permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE roles_custom ENABLE ROW LEVEL SECURITY; ALTER TABLE stock_cuisine ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_permissions ENABLE ROW LEVEL SECURITY; ALTER TABLE ventes_cuisine ENABLE ROW LEVEL SECURITY;
+
+-- Clés étrangères de la production (relevées le 2026-10-21) absentes ci-dessus : sans elles, les écrans qui
+-- lisent une table avec sa table liée (cuisine, productions, recettes, permissions…) échouent sur la copie.
+-- Une clé n'est ajoutée que si la colonne n'en a pas déjà une (pas de doublon, qui rendrait le lien ambigu).
+DO $$
+DECLARE
+  c record;
+  v_col text;
+BEGIN
+  FOR c IN SELECT * FROM (VALUES
+    ('annulations_ventes', 'annulations_ventes_annule_par_fkey', 'FOREIGN KEY (annule_par) REFERENCES profiles(id)'),
+    ('annulations_ventes', 'annulations_ventes_vente_id_fkey', 'FOREIGN KEY (vente_id) REFERENCES ventes(id) ON DELETE CASCADE'),
+    ('arrets_caisse', 'arrets_caisse_vendeur_id_fkey', 'FOREIGN KEY (vendeur_id) REFERENCES profiles(id)'),
+    ('caisses_actives', 'caisses_actives_caisse_precedente_id_fkey', 'FOREIGN KEY (caisse_precedente_id) REFERENCES caisses_actives(id)'),
+    ('caisses_actives', 'caisses_actives_caissier_id_fkey', 'FOREIGN KEY (caissier_id) REFERENCES profiles(id)'),
+    ('caisses_actives', 'caisses_actives_passation_de_fkey', 'FOREIGN KEY (passation_de) REFERENCES profiles(id)'),
+    ('caisses_actives', 'caisses_actives_remplace_par_fkey', 'FOREIGN KEY (remplace_par) REFERENCES profiles(id)'),
+    ('consommations_atelier', 'consommations_atelier_production_id_fkey', 'FOREIGN KEY (production_id) REFERENCES productions(id) ON DELETE CASCADE'),
+    ('consommations_atelier', 'consommations_atelier_produit_id_fkey', 'FOREIGN KEY (produit_id) REFERENCES produits(id) ON DELETE SET NULL'),
+    ('entrees_boutique', 'entrees_boutique_ajoute_par_fkey', 'FOREIGN KEY (ajoute_par) REFERENCES profiles(id)'),
+    ('entrees_boutique', 'entrees_boutique_produit_id_fkey', 'FOREIGN KEY (produit_id) REFERENCES produits(id) ON DELETE SET NULL'),
+    ('incidents_caisse', 'incidents_caisse_caissier_id_fkey', 'FOREIGN KEY (caissier_id) REFERENCES profiles(id)'),
+    ('incidents_caisse', 'incidents_caisse_releve_id_fkey', 'FOREIGN KEY (releve_id) REFERENCES releves_caisse(id)'),
+    ('incidents_caisse', 'incidents_caisse_resolu_par_fkey', 'FOREIGN KEY (resolu_par) REFERENCES profiles(id)'),
+    ('lignes_vente_cuisine', 'lignes_vente_cuisine_produit_cuisine_id_fkey', 'FOREIGN KEY (produit_cuisine_id) REFERENCES produits_cuisine(id)'),
+    ('lignes_vente_cuisine', 'lignes_vente_cuisine_vente_cuisine_id_fkey', 'FOREIGN KEY (vente_cuisine_id) REFERENCES ventes_cuisine(id) ON DELETE CASCADE'),
+    ('mouvements_stock', 'mouvements_stock_produit_id_fkey', 'FOREIGN KEY (produit_id) REFERENCES produits(id) ON DELETE SET NULL'),
+    ('mouvements_stock', 'mouvements_stock_utilisateur_id_fkey', 'FOREIGN KEY (utilisateur_id) REFERENCES profiles(id) ON DELETE SET NULL'),
+    ('mouvements_stock_cuisine', 'mouvements_stock_cuisine_produit_cuisine_id_fkey', 'FOREIGN KEY (produit_cuisine_id) REFERENCES produits_cuisine(id)'),
+    ('mouvements_stock_cuisine', 'mouvements_stock_cuisine_utilisateur_id_fkey', 'FOREIGN KEY (utilisateur_id) REFERENCES profiles(id)'),
+    ('notifications', 'notifications_destinataire_fkey', 'FOREIGN KEY (destinataire_id) REFERENCES profiles(id) ON DELETE CASCADE'),
+    ('notifications', 'notifications_emetteur_fkey', 'FOREIGN KEY (emetteur_id) REFERENCES profiles(id) ON DELETE SET NULL'),
+    ('password_change_log', 'password_change_log_changed_by_fkey', 'FOREIGN KEY (changed_by) REFERENCES profiles(id)'),
+    ('password_change_log', 'password_change_log_user_id_fkey', 'FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE'),
+    ('permissions', 'permissions_module_id_fkey', 'FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE'),
+    ('prix_vente_produits', 'prix_vente_produits_produit_id_fkey', 'FOREIGN KEY (produit_id) REFERENCES produits(id) ON DELETE CASCADE'),
+    ('prix_vente_recettes', 'prix_vente_recettes_defini_par_fkey', 'FOREIGN KEY (defini_par) REFERENCES profiles(id)'),
+    ('productions', 'productions_producteur_id_fkey', 'FOREIGN KEY (producteur_id) REFERENCES profiles(id) ON DELETE SET NULL'),
+    ('produits', 'produits_created_by_fkey', 'FOREIGN KEY (created_by) REFERENCES profiles(id) ON DELETE SET NULL'),
+    ('produits', 'produits_unite_id_fkey', 'FOREIGN KEY (unite_id) REFERENCES unites(id)'),
+    ('produits_cuisine', 'produits_cuisine_created_by_fkey', 'FOREIGN KEY (created_by) REFERENCES profiles(id)'),
+    ('produits_cuisine', 'produits_cuisine_unite_id_fkey', 'FOREIGN KEY (unite_id) REFERENCES unites(id)'),
+    ('recettes', 'recettes_created_by_fkey', 'FOREIGN KEY (created_by) REFERENCES profiles(id)'),
+    ('recettes', 'recettes_produit_ingredient_id_fkey', 'FOREIGN KEY (produit_ingredient_id) REFERENCES produits(id) ON DELETE SET NULL'),
+    ('releves_caisse', 'releves_caisse_caisse_active_id_fkey', 'FOREIGN KEY (caisse_active_id) REFERENCES caisses_actives(id)'),
+    ('releves_caisse', 'releves_caisse_caissier_id_fkey', 'FOREIGN KEY (caissier_id) REFERENCES profiles(id)'),
+    ('releves_caisse', 'releves_caisse_valide_par_fkey', 'FOREIGN KEY (valide_par) REFERENCES profiles(id)'),
+    ('role_permissions', 'role_permissions_accorded_by_fkey', 'FOREIGN KEY (accorded_by) REFERENCES profiles(id)'),
+    ('role_permissions', 'role_permissions_permission_id_fkey', 'FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE'),
+    ('role_permissions', 'role_permissions_role_id_fkey', 'FOREIGN KEY (role_id) REFERENCES roles_custom(id) ON DELETE CASCADE'),
+    ('roles_custom', 'roles_custom_created_by_fkey', 'FOREIGN KEY (created_by) REFERENCES profiles(id)'),
+    ('sorties_boutique', 'sorties_boutique_vente_id_fkey', 'FOREIGN KEY (vente_id) REFERENCES ventes(id) ON DELETE CASCADE'),
+    ('stock_atelier', 'stock_atelier_produit_id_fkey', 'FOREIGN KEY (produit_id) REFERENCES produits(id) ON DELETE CASCADE'),
+    ('stock_atelier', 'stock_atelier_transfere_par_fkey', 'FOREIGN KEY (transfere_par) REFERENCES profiles(id) ON DELETE SET NULL'),
+    ('stock_boutique', 'stock_boutique_produit_id_fkey', 'FOREIGN KEY (produit_id) REFERENCES produits(id) ON DELETE CASCADE'),
+    ('stock_boutique', 'stock_boutique_transfere_par_fkey', 'FOREIGN KEY (transfere_par) REFERENCES profiles(id) ON DELETE SET NULL'),
+    ('stock_cuisine', 'stock_cuisine_produit_cuisine_id_fkey', 'FOREIGN KEY (produit_cuisine_id) REFERENCES produits_cuisine(id) ON DELETE CASCADE'),
+    ('user_permissions', 'user_permissions_accorded_by_fkey', 'FOREIGN KEY (accorded_by) REFERENCES profiles(id)'),
+    ('user_permissions', 'user_permissions_permission_id_fkey', 'FOREIGN KEY (permission_id) REFERENCES permissions(id) ON DELETE CASCADE'),
+    ('user_permissions', 'user_permissions_user_id_fkey', 'FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE'),
+    ('utilisations_boutique', 'utilisations_boutique_stock_boutique_id_fkey', 'FOREIGN KEY (stock_boutique_id) REFERENCES stock_boutique(id) ON DELETE CASCADE'),
+    ('utilisations_boutique', 'utilisations_boutique_utilisateur_id_fkey', 'FOREIGN KEY (utilisateur_id) REFERENCES profiles(id)'),
+    ('ventes_cuisine', 'ventes_cuisine_vendeur_id_fkey', 'FOREIGN KEY (vendeur_id) REFERENCES profiles(id)')
+  ) AS x(t, nom, def) LOOP
+    v_col := substring(c.def FROM '\(([^)]*)\)');
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conrelid = ('public.' || c.t)::regclass AND k.contype = 'f'
+                     AND pg_get_constraintdef(k.oid) LIKE 'FOREIGN KEY (' || v_col || ')%') THEN
+      EXECUTE format('ALTER TABLE public.%I ADD CONSTRAINT %I %s', c.t, c.nom, c.def);
+    END IF;
+  END LOOP;
+END $$;
