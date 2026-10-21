@@ -1,6 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Le site n'utilise pas next/image : on coupe l'optimiseur d'images (/_next/image), touché par
+  // CVE-2026-96889 (images SVG traitées par sharp) et non corrigé sur Next.js 14
+  images: {
+    unoptimized: true,
+  },
   swcMinify: true, // Réactiver la minification
   eslint: {
     ignoreDuringBuilds: false, // Réactiver ESLint
