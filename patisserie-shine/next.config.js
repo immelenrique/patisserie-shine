@@ -6,7 +6,6 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  swcMinify: true, // Réactiver la minification
   eslint: {
     ignoreDuringBuilds: false, // Réactiver ESLint
   },
