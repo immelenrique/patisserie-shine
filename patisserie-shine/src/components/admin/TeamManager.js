@@ -57,6 +57,8 @@ export default function TeamManager({ currentUser }) {
         return '👩‍🍳 Employé Production';
       case 'employe_boutique':
         return '🛒 Employé Boutique';
+      case 'magasinier':
+        return '📦 Magasinier';
       default:
         return '👤 Utilisateur';
     }

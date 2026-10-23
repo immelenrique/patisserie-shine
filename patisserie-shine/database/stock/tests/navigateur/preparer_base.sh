@@ -36,4 +36,13 @@ DELETE FROM lignes_vente WHERE id > 100;
 CREATE ROLE authenticator LOGIN PASSWORD 'e2e' NOINHERIT;
 GRANT anon, authenticated, service_role TO authenticator;
 SQL
+# Partie 6 si demandée (PARTIE6=1, avec les parties 2 à 5) : rôle magasinier et son compte
+if [ "${PARTIE6:-0}" = 1 ]; then
+  $D -f $M/partie6_magasinier.sql >/dev/null || { echo "ECHEC partie 6"; exit 1; }
+  $D >/dev/null <<'SQL'
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+ ('f0000000-0000-4000-8000-000000000014', 'magasin@shine.local', '{"username":"magasin","nom":"Moussa (magasin)"}');
+UPDATE profiles SET role = 'magasinier', force_password_change = false WHERE username = 'magasin';
+SQL
+fi
 echo "base e2e prête"

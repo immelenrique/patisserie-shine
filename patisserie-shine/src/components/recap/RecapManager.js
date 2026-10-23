@@ -52,10 +52,15 @@ export default function RecapManager({ currentUser }) {
     setLoading(true);
     setErreur('');
     try {
-      const { data, error } = await supabase.rpc('recap_periode', { p_du: debut, p_au: fin });
+      const [{ data, error }, conf] = await Promise.all([
+        supabase.rpc('recap_periode', { p_du: debut, p_au: fin }),
+        // Achats pas encore comparés à la facture (état actuel) ; absent tant que la partie 6 n'est pas en base
+        supabase.rpc('achats_a_confirmer')
+      ]);
       if (error) throw error;
+      if (conf.error) console.warn('Achats à confirmer indisponibles:', conf.error.message);
       // Seule la dernière demande s'affiche (clics rapides sur plusieurs jours)
-      if (numero === demandeRef.current) setRecap(data);
+      if (numero === demandeRef.current) setRecap({ ...data, confirmations: conf.error ? null : conf.data });
     } catch (err) {
       console.error('Erreur récapitulatif:', err);
       if (numero === demandeRef.current) {
@@ -139,7 +144,8 @@ function Contenu({ recap, titre }) {
   const nbPoints = (alertes.transit_24h || []).length + (alertes.meme_personne || []).length + (alertes.ecarts || []).length
     + corrections.length + (ventes.annulations || []).length + comptesParAutre.length + (journal.intact === false ? 1 : 0)
     + (alertes.achats_sans_recu || []).length + (alertes.recus_disparus || []).length + (alertes.depenses_modifiees || []).length
-    + (alertes.ecarts_caisse || []).length + (alertes.caisses_ouvertes || []).length + (alertes.ventes_hors_caisse || []).length;
+    + (alertes.ecarts_caisse || []).length + (alertes.caisses_ouvertes || []).length + (alertes.ventes_hors_caisse || []).length
+    + (recap.confirmations?.nombre || 0) + (recap.confirmations?.non_conformes || []).length;
 
   return (
     <div className="space-y-6">
@@ -208,6 +214,14 @@ function Contenu({ recap, titre }) {
 
           <Liste titre="Ventes faites sans caisse ouverte" lignes={alertes.ventes_hors_caisse}
             rendu={(x) => <><b>{x.vendeur || '-'}</b> : {x.nombre} vente(s) pour {utils.formatCFA(x.total)}, comptées dans aucune caisse</>} />
+
+          <Liste titre={`Achats à confirmer avec la facture (état actuel${recap.confirmations?.nombre > (recap.confirmations?.a_confirmer || []).length ? `, les ${(recap.confirmations.a_confirmer || []).length} plus anciens sur ${recap.confirmations.nombre}` : ''}) — à faire depuis « À faire »`}
+            lignes={recap.confirmations?.a_confirmer}
+            rendu={(a) => <>{heure(a.le)} — {a.produit} : <b>{qte(a.quantite)} {a.unite || ''}</b> pour {utils.formatCFA(a.montant)}, saisi par {a.par || '-'}
+              {(a.recus || []).some(x => x.present) ? '' : ' (sans reçu)'}</>} />
+
+          <Liste titre="Achats non conformes à la facture (30 derniers jours)" lignes={recap.confirmations?.non_conformes}
+            rendu={(x) => <>{heure(x.le)} — {x.description} ({utils.formatCFA(x.montant)}), saisi par <b>{x.par || '-'}</b> le {heure(x.achete_le)}. Constat : « {x.commentaire} »</>} />
 
           {autoValidations.length > 0 && (
             <p className="text-sm text-gray-600">

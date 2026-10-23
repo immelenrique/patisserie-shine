@@ -311,3 +311,40 @@ La caissière voit ses ventes dans « Ventes du jour » : elle pourrait refaire 
 - Dans l'autre ordre, la nouvelle application ne pourrait pas ouvrir de caisse, donc pas vendre.
 
 Annulation : `partie5_annulation.sql` (SQL Editor). Les caisses et relevés déjà enregistrés restent.
+
+## Partie 6 : le magasinier, et les achats confirmés sur facture
+
+### Ce qui est demandé
+Le magasinier réceptionne la marchandise achetée et la fait sortir : c'est lui qui valide les demandes, seul. La propriétaire suit tout, et confirme avec les factures les quantités et montants qu'il a saisis.
+
+### Ce que fait `partie6_magasinier.sql` (SQL Editor : il contient un DROP CONSTRAINT)
+- **Rôle `magasinier` :** ajouté à la liste des rôles acceptés.
+- **Entrées :** `creer_produit` et `reapprovisionner_produit` lui sont ouvertes. Chaque achat crée sa dépense à son nom, avec la photo de la facture (partie 4).
+- **Sorties :** `valider_demande_groupee` et `refuser_demande` lui sont ouvertes. Pour ces quatre fonctions, seul le contrôle du rôle change. Le magasinier est prévenu de chaque nouvelle demande, et voit les envois qui partent du stock principal.
+- **Ce qu'il ne peut pas faire :**
+  - corriger une quantité du stock, modifier un prix d'achat, archiver un produit ;
+  - annuler un envoi, réceptionner un envoi ;
+  - tenir une caisse ;
+  - lire le journal du stock, le récapitulatif ou les confirmations.
+- **Contrôle de ses sorties :** la personne qui reçoit compte sans voir la quantité envoyée (partie 1). Un écart est donc inscrit « validé par le magasinier, compté par X ».
+- **`confirmer_achat(dépense, conforme, commentaire)`, propriétaire seulement :**
+  - « conforme » : la facture correspond à la quantité et au montant saisis ;
+  - « non conforme » : le constat est obligatoire, et les gérants ainsi que l'auteur de l'achat sont prévenus ;
+  - la confirmation ne se modifie pas et ne se supprime pas ; un second envoi renvoie la première réponse ;
+  - si la quantité en stock est fausse, la propriétaire la rectifie ensuite par une correction motivée (partie 2).
+- **`achats_a_confirmer()`, propriétaire seulement :** les achats pas encore comparés à la facture (avec quantité, prix unitaire, auteur et reçu), et les achats non conformes des 30 derniers jours.
+
+### Application
+- **Équipe :** le rôle « Magasinier » se choisit à la création et à la modification d'un compte. Le serveur refuse aussi tout rôle inconnu à la création.
+- **Le magasinier voit trois onglets :** À faire, Stock Principal (créer, réapprovisionner avec la photo de la facture), Demandes (toutes les demandes, validation et refus). Son « À faire » contient les demandes à valider.
+- **La propriétaire :** section « Achats à confirmer avec la facture » dans « À faire », avec « Voir le reçu », « Conforme » et « Non conforme ». Le récapitulatif liste aussi les achats à confirmer et les achats non conformes.
+
+### Tests
+- `PGHOST=... ./tests/lancer_magasinier.sh` :
+  - passage 1 : **57/57**. Cela comprend le scénario, deux validations simultanées de la même demande (un seul envoi) et deux confirmations simultanées du même achat (une seule). L'annulation est refusée tant qu'un compte est magasinier, puis exacte sur 349 objets ;
+  - passages 2 à 6, sur des bases neuves : non-régression **195/195**, stock **66/66**, récapitulatif **47/47**, achats **34/34**, caisse **24/24**.
+- **Banc navigateur :** `parcours_magasinier.js` **22/22**. Il couvre les onglets du magasinier, la validation depuis « À faire », deux achats (dont un avec facture), la confirmation « conforme » et « non conforme », le récapitulatif et l'écran Équipe. La base est préparée avec `PARTIE6=1`.
+
+**Mise en production : d'abord `partie5_caisse.sql`, puis `partie6_magasinier.sql` (SQL Editor), puis l'application.** Créez ensuite le compte du magasinier depuis l'écran Utilisateurs.
+
+Annulation : `partie6_annulation.sql` (SQL Editor). Elle est refusée tant qu'un compte a le rôle magasinier. Les confirmations déjà faites sont affichées, puis supprimées avec leur table. Achats, dépenses, demandes et envois restent.

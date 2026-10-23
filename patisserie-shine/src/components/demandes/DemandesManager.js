@@ -66,7 +66,7 @@ export default function DemandesManager({ currentUser }) {
         .order('created_at', { ascending: false });
 
       // Si l'utilisateur n'est pas admin, filtrer ses demandes uniquement
-      if (currentUser.role !== 'admin' && currentUser.role !== 'employe_production') {
+      if (!['admin', 'employe_production', 'magasinier'].includes(currentUser.role)) {
         query = query.eq('demandeur_id', currentUser.id);
       }
 
@@ -439,7 +439,8 @@ export default function DemandesManager({ currentUser }) {
   };
 
   // Seuls le propriétaire et les gérants valident ce qui sort du stock principal
-  const canValidate = () => currentUser.role === 'admin';
+  // Le magasinier fait sortir la marchandise : il valide comme le propriétaire et les gérants
+  const canValidate = () => currentUser.role === 'admin' || currentUser.role === 'magasinier';
 
   // Envoi créé par la validation (un seul par demande)
   const envoiDe = (demande) => (Array.isArray(demande.envois) ? demande.envois[0] : demande.envois) || null;
@@ -632,10 +633,10 @@ export default function DemandesManager({ currentUser }) {
       </div>
 
       {/* Info utilisateur */}
-      {currentUser.role !== 'admin' && (
+      {!canValidate() && (
         <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded">
           <p className="text-sm">
-            Vous visualisez uniquement vos demandes. Seuls les administrateurs peuvent voir toutes les demandes et les valider.
+            Vous visualisez uniquement vos demandes. Seuls le magasinier, le propriétaire et les gérants voient toutes les demandes et les valident.
           </p>
         </div>
       )}

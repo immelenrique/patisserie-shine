@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase-client';
 import { userService } from '../../services';
 
-import { Plus, Users, User, Crown, ChefHat, ShoppingBag, Trash2, Edit, UserPlus, AlertTriangle, CheckCircle, Key, Shield, RotateCcw, Eye, EyeOff } from 'lucide-react';
+import { Plus, Users, User, Crown, ChefHat, ShoppingBag, Warehouse, Trash2, Edit, UserPlus, AlertTriangle, CheckCircle, Key, Shield, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import { Card, Modal } from '../ui';
 
 export default function UserManagement({ currentUser }) {
@@ -266,6 +266,8 @@ export default function UserManagement({ currentUser }) {
         return ShoppingBag;
       case 'employe_cuisine':
         return ChefHat;
+      case 'magasinier':
+        return Warehouse;
       default:
         return User;
     }
@@ -281,6 +283,8 @@ export default function UserManagement({ currentUser }) {
         return '🛒 Employé Boutique';
       case 'employe_cuisine':
         return '🍳 Employé Cuisine';
+      case 'magasinier':
+        return '📦 Magasinier';
       default:
         return '👤 Utilisateur';
     }
@@ -296,6 +300,8 @@ export default function UserManagement({ currentUser }) {
         return 'bg-green-100 text-green-800';
       case 'employe_cuisine':
         return 'bg-purple-100 text-purple-800';
+      case 'magasinier':
+        return 'bg-amber-100 text-amber-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -647,12 +653,14 @@ export default function UserManagement({ currentUser }) {
               <option value="employe_boutique">🛒 Employé Boutique</option>
               <option value="employe_production">👩‍🍳 Employé Production</option>
               <option value="employe_cuisine">🍳 Employé Cuisine</option>
+              <option value="magasinier">📦 Magasinier (achats et sorties du stock principal)</option>
               <option value="admin">👑 Administrateur</option>
             </select>
             <div className="text-xs text-gray-500 mt-1">
               <strong>Boutique:</strong> Consultation et demandes uniquement<br/>
               <strong>Production:</strong> Gestion stock et production<br/>
               <strong>Cuisine:</strong> Gestion stock cuisine et caisse cuisine<br/>
+              <strong>Magasinier:</strong> Entre les achats au stock principal et valide les sorties (demandes) ; ni caisse, ni correction de stock<br/>
               <strong>Admin:</strong> Accès complet à toutes les fonctionnalités
             </div>
           </div>
@@ -771,6 +779,7 @@ export default function UserManagement({ currentUser }) {
                 <option value="employe_boutique">🛒 Employé Boutique</option>
                 <option value="employe_production">👩‍🍳 Employé Production</option>
                 <option value="employe_cuisine">🍳 Employé Cuisine</option>
+              <option value="magasinier">📦 Magasinier (achats et sorties du stock principal)</option>
                 <option value="admin">👑 Administrateur</option>
               </select>
               {selectedUser.username === 'proprietaire' && (
