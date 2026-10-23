@@ -304,7 +304,7 @@ La caissière voit ses ventes dans « Ventes du jour » : elle pourrait refaire 
   - passage 1 : **29/29** (scénario, deux tests de concurrence réels : ouvertures et clôtures simultanées), annulation exacte sur 347 objets ;
   - passages 2 à 5, sur des bases neuves : non-régression **195/195**, stock **66/66**, récapitulatif **47/47**, achats **34/34**.
 - **Changement voulu dans le scénario de sécurité :** l'écriture directe d'un arrêt de caisse est refusée.
-- **Banc navigateur :** `parcours_caisse.js` **18/18** (ouverture avec fond, vente, comptage faux sans que l'attendu soit montré, recomptage, clôture avec motif, alerte, vente caisse fermée, fond nul, récapitulatif). La base est préparée avec `PARTIE5=1`.
+- **Banc navigateur :** `parcours_caisse.js` **18/18** (ouverture avec fond, vente, comptage faux sans que l'attendu soit montré, recomptage, clôture avec motif, alerte, vente caisse fermée, fond nul, récapitulatif). Les autres parcours passent avec la partie 5, en version de production : 28/28, 14/14, 11/11, 22/22, 14/14, et le tour des 20 écrans 5/5. La base est préparée avec `PARTIE5=1`.
 
 **Mise en production : d'abord `partie5_caisse.sql`, puis l'application.**
 - Dans cet ordre, l'ancienne application fonctionne encore pour vendre ; seule son ancienne clôture est refusée, et elle n'a jamais servi.
