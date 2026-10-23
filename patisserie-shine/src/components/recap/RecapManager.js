@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase-client';
 import {
   AlertTriangle, Clock, UserCheck, FileText, Truck, Package, CreditCard, Receipt,
-  Users, Archive, Printer, RefreshCw, ShieldCheck, ShieldAlert, ShoppingBag
+  Users, Archive, Printer, RefreshCw, ShieldCheck, ShieldAlert, ShoppingBag, Lock
 } from 'lucide-react';
 import { Card } from '../ui';
 import { recuService } from '../../services';
@@ -138,7 +138,8 @@ function Contenu({ recap, titre }) {
   const autoValidations = (recap.decisions || []).filter(d => d.auto_validation);
   const nbPoints = (alertes.transit_24h || []).length + (alertes.meme_personne || []).length + (alertes.ecarts || []).length
     + corrections.length + (ventes.annulations || []).length + comptesParAutre.length + (journal.intact === false ? 1 : 0)
-    + (alertes.achats_sans_recu || []).length + (alertes.recus_disparus || []).length + (alertes.depenses_modifiees || []).length;
+    + (alertes.achats_sans_recu || []).length + (alertes.recus_disparus || []).length + (alertes.depenses_modifiees || []).length
+    + (alertes.ecarts_caisse || []).length + (alertes.caisses_ouvertes || []).length + (alertes.ventes_hors_caisse || []).length;
 
   return (
     <div className="space-y-6">
@@ -197,6 +198,16 @@ function Contenu({ recap, titre }) {
             rendu={(x) => <>{heure(x.le)} — dépense n°{x.depense_id} « {x.description} » <b>{x.action === 'suppression' ? 'supprimée' : 'modifiée'}</b> par {x.par || '-'}
               {x.action === 'suppression' ? ` (montant : ${utils.formatCFA(x.montant_avant)})` : ` : ${(x.champs || []).join(', ')}`}
               {x.action === 'modification' && x.montant_avant !== x.montant_apres && x.montant_apres !== null && ` (montant ${utils.formatCFA(x.montant_avant)} → ${utils.formatCFA(x.montant_apres)})`}</>} />
+
+          <Liste titre="Écarts de caisse" lignes={alertes.ecarts_caisse}
+            rendu={(x) => <>{heure(x.fermeture)} — caisse de <b>{x.caissier || '-'}</b> : attendu {utils.formatCFA(x.attendu)}, compté {utils.formatCFA(x.compte)}
+              {' '}(<b>{x.ecart > 0 ? '+' : ''}{utils.formatCFA(x.ecart)}</b>) en {x.comptages} comptage(s){x.comptages > 1 && `, le premier à ${utils.formatCFA(x.premier_comptage)}`}. Motif : « {x.motif || '-'} »</>} />
+
+          <Liste titre="Caisses ouvertes depuis plus de 16 h (état actuel)" lignes={alertes.caisses_ouvertes}
+            rendu={(x) => <>Caisse de <b>{x.caissier || '-'}</b> ouverte le {heure(x.ouverture)} ({x.heures} h) : la clôture a été oubliée, l'argent n'a pas été compté</>} />
+
+          <Liste titre="Ventes faites sans caisse ouverte" lignes={alertes.ventes_hors_caisse}
+            rendu={(x) => <><b>{x.vendeur || '-'}</b> : {x.nombre} vente(s) pour {utils.formatCFA(x.total)}, comptées dans aucune caisse</>} />
 
           {autoValidations.length > 0 && (
             <p className="text-sm text-gray-600">
@@ -271,6 +282,18 @@ function Contenu({ recap, titre }) {
           </div>
         </div>
       </Section>
+
+      {/* Caisses : ouverture, comptage, écart */}
+      {recap.caisses && (
+        <Section icone={Lock} titre={`Caisses (${recap.caisses.length})`}>
+          <Tableau entetes={['Caissier', 'Ouverture', 'Clôture', 'Fond', 'Ventes', 'Attendu', 'Compté', 'Écart', 'Comptages']} lignes={recap.caisses}
+            rendu={(x) => [x.caissier || '-', heure(x.ouverture), x.fermeture ? heure(x.fermeture) : <span className="text-orange-800 font-medium">ouverte</span>,
+              utils.formatCFA(x.fond), x.ventes === null ? '-' : `${utils.formatCFA(x.ventes)} (${x.nombre_ventes})`,
+              x.attendu === null ? '-' : utils.formatCFA(x.attendu), x.compte === null ? '-' : utils.formatCFA(x.compte),
+              x.ecart === null ? '-' : <span className={x.ecart !== 0 ? 'text-red-700 font-semibold' : 'text-green-700'}>{x.ecart > 0 ? '+' : ''}{utils.formatCFA(x.ecart)}</span>,
+              x.comptages]} />
+        </Section>
+      )}
 
       {/* Achats de stock, avec leurs reçus */}
       {recap.achats && (

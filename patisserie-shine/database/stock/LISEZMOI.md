@@ -269,3 +269,45 @@ Les fichiers sont gardés par le service de stockage de Supabase, qui appartient
 **Mise en production :** d'abord `partie4_achats_recus.sql`, puis l'application. Dans l'autre sens, l'ancienne application fonctionne encore : elle ignore simplement la dépense créée, et la base refuse d'elle-même toute modification d'une dépense d'achat.
 
 Annulation : `partie4_annulation.sql` (SQL Editor). Les dépenses déjà créées restent, comme dépenses ordinaires.
+
+## Partie 5 : caisse ouverte, comptage de l'argent à l'aveugle
+
+### Ce qui était faux
+- **Montant attendu montré avant le comptage :** la clôture affichait « Montant théorique : X » puis demandait le montant réel. Il suffisait de recopier X et de garder un éventuel excédent, sans écart visible.
+- **Calcul par le navigateur, écriture libre :** le montant attendu était calculé par l'écran (ventes du jour civil, sans fond de caisse), et n'importe quel compte pouvait écrire un arrêt de caisse.
+- **Jamais utilisé :** en production, 0 arrêt, 0 ouverture et 0 relevé de caisse.
+
+### Ce que fait `partie5_caisse.sql` (aucune suppression : exécutable directement)
+- **`ouvrir_caisse(fond)` :** la caissière (ou le propriétaire, un gérant) déclare le fond de caisse. Une seule caisse ouverte par personne, même en cas de double appui simultané : la seconde demande renvoie la caisse existante, fond inchangé.
+- **`cloturer_caisse(montant, confirmer, motif)` :**
+  - la base calcule le montant attendu : fond + ventes non annulées de la personne depuis l'ouverture ;
+  - si le comptage est juste, la caisse est clôturée ;
+  - sinon la réponse dit seulement « écart », **sans révéler le montant attendu**, et l'on recompte ;
+  - chaque comptage est gardé, y compris ceux refaits ;
+  - pour clôturer avec un écart, un motif est obligatoire ; le propriétaire et les gérants sont alors prévenus (attendu, compté, nombre de comptages, motif).
+- **Écriture fermée :** ouvertures, relevés et arrêts de caisse ne s'écrivent plus que par ces deux fonctions.
+- **Récapitulatif :** section « Caisses » (fond, ventes, attendu, compté, écart, nombre de comptages). En points à vérifier :
+  - les écarts de caisse, avec le premier comptage quand on a recompté ;
+  - les caisses ouvertes depuis plus de 16 h (clôture oubliée) ;
+  - les ventes faites sans caisse ouverte (argent compté nulle part).
+
+### Application
+- **Caisse :** bandeau « Caisse ouverte depuis HH:MM · fond X » ou « Caisse fermée », bouton « Ouvrir la caisse ». La première vente d'une caisse fermée demande d'abord le fond de caisse ; si l'on annule, la vente n'est pas faite.
+- **Clôture :** « Montant compté », sans montant affiché. En cas d'écart : « Nouveau comptage » et « Motif » (laisser vide pour simplement recompter). Le détail (fond, ventes, attendu, compté, écart) n'est montré qu'après la clôture.
+- La fenêtre de saisie accepte 0 quand c'est permis (fond de caisse vide).
+
+### Limite
+La caissière voit ses ventes dans « Ventes du jour » : elle pourrait refaire le calcul elle-même. Le comptage à l'aveugle empêche de recopier un chiffre donné par l'écran. Chaque comptage reste gardé et chaque écart est signalé.
+
+### Tests
+- `PGHOST=... ./tests/lancer_caisse.sh` :
+  - passage 1 : **29/29** (scénario, deux tests de concurrence réels : ouvertures et clôtures simultanées), annulation exacte sur 347 objets ;
+  - passages 2 à 5, sur des bases neuves : non-régression **195/195**, stock **66/66**, récapitulatif **47/47**, achats **34/34**.
+- **Changement voulu dans le scénario de sécurité :** l'écriture directe d'un arrêt de caisse est refusée.
+- **Banc navigateur :** `parcours_caisse.js` **18/18** (ouverture avec fond, vente, comptage faux sans que l'attendu soit montré, recomptage, clôture avec motif, alerte, vente caisse fermée, fond nul, récapitulatif). La base est préparée avec `PARTIE5=1`.
+
+**Mise en production : d'abord `partie5_caisse.sql`, puis l'application.**
+- Dans cet ordre, l'ancienne application fonctionne encore pour vendre ; seule son ancienne clôture est refusée, et elle n'a jamais servi.
+- Dans l'autre ordre, la nouvelle application ne pourrait pas ouvrir de caisse, donc pas vendre.
+
+Annulation : `partie5_annulation.sql` (SQL Editor). Les caisses et relevés déjà enregistrés restent.

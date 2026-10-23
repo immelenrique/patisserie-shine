@@ -18,9 +18,10 @@ import {
   Lock,
   TrendingUp,
   Users,
-  Monitor
+  Monitor,
+  LockOpen
 } from 'lucide-react';
-import { Card, Modal } from '../ui';
+import { Card, Modal, useSaisie } from '../ui';
 import CashierDashboard from './CashierDashboard';
 
 export default function CaisseManager({ currentUser }) {
@@ -36,6 +37,10 @@ export default function CaisseManager({ currentUser }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [clientDisplayWindow, setClientDisplayWindow] = useState(null);
   const [enregistrementEnCours, setEnregistrementEnCours] = useState(false);
+  // Caisse ouverte au nom de la personne connectée (null = fermée, undefined = pas encore lue)
+  const [caisse, setCaisse] = useState(undefined);
+  const [clotureEnCours, setClotureEnCours] = useState(false);
+  const [fenetreSaisie, demander] = useSaisie();
   // Verrou synchrone : deux clics rapprochés arrivent avant que l'état ne désactive le bouton
   const enregistrementRef = useRef(false);
   // Clé du panier : conservée entre deux essais du même panier, oubliée dès qu'il change
@@ -119,8 +124,41 @@ export default function CaisseManager({ currentUser }) {
     }
   }, [panier, montantDonne, clientDisplayWindow]);
 
+  const chargerCaisse = async () => {
+    const { data, error } = await supabase
+      .from('caisses_actives')
+      .select('id, date_ouverture, fond_caisse_initial')
+      .eq('caissier_id', currentUser.id)
+      .eq('statut', 'ouverte')
+      .maybeSingle();
+    if (error) {
+      console.error('Lecture de la caisse :', error);
+      return;
+    }
+    setCaisse(data || null);
+  };
+
+  // Le fond de caisse est déclaré à l'ouverture : il entre dans le montant attendu à la clôture
+  const ouvrirCaisse = async () => {
+    const r = await demander({
+      titre: 'Ouvrir la caisse',
+      message: 'Comptez l\'argent présent dans la caisse avant la première vente (la monnaie de départ).',
+      champs: [{ nom: 'fond', label: 'Fond de caisse (FCFA)', type: 'number', zero: true, placeholder: '0' }],
+      confirmer: 'Ouvrir la caisse'
+    });
+    if (!r) return false;
+    const { data, error } = await supabase.rpc('ouvrir_caisse', { p_fond: r.fond });
+    if (error) {
+      alert('Ouverture impossible : ' + error.message);
+      return false;
+    }
+    setCaisse({ id: data.caisse_id, date_ouverture: data.ouverte_le, fond_caisse_initial: data.fond });
+    return true;
+  };
+
   const loadData = async () => {
     setLoading(true);
+    chargerCaisse();
     try {
       const [stockResult, ventesResult] = await Promise.all([
         stockBoutiqueService.getStockBoutique(),
@@ -279,6 +317,9 @@ export default function CaisseManager({ currentUser }) {
     if (!cleVenteRef.current) cleVenteRef.current = utils.genererCle();
 
     try {
+      // Chaque vente appartient à une caisse ouverte : sinon l'argent encaissé ne serait compté nulle part
+      if (!caisse && !(await ouvrirCaisse())) return;
+
       const { vente, error, coupure } = await caisseService.enregistrerVente({
         items: panier,
         montant_donne: montantDonneNum,
@@ -475,58 +516,63 @@ export default function CaisseManager({ currentUser }) {
     };
   };
 
+  // Clôture à l'aveugle : la personne compte l'argent sans connaître le montant attendu,
+  // calculé par la base (fond + ventes de sa caisse). En cas d'écart elle recompte, ou confirme avec un motif.
   const effectuerCloture = async () => {
+    if (clotureEnCours) return;
+    setClotureEnCours(true);
     try {
-      const aujourdhui = new Date().toISOString().split('T')[0];
-      const demain = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-      // Uniquement les ventes validées : une vente annulée n'est pas dans la caisse
-      const { data: ventes, error } = await supabase
-        .from('ventes')
-        .select('id, total')
-        .gte('created_at', aujourdhui + 'T00:00:00')
-        .lt('created_at', demain + 'T00:00:00')
-        .eq('vendeur_id', currentUser.id)
-        .eq('statut', 'validee');
-
+      const premier = await demander({
+        titre: 'Clôturer la caisse',
+        message: 'Comptez tout l\'argent de la caisse, fond compris, puis indiquez le total.',
+        champs: [{ nom: 'montant', label: 'Montant compté (FCFA)', type: 'number', zero: true }],
+        confirmer: 'Valider le comptage'
+      });
+      if (!premier) return;
+      let { data, error } = await supabase.rpc('cloturer_caisse', { p_montant: premier.montant });
       if (error) throw error;
 
-      const montantTotal = ventes.reduce((sum, v) => sum + (Number(v.total) || 0), 0);
-      const nombreVentes = ventes.length;
-
-      const saisie = prompt(`Montant théorique: ${montantTotal} FCFA\nEntrez le montant réel en caisse:`);
-
-      if (saisie === null || saisie.trim() === '') return;
-
-      const montantDeclare = parseFloat(saisie.replace(',', '.'));
-      if (isNaN(montantDeclare)) {
-        alert('Montant invalide');
-        return;
+      // Tant que le comptage ne correspond pas : on recompte (chaque comptage est gardé par la base),
+      // ou l'on clôture avec un motif, et le propriétaire est informé
+      while (data.statut === 'ecart') {
+        const suite = await demander({
+          titre: 'Le comptage ne correspond pas',
+          message: `Le montant compté ne correspond pas aux ventes enregistrées (comptage n° ${data.comptages}).\n\n`
+            + 'Recomptez l\'argent. Si l\'écart demeure, expliquez-le : la caisse sera clôturée avec cet écart '
+            + 'et le propriétaire en sera informé.',
+          champs: [
+            { nom: 'montant', label: 'Nouveau comptage (FCFA)', type: 'number', zero: true },
+            { nom: 'motif', label: 'Motif de l\'écart', placeholder: 'ex. : monnaie rendue en trop',
+              aide: 'Laissez vide pour simplement recompter.' }
+          ],
+          confirmer: 'Valider',
+          danger: true
+        });
+        if (!suite) {
+          alert('La caisse reste ouverte. Les comptages sont notés ; vous pourrez recompter plus tard.');
+          return;
+        }
+        const motif = suite.motif && suite.motif.length >= 3 ? suite.motif : null;
+        ({ data, error } = await supabase.rpc('cloturer_caisse', motif
+          ? { p_montant: suite.montant, p_confirmer: true, p_motif: motif }
+          : { p_montant: suite.montant }));
+        if (error) throw error;
       }
 
-      const ecart = montantDeclare - montantTotal;
-
-      const { error: clotureError } = await supabase
-        .from('arrets_caisse')
-        .insert({
-          vendeur_id: currentUser.id,
-          date_arret: aujourdhui,
-          heure_fin: new Date().toISOString(),
-          nombre_ventes: nombreVentes,
-          chiffre_affaires: montantTotal,
-          montant_attendu: montantTotal,
-          montant_declare: montantDeclare,
-          ecart: ecart,
-          statut: 'termine'
-        });
-
-      if (clotureError) throw clotureError;
-
-      alert(`Clôture effectuée!\nÉcart: ${ecart} FCFA ${ecart === 0 ? '✓' : ecart > 0 ? '(excédent)' : '(manque)'}`);
-
+      const ecart = Number(data.ecart);
+      setCaisse(null);
+      alert(`Caisse clôturée.\n\n`
+        + `Fond : ${utils.formatCFA(data.fond)}\n`
+        + `Ventes : ${utils.formatCFA(data.total_ventes)} (${data.nombre_ventes} vente${data.nombre_ventes > 1 ? 's' : ''})\n`
+        + `Attendu : ${utils.formatCFA(data.attendu)}\n`
+        + `Compté : ${utils.formatCFA(data.compte)}\n`
+        + (ecart === 0 ? 'Aucun écart ✓' : `Écart : ${ecart > 0 ? '+' : ''}${utils.formatCFA(ecart)} (${ecart > 0 ? 'excédent' : 'manque'}) — le propriétaire est informé.`));
     } catch (error) {
       console.error('Erreur clôture:', error);
       alert('Erreur lors de la clôture : ' + (error.message || error));
+      chargerCaisse();
+    } finally {
+      setClotureEnCours(false);
     }
   };
 
@@ -585,17 +631,42 @@ export default function CaisseManager({ currentUser }) {
                 <Monitor className="w-4 h-4 mr-2" />
                 Écran Client
               </button>
-              <button
-                onClick={effectuerCloture}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center"
-              >
-                <Lock className="w-4 h-4 mr-2" />
-                Clôturer
-              </button>
+              {caisse ? (
+                <button
+                  onClick={effectuerCloture}
+                  disabled={clotureEnCours}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 flex items-center disabled:opacity-60"
+                >
+                  <Lock className="w-4 h-4 mr-2" />
+                  Clôturer
+                </button>
+              ) : caisse === null && (
+                <button
+                  onClick={ouvrirCaisse}
+                  className="bg-green-700 text-white px-4 py-2 rounded-lg hover:bg-green-800 flex items-center"
+                >
+                  <LockOpen className="w-4 h-4 mr-2" />
+                  Ouvrir la caisse
+                </button>
+              )}
             </>
           )}
         </div>
       </div>
+
+      {activeTab === 'caisse' && caisse !== undefined && (
+        caisse ? (
+          <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-green-900 text-sm">
+            Caisse ouverte depuis {new Date(caisse.date_ouverture).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+            {new Date(caisse.date_ouverture).toDateString() !== new Date().toDateString() && ` le ${new Date(caisse.date_ouverture).toLocaleDateString('fr-FR')}`}
+            {' · '}fond {utils.formatCFA(caisse.fond_caisse_initial)}
+          </div>
+        ) : (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-amber-900 text-sm">
+            Caisse fermée : elle s'ouvrira à la première vente, ou avec le bouton « Ouvrir la caisse ».
+          </div>
+        )
+      )}
 
       {error && activeTab !== 'dashboard' && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -1005,6 +1076,7 @@ export default function CaisseManager({ currentUser }) {
           </div>
         )}
       </Modal>
+      {fenetreSaisie}
     </div>
   );
 }

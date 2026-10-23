@@ -87,6 +87,8 @@ admin = """SELECT set_config('request.jwt.claims', '{"role":"authenticated","sub
 rep(admin, admin + "SELECT tests.verifier(:'phase', 'admin : change un prix (2 audits)', 'UPDATE stock_boutique SET prix_vente = prix_vente + 1 WHERE produit_id = 2', 'lignes=1');\n")
 open(p, 'w').write(s)
 PY
+# Changements voulus propres à une partie plus récente (expression sed fournie par le lanceur)
+[ -n "$AJUST_21" ] && sed -i -e "$AJUST_21" /tmp/21_s.sql
 grep -q "SELECT refuser_demande" /tmp/21_s.sql && grep -q "correction motivée du stock principal" /tmp/21_s.sql || { echo "ECHEC adaptation du scénario de sécurité"; exit 1; }
 $D -v phase=p2 -v victime_vendeuse=e0000000-0000-4000-8000-000000000009 -v victime_admin=e0000000-0000-4000-8000-000000000006 -f /tmp/21_s.sql >/dev/null 2>/tmp/err_s21.txt || { echo "ECHEC non-régression phase 2"; cat /tmp/err_s21.txt; exit 1; }
 }
