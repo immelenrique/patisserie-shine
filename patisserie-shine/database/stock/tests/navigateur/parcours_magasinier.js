@@ -6,6 +6,7 @@ const SECRET = 'secret-de-test-local-uniquement-0123456789'
 const APP = 'http://127.0.0.1:3100'
 const COMPTES = {
   magasin: ['f0000000-0000-4000-8000-000000000014', 'magasin@shine.local'],
+  prod: ['f0000000-0000-4000-8000-000000000011', 'prod@shine.local'],
   proprietaire: ['b0000000-0000-4000-8000-000000000002', 'proprietaire@shine.local'],
   vendeuse: ['c0000000-0000-4000-8000-000000000003', 'vendeuse@shine.local']
 }
@@ -74,8 +75,9 @@ COMMIT;`)
   await nav(p).getByRole('button', { name: 'Stock Principal', exact: true }).click()
   await p.waitForTimeout(2000)
   const ligne = (nom) => p.locator('tr').filter({ has: p.getByText(nom, { exact: true }) }).first()
-  verifier('3. Stock Principal : réapprovisionner oui, corriger non',
-    await ligne('Pain').locator('button[title="Réapprovisionner"]').count() === 1 && await ligne('Pain').locator('button[title*="orriger"]').count() === 0)
+  verifier('3. Stock Principal : réapprovisionner oui ; corriger et modifier non',
+    await ligne('Pain').locator('button[title="Réapprovisionner"]').count() === 1 && await ligne('Pain').locator('button[title*="orriger"]').count() === 0
+    && await ligne('Pain').locator('button[title="Modifier"]').count() === 0)
   await ligne('Pain').locator('button[title="Réapprovisionner"]').click()
   await p.getByPlaceholder('Ex: 20').fill('20')
   await p.getByPlaceholder('Ex: 15000').fill('10000')
@@ -90,6 +92,20 @@ COMMIT;`)
   verifier('3. deux achats du magasinier, le premier avec sa facture',
     sql(`SELECT string_agg(montant::int || ':' || jsonb_array_length(pieces_jointes), ',' ORDER BY id) FROM depenses_comptables WHERE utilisateur_id = '${MAG}' AND achat_journal_id IS NOT NULL`) === '10000:1,7000:0')
   verifier('3. magasinier : aucune erreur', p.erreurs.length === 0, p.erreurs.join(' | '))
+  await p.context().close()
+
+  // 3 bis. La production ne fait plus d'achats au stock principal (partie 7)
+  p = await ouvrir('prod')
+  // Plus de 7 onglets pour la production : « Stock Principal » est dans le groupe « Stocks »
+  if (await nav(p).getByRole('button', { name: 'Stock Principal', exact: true }).count() === 0) {
+    await nav(p).getByRole('button', { name: 'Stocks', exact: true }).click()
+    await p.waitForTimeout(500)
+  }
+  await nav(p).getByRole('button', { name: 'Stock Principal', exact: true }).click()
+  await p.waitForTimeout(2000)
+  verifier('3. production : ni « Nouveau Produit » ni « Réapprovisionner »',
+    await p.getByRole('button', { name: /Nouveau Produit/ }).count() === 0 && await p.locator('button[title="Réapprovisionner"]').count() === 0)
+  verifier('3. production : aucune erreur', p.erreurs.length === 0, p.erreurs.join(' | '))
   await p.context().close()
 
   // 4. La propriétaire compare à la facture : le pain est conforme, la farine non

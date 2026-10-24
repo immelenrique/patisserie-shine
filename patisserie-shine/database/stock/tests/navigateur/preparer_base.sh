@@ -45,4 +45,6 @@ INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
 UPDATE profiles SET role = 'magasinier', force_password_change = false WHERE username = 'magasin';
 SQL
 fi
+# Partie 7 si demandée (PARTIE7=1, avec la partie 6) : achats réservés au magasinier, au propriétaire et aux gérants
+if [ "${PARTIE7:-0}" = 1 ]; then $D -f $M/partie7_achats_reserves.sql >/dev/null || { echo "ECHEC partie 7"; exit 1; }; fi
 echo "base e2e prête"
