@@ -373,3 +373,66 @@ Décision de la propriétaire : « seul le magasinier gère cela ». Le proprié
 - Avec la base modifiée mais l'ancienne application, la production verrait encore les boutons d'achat, mais la base refuserait l'achat.
 
 Annulation : `partie7_annulation.sql`.
+
+## Partie 8 : inventaires à l'aveugle et pertes validées par la propriétaire
+
+### Décisions de la propriétaire
+- **Inventaire :** les produits à compter sont tirés au hasard (personne ne sait lesquels à l'avance).
+- **Rythme de départ :** l'atelier chaque soir ; le stock principal et la boutique une fois par semaine, tous les produits. Le rythme se change dans l'application.
+- **Pertes :** une perte ne baisse le stock qu'après la validation de la propriétaire.
+
+### Ce que fait `partie8_inventaires_pertes.sql` (SQL Editor : il contient un DROP CONSTRAINT)
+- **Journal :** deux nouveaux types de mouvement, « inventaire » et « perte ».
+- **Qui compte :** le magasinier (stock principal), la production (atelier), la boutique (boutique), le propriétaire et les gérants (partout). Un seul inventaire en cours par lieu.
+- **`inventaire_ouvrir(lieu)` :** la liste des produits à compter, sans aucune quantité.
+  - « tirage » : N produits au hasard parmi ceux qui ont du stock ; « complet » : tous.
+  - Le mode vient du réglage du lieu ; le propriétaire et les gérants peuvent le choisir.
+- **`inventaire_compter` :** la quantité attendue est notée par la base au moment du comptage, sans jamais être renvoyée. Chaque comptage est gardé.
+- **`inventaire_cloturer`, en trois temps :**
+  1. les produits qui ne correspondent pas sont désignés, sans quantité, pour être recomptés ;
+  2. après recomptage, s'ils ne correspondent toujours pas, un motif par produit est obligatoire ;
+  3. le stock est alors corrigé de l'écart, l'écart est inscrit au journal, et le propriétaire et les gérants sont prévenus avec sa valeur.
+  - La correction porte sur le stock actuel : une vente faite entre le comptage et la fin reste comptée.
+- **`inventaire_annuler` (gérants) et `regler_inventaires` (propriétaire).** `inventaires_a_faire` indique ce qui est attendu aujourd'hui.
+- **Pertes :**
+  - `declarer_perte(lieu, produit, quantité, motif)` : la perte est en attente, le stock ne bouge pas. Le même envoi répété ne crée pas une seconde perte.
+  - `decider_perte(perte, accepter, motif)`, par la propriétaire seulement : acceptée, le stock baisse et la perte est inscrite au journal ; refusée, avec un motif. La personne est prévenue dans les deux cas.
+  - Une perte que le stock ne couvre plus ne peut pas être acceptée.
+- **Quantités attendues :** les fonctions internes qui les donnent ne sont pas accessibles depuis l'application. Les tables d'inventaire ne sont lisibles que par le propriétaire et les gérants. Rien ne se supprime ni ne s'écrit en direct.
+- **`recap_inventaires(du, au)` :** inventaires de la période, écarts (avec le premier comptage), pertes, inventaires attendus pas encore faits.
+
+### Application
+- **Onglet « Inventaires » (groupe Stocks) :**
+  - le lieu de la personne (les trois pour le propriétaire et les gérants) ;
+  - « Commencer » ou « Reprendre l'inventaire », puis la colonne « Compté » ;
+  - les produits à recompter en orange (champ vidé), puis la raison de chaque écart ;
+  - le résultat à la fin ;
+  - « Déclarer une perte » et « Mes pertes déclarées » ;
+  - pour le propriétaire, « Rythme des inventaires ».
+- **« À faire » :** « Inventaires à faire » pour chacun ; « Pertes à valider » (Accepter / Refuser) pour le propriétaire.
+- **Récapitulatif :**
+  - en points à vérifier : écarts d'inventaire, pertes acceptées, inventaires en retard (une échéance passée a été manquée : hier pour le soir, le jour prévu pour la semaine ; un inventaire simplement à faire aujourd'hui n'est pas un retard) ;
+  - une section « Inventaires et pertes ».
+
+### Limite
+La personne qui compte peut ouvrir l'écran de son stock et y lire la quantité enregistrée. Le comptage à l'aveugle empêche de recopier un chiffre donné par l'inventaire ; il n'empêche pas un compteur malhonnête de chercher ce chiffre ailleurs. Deux protections jouent contre cela :
+- le tirage au hasard, qui empêche de préparer ;
+- les inventaires que le propriétaire ou un gérant peut faire lui-même, dans n'importe quel lieu et à n'importe quel moment.
+
+### Tests
+- `PGHOST=... ./tests/lancer_inventaires.sh` :
+  - passage 1 : **76/76**. Cela comprend l'annulation sur base vide (exacte, 357 objets), le scénario de 73 vérifications (dont l'inventaire attendu et l'inventaire en retard) et deux tests de concurrence (inventaire ouvert deux fois, perte acceptée deux fois), puis l'annulation avec des données (stock et journal conservés) ;
+  - passages 2 à 8, sur des bases neuves : non-régression **195/195**, stock **66/66**, récapitulatif **47/47**, achats **34/34**, caisse **24/24**, magasinier **51/51**, achats réservés **11/11**.
+- **Banc navigateur :** `parcours_inventaires.js` **23/23**. Il couvre :
+  - l'inventaire du soir de l'atelier, avec écart, recomptage et raison ;
+  - une perte déclarée puis acceptée par la propriétaire ;
+  - l'écran limité de la vendeuse ;
+  - le réglage du rythme et le récapitulatif.
+  La base est préparée avec `PARTIE8=1`.
+
+**Mise en production : d'abord `partie8_inventaires_pertes.sql` (SQL Editor), puis l'application.** Dans cet ordre, rien ne casse : la partie 8 seule ne change rien aux écrans actuels. Dans l'autre ordre, « À faire » et le récapitulatif restent corrects (sections absentes), mais l'onglet « Inventaires » afficherait des erreurs jusqu'à l'application du script.
+
+Annulation : `partie8_annulation.sql` (SQL Editor).
+- Les inventaires et pertes enregistrés sont affichés, puis supprimés avec leurs tables.
+- Le stock et le journal restent tels quels.
+- Les types « inventaire » et « perte » restent acceptés si le journal en contient.

@@ -31,13 +31,14 @@ import { statsService, authService, userService, permissionsService } from '../s
 import NotificationCenter from '../components/notifications/NotificationCenter';
 import CashierDashboard from '../components/caisse/CashierDashboard';
 import DepensesManager from '../components/depenses/DepensesManager';
+import InventaireManager from '../components/inventaires/InventaireManager';
 import { Receipt } from 'lucide-react';
 
 import { 
   LogOut, User, KeyRound, LayoutDashboard, Package, 
   ShoppingBag, Factory, ChefHat, FileText, Database, 
   Calculator, Ruler, Users, UserCog, Shield, Store,
-  BookOpen, CreditCard, Crown, AlertTriangle, Truck, ClipboardList, ListChecks
+  BookOpen, CreditCard, Crown, AlertTriangle, Truck, ClipboardList, ListChecks, ClipboardCheck
 } from 'lucide-react';
 
 // Libellés affichés à la place des rôles techniques
@@ -49,7 +50,7 @@ const GROUPES = [
   { id: 'a-faire', label: 'À faire', icon: ListChecks, onglets: ['a-faire'] },
   { id: 'pilotage', label: 'Pilotage', icon: LayoutDashboard, onglets: ['dashboard', 'recap', 'comptabilite'] },
   { id: 'circuit', label: 'Demandes et réceptions', icon: Truck, onglets: ['demandes', 'receptions'] },
-  { id: 'stock', label: 'Stocks', icon: Package, onglets: ['stock', 'stock-atelier', 'stock-boutique', 'stock-cuisine', 'referentiel', 'unites'] },
+  { id: 'stock', label: 'Stocks', icon: Package, onglets: ['stock', 'stock-atelier', 'stock-boutique', 'stock-cuisine', 'inventaires', 'referentiel', 'unites'] },
   { id: 'ventes', label: 'Ventes', icon: CreditCard, onglets: ['caisse', 'caisse-cuisine'] },
   { id: 'production', label: 'Production', icon: ChefHat, onglets: ['production', 'recettes'] },
   { id: 'depenses', label: 'Dépenses', icon: Receipt, onglets: ['depenses'] },
@@ -388,6 +389,8 @@ useEffect(() => {
     { id: 'stock-atelier', label: 'Stock Atelier', icon: Factory, permission: 'view_stock_atelier' },
     { id: 'stock-boutique', label: 'Stock Boutique', icon: Store, permission: 'view_stock_boutique' },
     { id: 'stock-cuisine', label: 'Stock Cuisine', icon: ChefHat, permission: 'view_stock_cuisine' },
+    // Inventaires et pertes : toute personne qui tient un stock (la base limite chacun à son lieu)
+    { id: 'inventaires', label: 'Inventaires', icon: ClipboardCheck, anyPermission: ['view_stock', 'view_stock_atelier', 'view_stock_boutique'] },
     { id: 'recettes', label: 'Recettes', icon: BookOpen, permission: 'view_recettes' },
     { id: 'demandes', label: 'Demandes', icon: FileText, permission: 'view_demandes' },
     // Visible pour toute personne qui travaille en boutique, à l'atelier ou qui valide les demandes
@@ -553,6 +556,7 @@ console.log('Available:', availableTabs.map(t => t.label));
           />
         )}
         {activeTab === 'stock' && <StockManager currentUser={currentUser} />}
+        {activeTab === 'inventaires' && <InventaireManager currentUser={currentUser} />}
         {activeTab === 'referentiel' && <ReferentielManager currentUser={currentUser} />}
         {activeTab === 'stock-atelier' && <StockAtelierManager currentUser={currentUser} />}
         {activeTab === 'stock-boutique' && <StockBoutiqueManager currentUser={currentUser} />}

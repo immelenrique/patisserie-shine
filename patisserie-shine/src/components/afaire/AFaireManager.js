@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase-client';
-import { Truck, ClipboardCheck, AlertTriangle, CreditCard, FileText, RefreshCw, ChevronRight, Camera, FileCheck } from 'lucide-react';
+import { Truck, ClipboardCheck, AlertTriangle, CreditCard, FileText, RefreshCw, ChevronRight, Camera, FileCheck, Trash2 } from 'lucide-react';
 import { recuService } from '../../services';
 import { Card, useSaisie } from '../ui';
 
@@ -33,6 +33,9 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
   const [envoiRecu, setEnvoiRecu] = useState(null);
   // Achats à confirmer avec la facture (propriétaire)
   const [aConfirmer, setAConfirmer] = useState({ nombre: 0, a_confirmer: [] });
+  // Inventaires attendus pour les lieux de la personne ; pertes à décider (propriétaire)
+  const [inventairesAFaire, setInventairesAFaire] = useState([]);
+  const [pertesAValider, setPertesAValider] = useState([]);
   const recuInputRef = useRef(null);
   const recuCibleRef = useRef(null);
   const enCoursRef = useRef(false);
@@ -96,6 +99,15 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
         .limit(30);
       if (rAchats.error) console.warn('Achats sans reçu indisponibles:', rAchats.error.message);
       setAchatsSansRecu(rAchats.error ? [] : (rAchats.data || []));
+      // Sans la partie 8 en base, les fonctions n'existent pas encore : les sections restent vides
+      const rInv = await supabase.rpc('inventaires_a_faire');
+      if (rInv.error) console.warn('Inventaires à faire indisponibles:', rInv.error.message);
+      setInventairesAFaire(rInv.error ? [] : (rInv.data || []));
+      if (estProprietaire) {
+        const rPertes = await supabase.rpc('pertes_a_valider');
+        if (rPertes.error) console.warn('Pertes à valider indisponibles:', rPertes.error.message);
+        setPertesAValider(rPertes.error ? [] : (rPertes.data || []));
+      }
       if (estProprietaire) {
         // Sans la partie 6 en base, la fonction n'existe pas encore : la section reste vide
         const rConf = await supabase.rpc('achats_a_confirmer');
@@ -203,7 +215,27 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
     if (onglet) onglet.location.href = url; else window.location.href = url;
   };
 
-  const nbTaches = bloques.length + aReceptionner.length + aValider.length + ecarts.length + achatsSansRecu.length + (aConfirmer.nombre || 0);
+  const deciderPerte = async (x, accepter) => {
+    if (enCoursRef.current) return;
+    const detail = [`${x.produit} : ${qte(x.quantite)} ${x.unite || ''} (${new Intl.NumberFormat('fr-FR').format(x.valeur)} F)`,
+      `Motif : « ${x.motif} »`, `Déclarée par ${x.par || '-'} ${depuis(x.le)}`];
+    const r = accepter
+      ? await demander({ titre: 'Accepter la perte', message: 'Le stock baisse de cette quantité et la perte est inscrite au journal.', details: detail, confirmer: 'Accepter' })
+      : await demander({ titre: 'Refuser la perte', message: 'Le stock ne change pas. La personne est prévenue avec votre motif.', details: detail,
+          champs: [{ nom: 'motif', label: 'Pourquoi la refuser', obligatoire: true }], confirmer: 'Refuser', danger: true });
+    if (!r) return;
+    enCoursRef.current = true;
+    setEnCours('perte-' + x.perte_id);
+    const { error } = await supabase.rpc('decider_perte', { p_perte_id: x.perte_id, p_accepter: accepter, p_motif: r.motif || null });
+    enCoursRef.current = false;
+    setEnCours(null);
+    if (error) alert('Décision impossible : ' + error.message);
+    await charger();
+  };
+
+  const LIEUX_INV = { principal: 'Stock principal', atelier: 'Atelier', boutique: 'Boutique' };
+  const nbTaches = bloques.length + aReceptionner.length + aValider.length + ecarts.length + achatsSansRecu.length + (aConfirmer.nombre || 0)
+    + inventairesAFaire.length + pertesAValider.length;
 
   if (loading) {
     return (
@@ -275,6 +307,35 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
               note={`Demande n°${d.id} · ${depuis(d.created_at)}`}
               badge={d.demandeur_id === currentUser.id ? 'Votre demande : un autre devra réceptionner' : null}
               action={{ libelle: enCours === d.id ? 'Validation…' : 'Valider tel quel', disabled: enCours !== null, onClick: () => validerTelQuel(d) }} />
+          ))}
+        </Section>
+      )}
+
+      {/* 2 bis. Inventaires attendus (ou en cours) dans les lieux de la personne */}
+      {inventairesAFaire.length > 0 && (
+        <Section icone={ClipboardCheck} titre={`Inventaires à faire (${inventairesAFaire.length})`}>
+          {inventairesAFaire.map(x => (
+            <Ligne key={x.lieu}
+              titre={`${LIEUX_INV[x.lieu]} : ${x.en_cours_id ? `inventaire n°${x.en_cours_id} en cours` : x.frequence === 'quotidienne' ? 'inventaire du soir' : 'inventaire de la semaine'}`}
+              texte={x.mode === 'tirage' ? `${x.nombre} produits tirés au hasard, à compter sans voir les quantités attendues` : 'Tous les produits du lieu, à compter sans voir les quantités attendues'}
+              note={x.dernier ? `Dernier inventaire ${depuis(x.dernier)}` : 'Aucun inventaire fait jusqu\'ici'}
+              action={{ libelle: x.en_cours_id ? 'Reprendre' : 'Faire l\'inventaire', onClick: () => onNaviguer('inventaires') }} />
+          ))}
+        </Section>
+      )}
+
+      {/* 2 ter. Pertes déclarées, à décider (propriétaire) */}
+      {estProprietaire && pertesAValider.length > 0 && (
+        <Section icone={Trash2} titre={`Pertes à valider (${pertesAValider.length})`}>
+          {pertesAValider.map(x => (
+            <Ligne key={x.perte_id}
+              titre={`${LIEUX_INV[x.lieu]} : ${x.produit} ${qte(x.quantite)} ${x.unite || ''}`}
+              texte={`${new Intl.NumberFormat('fr-FR').format(x.valeur)} F · « ${x.motif} »`}
+              note={`Déclarée par ${x.par || '-'} ${depuis(x.le)} · stock enregistré : ${qte(x.stock)}`}
+              actions={[
+                { libelle: enCours === 'perte-' + x.perte_id ? 'Envoi…' : 'Accepter', disabled: enCours !== null, onClick: () => deciderPerte(x, true) },
+                { libelle: 'Refuser', secondaire: true, disabled: enCours !== null, onClick: () => deciderPerte(x, false) }
+              ]} />
           ))}
         </Section>
       )}

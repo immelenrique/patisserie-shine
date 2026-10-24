@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase-client';
 import {
   AlertTriangle, Clock, UserCheck, FileText, Truck, Package, CreditCard, Receipt,
-  Users, Archive, Printer, RefreshCw, ShieldCheck, ShieldAlert, ShoppingBag, Lock
+  Users, Archive, Printer, RefreshCw, ShieldCheck, ShieldAlert, ShoppingBag, Lock, ClipboardCheck
 } from 'lucide-react';
 import { Card } from '../ui';
 import { recuService } from '../../services';
@@ -52,15 +52,18 @@ export default function RecapManager({ currentUser }) {
     setLoading(true);
     setErreur('');
     try {
-      const [{ data, error }, conf] = await Promise.all([
+      const [{ data, error }, conf, inv] = await Promise.all([
         supabase.rpc('recap_periode', { p_du: debut, p_au: fin }),
         // Achats pas encore comparés à la facture (état actuel) ; absent tant que la partie 6 n'est pas en base
-        supabase.rpc('achats_a_confirmer')
+        supabase.rpc('achats_a_confirmer'),
+        // Inventaires et pertes de la période ; absent tant que la partie 8 n'est pas en base
+        supabase.rpc('recap_inventaires', { p_du: debut, p_au: fin })
       ]);
       if (error) throw error;
       if (conf.error) console.warn('Achats à confirmer indisponibles:', conf.error.message);
+      if (inv.error) console.warn('Inventaires indisponibles:', inv.error.message);
       // Seule la dernière demande s'affiche (clics rapides sur plusieurs jours)
-      if (numero === demandeRef.current) setRecap({ ...data, confirmations: conf.error ? null : conf.data });
+      if (numero === demandeRef.current) setRecap({ ...data, confirmations: conf.error ? null : conf.data, inventaires: inv.error ? null : inv.data });
     } catch (err) {
       console.error('Erreur récapitulatif:', err);
       if (numero === demandeRef.current) {
@@ -141,11 +144,16 @@ function Contenu({ recap, titre }) {
   const corrections = (recap.mouvements || []).filter(m => m.nature === 'ajustement');
   const comptesParAutre = (recap.comptes || []).filter(x => x.par_autre);
   const autoValidations = (recap.decisions || []).filter(d => d.auto_validation);
+  const inv = recap.inventaires || {};
+  const ecartsInventaire = (inv.inventaires || []).flatMap(i => (i.ecarts || []).map(e => ({ ...e, inventaire: i })));
+  const pertesAcceptees = (inv.pertes || []).filter(x => x.statut === 'acceptee');
+  const inventairesManques = (inv.en_retard || []).filter(x => x.en_retard);
   const nbPoints = (alertes.transit_24h || []).length + (alertes.meme_personne || []).length + (alertes.ecarts || []).length
     + corrections.length + (ventes.annulations || []).length + comptesParAutre.length + (journal.intact === false ? 1 : 0)
     + (alertes.achats_sans_recu || []).length + (alertes.recus_disparus || []).length + (alertes.depenses_modifiees || []).length
     + (alertes.ecarts_caisse || []).length + (alertes.caisses_ouvertes || []).length + (alertes.ventes_hors_caisse || []).length
-    + (recap.confirmations?.nombre || 0) + (recap.confirmations?.non_conformes || []).length;
+    + (recap.confirmations?.nombre || 0) + (recap.confirmations?.non_conformes || []).length
+    + ecartsInventaire.length + pertesAcceptees.length + (inv.pertes_en_attente || 0) + inventairesManques.length;
 
   return (
     <div className="space-y-6">
@@ -223,6 +231,21 @@ function Contenu({ recap, titre }) {
           <Liste titre="Achats non conformes à la facture (30 derniers jours)" lignes={recap.confirmations?.non_conformes}
             rendu={(x) => <>{heure(x.le)} — {x.description} ({utils.formatCFA(x.montant)}), saisi par <b>{x.par || '-'}</b> le {heure(x.achete_le)}. Constat : « {x.commentaire} »</>} />
 
+          <Liste titre="Écarts d'inventaire" lignes={ecartsInventaire}
+            rendu={(e) => <>{heure(e.inventaire.cloture_le)} — {LIEUX[e.inventaire.lieu]}, inventaire n°{e.inventaire.id} : {e.produit} attendu {qte(e.attendu)}, compté {qte(e.compte)} {e.unite || ''}
+              {' '}(<b>{e.ecart > 0 ? '+' : ''}{qte(e.ecart)}</b>, {utils.formatCFA(e.valeur)}) par {e.par || '-'}{e.comptages > 1 && `, premier comptage ${qte(e.premier)}`}. Motif : « {e.motif || '-'} »</>} />
+
+          <Liste titre="Pertes acceptées" lignes={pertesAcceptees}
+            rendu={(x) => <>{heure(x.le)} — {LIEUX[x.lieu]} : {x.produit} <b>{qte(x.quantite)} {x.unite || ''}</b> ({utils.formatCFA(x.valeur)}), déclarée par {x.par || '-'}, acceptée par {x.decide_par || '-'}. Motif : « {x.motif} »</>} />
+
+          <Liste titre="Inventaires en retard (état actuel)" lignes={inventairesManques}
+            rendu={(x) => <>{LIEUX[x.lieu]} : {x.frequence === 'quotidienne' ? 'l\'inventaire du soir n\'a pas été fait hier' : `l'inventaire de la semaine, prévu le ${new Date(x.depuis + 'T12:00:00').toLocaleDateString('fr-FR')}, n'a pas été fait`}
+              {x.dernier ? `, dernier fait le ${heure(x.dernier)}` : ', aucun fait jusqu\'ici'}{x.en_cours_id ? ` (inventaire n°${x.en_cours_id} en cours)` : ''}</>} />
+
+          {inv.pertes_en_attente > 0 && (
+            <p className="text-sm text-gray-600">{inv.pertes_en_attente} perte(s) en attente de votre décision, dans « À faire ».</p>
+          )}
+
           {autoValidations.length > 0 && (
             <p className="text-sm text-gray-600">
               {autoValidations.length} demande(s) validée(s) par la personne qui les avait faites : la réception a obligatoirement été faite par quelqu'un d'autre.
@@ -296,6 +319,22 @@ function Contenu({ recap, titre }) {
           </div>
         </div>
       </Section>
+
+      {/* Inventaires et pertes */}
+      {recap.inventaires && (
+        <Section icone={ClipboardCheck} titre={`Inventaires (${(inv.inventaires || []).length}) et pertes (${(inv.pertes || []).length})`}>
+          <Tableau entetes={['Ouvert', 'Lieu', 'Contenu', 'Statut', 'Par', 'Produits', 'Écarts', 'Valeur']} lignes={inv.inventaires}
+            rendu={(i) => [heure(i.ouvert_le), LIEUX[i.lieu], i.mode === 'tirage' ? 'tirage au hasard' : 'complet',
+              i.statut === 'termine' ? 'terminé' : i.statut === 'annule' ? `annulé (« ${i.motif_annulation || '-'} »)` : 'en cours',
+              i.par || '-', i.nb_produits, i.nb_ecarts ?? '-',
+              i.valeur_ecarts === null || i.valeur_ecarts === undefined ? '-' : <span className={Number(i.valeur_ecarts) !== 0 ? 'text-red-700 font-semibold' : ''}>{utils.formatCFA(i.valeur_ecarts)}</span>]} />
+          {(inv.pertes || []).length > 0 && (
+            <Tableau entetes={['Déclarée', 'Lieu', 'Produit', 'Quantité', 'Valeur', 'Motif', 'Par', 'Décision']} lignes={inv.pertes}
+              rendu={(x) => [heure(x.le), LIEUX[x.lieu], x.produit, `${qte(x.quantite)} ${x.unite || ''}`, utils.formatCFA(x.valeur), x.motif, x.par || '-',
+                x.statut === 'en_attente' ? 'en attente' : x.statut === 'acceptee' ? `acceptée (${x.decide_par || '-'})` : `refusée : ${x.motif_refus || '-'}`]} />
+          )}
+        </Section>
+      )}
 
       {/* Caisses : ouverture, comptage, écart */}
       {recap.caisses && (
