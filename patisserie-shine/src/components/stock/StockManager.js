@@ -10,6 +10,8 @@ import { utils } from '../../utils/formatters';
 
 
 export default function StockManager({ currentUser }) {
+  // Les achats du stock principal : magasinier, propriétaire et gérants (la base refuse les autres)
+  const peutAcheter = ['admin', 'magasinier'].includes(currentUser.role);
   const [fenetreSaisie, demander] = useSaisie();
   // Clés anti-doublon : un double clic ou un nouvel essai après une coupure n'enregistre pas deux fois
   const cleCreationRef = useRef(null);
@@ -633,7 +635,7 @@ export default function StockManager({ currentUser }) {
             </button>
           )}
           
-          {['admin', 'employe_production', 'magasinier'].includes(currentUser.role) && (
+          {peutAcheter && (
             <button 
               onClick={() => setShowAddModal(true)}
               className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-2 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 flex items-center space-x-2"
@@ -937,23 +939,24 @@ export default function StockManager({ currentUser }) {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
-                          {['admin', 'employe_production', 'magasinier'].includes(currentUser.role) && (
-                            <>
-                              <button
-                                onClick={() => startReappro(product)}
-                                className="text-green-600 hover:text-green-900 p-1 hover:bg-green-50 rounded transition-colors"
-                                title="Réapprovisionner"
-                              >
-                                <TrendingUp className="h-4 w-4" />
-                              </button>
-                              <button
-                                onClick={() => startEdit(product)}
-                                className="text-indigo-600 hover:text-indigo-900 p-1 hover:bg-indigo-50 rounded transition-colors"
-                                title="Modifier"
-                              >
-                                <Edit className="h-4 w-4" />
-                              </button>
-                            </>
+                          {peutAcheter && (
+                            <button
+                              onClick={() => startReappro(product)}
+                              className="text-green-600 hover:text-green-900 p-1 hover:bg-green-50 rounded transition-colors"
+                              title="Réapprovisionner"
+                            >
+                              <TrendingUp className="h-4 w-4" />
+                            </button>
+                          )}
+                          {/* Nom, unité, prix d'achat : gérants et production (modifier_produit) */}
+                          {['admin', 'employe_production'].includes(currentUser.role) && (
+                            <button
+                              onClick={() => startEdit(product)}
+                              className="text-indigo-600 hover:text-indigo-900 p-1 hover:bg-indigo-50 rounded transition-colors"
+                              title="Modifier"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
                           )}
                           {currentUser.role === 'admin' && (
                             <button

@@ -348,3 +348,28 @@ Le magasinier réceptionne la marchandise achetée et la fait sortir : c'est lui
 **Mise en production : d'abord `partie5_caisse.sql`, puis `partie6_magasinier.sql` (SQL Editor), puis l'application.** Créez ensuite le compte du magasinier depuis l'écran Utilisateurs.
 
 Annulation : `partie6_annulation.sql` (SQL Editor). Elle est refusée tant qu'un compte a le rôle magasinier. Les confirmations déjà faites sont affichées, puis supprimées avec leur table. Achats, dépenses, demandes et envois restent.
+
+## Partie 7 : les achats réservés au magasinier, au propriétaire et aux gérants
+
+Décision de la propriétaire : « seul le magasinier gère cela ». Le propriétaire et les gérants gardent le droit d'acheter pour dépanner.
+
+### Ce que fait `partie7_achats_reserves.sql` (aucune suppression : exécutable directement)
+- **Droit d'acheter :** `creer_produit` et `reapprovisionner_produit` n'acceptent plus le rôle production ; seul le contrôle du rôle change.
+- **Achats du propriétaire et des gérants :** ils restent à confirmer avec la facture, comme ceux du magasinier.
+- **Ce que la production garde :** stock atelier, envois de l'atelier vers la boutique, production, et la modification du nom, de l'unité ou du prix d'un produit (`modifier_produit`, inchangé).
+
+### Application
+- **Stock Principal :** « Nouveau Produit » et « Réapprovisionner » n'apparaissent que pour le magasinier, le propriétaire et les gérants.
+- **« Modifier » :** ce bouton n'apparaît que pour les gérants et la production, comme le permet la base. Le magasinier ne l'a pas.
+
+### Tests
+- `PGHOST=... ./tests/lancer_achats_reserves.sh` :
+  - passage 1 : **12/12**, annulation exacte sur 357 objets ;
+  - passages 2 à 7, sur des bases neuves : non-régression **195/195**, stock **66/66**, récapitulatif **47/47**, achats **34/34**, caisse **24/24**, magasinier **51/51** ;
+  - là où les anciens scénarios faisaient acheter la production, c'est le magasinier qui achète.
+- **Banc navigateur :** `parcours_magasinier.js` passe à **24/24** (la production n'a plus de bouton d'achat, le magasinier n'a pas « Modifier ») ; la base est préparée avec `PARTIE7=1`.
+
+**Mise en production :** l'ordre n'a pas d'importance.
+- Avec la base modifiée mais l'ancienne application, la production verrait encore les boutons d'achat, mais la base refuserait l'achat.
+
+Annulation : `partie7_annulation.sql`.

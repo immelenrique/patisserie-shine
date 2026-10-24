@@ -658,7 +658,7 @@ export default function UserManagement({ currentUser }) {
             </select>
             <div className="text-xs text-gray-500 mt-1">
               <strong>Boutique:</strong> Consultation et demandes uniquement<br/>
-              <strong>Production:</strong> Gestion stock et production<br/>
+              <strong>Production:</strong> Stock atelier et production (les achats passent par le magasinier)<br/>
               <strong>Cuisine:</strong> Gestion stock cuisine et caisse cuisine<br/>
               <strong>Magasinier:</strong> Entre les achats au stock principal et valide les sorties (demandes) ; ni caisse, ni correction de stock<br/>
               <strong>Admin:</strong> Accès complet à toutes les fonctionnalités
