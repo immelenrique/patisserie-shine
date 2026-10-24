@@ -76,7 +76,9 @@ INSERT INTO prix_vente_recettes (nom_produit, prix_vente, actif) VALUES ('Pain t
   p = await ouvrir('prod')
   await onglet(p, 'Recettes', 'Production')
   verifier('2. production : ni « Nouvelle Recette » ni « Modifier »', await p.getByRole('button', { name: /Nouvelle Recette/ }).count() === 0 && await p.getByRole('button', { name: 'Modifier', exact: true }).count() === 0)
-  await onglet(p, 'Production', 'Production')
+  // Le groupe et l'onglet s'appellent tous deux « Production » : on clique le sous-onglet
+  await nav(p).locator('div.border-t').getByRole('button', { name: 'Production', exact: true }).click()
+  await p.waitForTimeout(2500)
   verifier('2. la recette sans rendement est signalée à la production', await p.getByText(/Recette\(s\) sans rendement/).count() === 1)
   await p.getByRole('button', { name: 'Nouvelle production' }).click()
   await p.getByLabel('Recette').selectOption('Pain test')
@@ -103,7 +105,8 @@ INSERT INTO prix_vente_recettes (nom_produit, prix_vente, actif) VALUES ('Pain t
   // 3. La vendeuse compte le pain à l'arrivée
   p = await ouvrir('vendeuse')
   await onglet(p, 'Réceptions', 'Demandes et réceptions')
-  const envoi = sql("SELECT id FROM envois WHERE origine = 'atelier' ORDER BY id DESC LIMIT 1")
+  // Le premier envoi (75 pains) ; le second (20) attend encore
+  const envoi = sql("SELECT e.id FROM envois e JOIN envoi_lignes l ON l.envoi_id = e.id WHERE e.origine = 'atelier' AND l.quantite_envoyee = 75")
   await p.locator(`div.p-4:has-text("Envoi #${envoi}")`).getByRole('button', { name: 'Réceptionner' }).click()
   await p.getByPlaceholder('Compté').fill('75')
   await p.getByRole('button', { name: 'Valider mon comptage' }).click()

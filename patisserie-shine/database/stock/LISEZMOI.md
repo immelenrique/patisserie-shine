@@ -436,3 +436,69 @@ Annulation : `partie8_annulation.sql` (SQL Editor).
 - Les inventaires et pertes enregistrés sont affichés, puis supprimés avec leurs tables.
 - Le stock et le journal restent tels quels.
 - Les types « inventaire » et « perte » restent acceptés si le journal en contient.
+
+## Partie 9 : production de l'atelier par recette, recettes protégées
+
+### Ce qui était faux
+- **Matières :** une production n'enlevait aucune matière du stock atelier. Un vol de farine ou de beurre restait donc invisible.
+- **Boutique :** une production « Boutique » ajoutait directement le stock boutique, sans envoi ni comptage à l'arrivée. L'ancien déclencheur réagit aussi aux modifications.
+- **Recettes :** n'importe quel compte connecté pouvait modifier une recette, donc les quantités à retirer. Le remplacement d'une recette depuis l'écran échouait par ailleurs : la suppression était refusée, et l'ajout se faisait en doublon.
+- **Coûts :** le coût affiché d'une recette divisait deux fois par la quantité, alors que le prix d'achat enregistré est déjà un prix à l'unité.
+
+### Décisions de la propriétaire
+- **Destination :** le produit fini entre au stock atelier, puis part à la boutique par un envoi compté à l'arrivée.
+- **Matières manquantes :** s'il en manque au stock enregistré, la production est acceptée. On retire ce qui est enregistré, sans jamais descendre sous zéro, et le manque est simplement noté.
+- **Rendement :** une recette donne environ N produits par fournée, dans une marge (par exemple N-3 à N+2). Hors de la marge, le propriétaire et les gérants sont prévenus.
+
+### Ce que fait `partie9_production_recettes.sql` (aucune suppression : exécutable directement)
+- **`recettes_fiches`, une par recette :** rendement par fournée, marge en moins et en plus, nom du produit fini. `journal_recettes` (ajout seul) garde chaque version.
+- **`recette_enregistrer` et `recette_supprimer`,** pour le propriétaire et les gérants seulement :
+  - les ingrédients et la fiche sont remplacés ensemble ;
+  - l'ancienne version reste dans l'historique ;
+  - la suppression demande un motif.
+  - Les recettes ne s'écrivent plus en direct.
+- **`declarer_production(recette, fournées, quantité obtenue, envoyer)`, pour la production et les gérants :**
+  - les matières (fournées × quantités) sortent du stock atelier et sont inscrites au journal ;
+  - le produit fini, trouvé par son nom ou créé, entre au stock atelier ;
+  - il reprend le prix de vente de la recette s'il n'en a pas ;
+  - « envoyer » crée aussitôt l'envoi vers la boutique ;
+  - une quantité hors marge prévient le propriétaire et les gérants ;
+  - le même envoi répété ne crée pas une seconde production.
+  - Les productions ne s'écrivent plus en direct et ne se suppriment pas.
+- **`recap_productions(du, au)` :** productions (obtenu, attendu, manques, coût), recettes modifiées et recettes sans rendement.
+
+### Application
+- **Production :** nouvelle production avec recette, nombre de fournées et quantité obtenue.
+  - Avant d'enregistrer, l'écran montre les matières retirées, le stock atelier enregistré et le manque éventuel, et annonce un résultat hors marge.
+  - Une case « Envoyer tout à la boutique maintenant » fait partir l'envoi.
+  - La liste des dernières productions suit.
+- **Recettes :**
+  - pour chaque recette, « Donne environ N par fournée (marge) » ou « Rendement à indiquer » ;
+  - « Modifier » et « Supprimer » pour le propriétaire et les gérants ;
+  - quatre champs dans la fenêtre : produits par fournée, marges, nom du produit fini.
+- **« À faire »** des gérants : « Recettes à compléter ».
+- **Récapitulatif :**
+  - en points à vérifier : productions hors marge, recettes modifiées (avec l'ancienne version), recettes sans rendement ;
+  - une section « Productions ».
+
+**À faire après la mise en production :** les 9 recettes actuelles n'ont pas de rendement, donc la production ne pourra pas les utiliser tant qu'elles ne sont pas complétées. Il faut indiquer pour chacune combien elle donne par fournée et vérifier ses quantités : par exemple, « 1 pain au lait » contient 100 de farine.
+
+### Tests
+- `PGHOST=... ./tests/lancer_production.sh` :
+  - passage 1 : **44/44**. Cela comprend l'annulation sur base vide (exacte, 387 objets), le scénario de 42 vérifications, deux tests de concurrence (même production envoyée deux fois, deux productions simultanées sur la même farine), puis l'annulation avec des données ;
+  - passages 2 à 9, sur des bases neuves : non-régression **195/195**, stock **65/65**, récapitulatif **47/47**, achats **34/34**, caisse **24/24**, magasinier **51/51**, achats réservés **11/11**, inventaires **69/69**.
+- **Changements voulus dans les anciens scénarios :** la production directe en boutique est refusée (scénarios stock et sécurité).
+- **Banc navigateur :** `parcours_production.js` **20/20**. Il couvre :
+  - le réglage d'une recette par un gérant ;
+  - la production sans droit de modifier les recettes ;
+  - deux productions, dont une hors marge ;
+  - le comptage en boutique ;
+  - le récapitulatif.
+  La base est préparée avec `PARTIE9=1`.
+
+**Mise en production : d'abord `partie9_production_recettes.sql`, puis l'application.**
+
+Annulation : `partie9_annulation.sql` (SQL Editor).
+- Les fiches et l'historique des recettes sont affichés, puis supprimés.
+- Les productions restent, sans leur détail.
+- Les recettes redeviennent modifiables par tous, comme avant.
