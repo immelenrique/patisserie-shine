@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase-client';
-import { Truck, ClipboardCheck, AlertTriangle, CreditCard, FileText, RefreshCw, ChevronRight, Camera } from 'lucide-react';
+import { Truck, ClipboardCheck, AlertTriangle, CreditCard, FileText, RefreshCw, ChevronRight, Camera, FileCheck } from 'lucide-react';
 import { recuService } from '../../services';
 import { Card, useSaisie } from '../ui';
 
@@ -31,12 +31,18 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
   const [enCours, setEnCours] = useState(null);
   const [achatsSansRecu, setAchatsSansRecu] = useState([]);
   const [envoiRecu, setEnvoiRecu] = useState(null);
+  // Achats à confirmer avec la facture (propriétaire)
+  const [aConfirmer, setAConfirmer] = useState({ nombre: 0, a_confirmer: [] });
   const recuInputRef = useRef(null);
   const recuCibleRef = useRef(null);
   const enCoursRef = useRef(false);
   const [fenetreSaisie, demander] = useSaisie();
 
   const estAdmin = currentUser.role === 'admin';
+  const estMagasinier = currentUser.role === 'magasinier';
+  // Le magasinier valide les demandes comme le propriétaire et les gérants
+  const peutValider = estAdmin || estMagasinier;
+  const estProprietaire = !!currentUser.is_super_admin;
 
   useEffect(() => {
     charger();
@@ -60,7 +66,7 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
           .order('created_at', { ascending: false })
           .limit(10)
       ];
-      if (estAdmin) {
+      if (peutValider) {
         requetes.push(supabase.from('demandes_groupees')
           .select('id, destination, created_at, demandeur_id, demandeur:profiles!demandes_groupees_demandeur_id_fkey(nom, username), lignes:demandes!demandes_demande_groupee_id_fkey(quantite, produit:produits(nom, quantite_restante, unite:unites(label)))')
           .eq('statut', 'en_attente')
@@ -90,6 +96,12 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
         .limit(30);
       if (rAchats.error) console.warn('Achats sans reçu indisponibles:', rAchats.error.message);
       setAchatsSansRecu(rAchats.error ? [] : (rAchats.data || []));
+      if (estProprietaire) {
+        // Sans la partie 6 en base, la fonction n'existe pas encore : la section reste vide
+        const rConf = await supabase.rpc('achats_a_confirmer');
+        if (rConf.error) console.warn('Achats à confirmer indisponibles:', rConf.error.message);
+        setAConfirmer(rConf.error || !rConf.data ? { nombre: 0, a_confirmer: [] } : rConf.data);
+      }
       setErreur('');
     } catch (err) {
       console.error('Erreur chargement À faire:', err);
@@ -103,7 +115,8 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
   const peutReceptionner = (e) => !(e.auto_validation && e.valideur_id === currentUser.id);
   const enTransit = envois.filter(e => e.statut === 'en_transit');
   const bloques = enTransit.filter(e => Date.now() - new Date(e.cree_le).getTime() > HEURES_BLOCAGE * 3600000);
-  const aReceptionner = enTransit.filter(e => !bloques.includes(e) && peutReceptionner(e) && (!estAdmin || e.demandeur_id === currentUser.id));
+  // Le magasinier fait partir la marchandise : c'est la personne qui la reçoit qui la compte
+  const aReceptionner = estMagasinier ? [] : enTransit.filter(e => !bloques.includes(e) && peutReceptionner(e) && (!estAdmin || e.demandeur_id === currentUser.id));
   const ecarts = estAdmin ? envois.filter(e => e.statut === 'recu' && e.avec_ecart) : [];
 
   const libelleLignes = (lignes, champ = 'quantite_envoyee') =>
@@ -156,7 +169,41 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
     await charger();
   };
 
-  const nbTaches = bloques.length + aReceptionner.length + aValider.length + ecarts.length + achatsSansRecu.length;
+  // La propriétaire compare l'achat saisi (quantité, montant) à la facture
+  const confirmerAchat = async (a, conforme) => {
+    if (enCoursRef.current) return;
+    const detail = [`${a.produit} : ${qte(a.quantite)} ${a.unite || ''}`, `Montant : ${new Intl.NumberFormat('fr-FR').format(a.montant)} F`
+      + (a.prix_unitaire !== null ? ` (${new Intl.NumberFormat('fr-FR').format(a.prix_unitaire)} F l'unité)` : ''), `Saisi par ${a.par || '-'}`];
+    const r = conforme
+      ? await demander({ titre: 'Achat conforme à la facture', message: 'La facture indique bien cette quantité et ce montant ?', details: detail, confirmer: 'Oui, conforme' })
+      : await demander({
+          titre: 'Achat non conforme', message: 'Indiquez ce que dit la facture. Les gérants et la personne qui a saisi l\'achat seront prévenus.', details: detail,
+          champs: [{ nom: 'commentaire', label: 'Ce qui ne correspond pas', obligatoire: true, placeholder: 'ex. : facture de 3 kg pour 9 000 F' }],
+          confirmer: 'Signaler', danger: true
+        });
+    if (!r) return;
+    enCoursRef.current = true;
+    setEnCours('achat-' + a.depense_id);
+    const { error } = await supabase.rpc('confirmer_achat', { p_depense_id: a.depense_id, p_conforme: conforme, p_commentaire: r.commentaire || null });
+    enCoursRef.current = false;
+    setEnCours(null);
+    if (error) alert('Confirmation impossible : ' + error.message);
+    else if (!conforme) alert('Achat signalé. Si la quantité en stock est fausse, corrigez-la dans « Stock Principal » (correction motivée).');
+    await charger();
+  };
+  const voirRecu = async (chemin) => {
+    // L'onglet est ouvert tout de suite (sinon le navigateur le bloque), puis dirigé vers le reçu
+    const onglet = window.open('', '_blank');
+    const { url, error } = await recuService.lien(chemin);
+    if (error || !url) {
+      onglet?.close();
+      alert('Reçu indisponible : ' + (error || 'lien introuvable'));
+      return;
+    }
+    if (onglet) onglet.location.href = url; else window.location.href = url;
+  };
+
+  const nbTaches = bloques.length + aReceptionner.length + aValider.length + ecarts.length + achatsSansRecu.length + (aConfirmer.nombre || 0);
 
   if (loading) {
     return (
@@ -217,8 +264,8 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
         </Section>
       )}
 
-      {/* 3. Demandes à valider (propriétaire et gérants) */}
-      {estAdmin && aValider.length > 0 && (
+      {/* 3. Demandes à valider (magasinier, propriétaire et gérants) */}
+      {peutValider && aValider.length > 0 && (
         <Section icone={ClipboardCheck} titre={`Demandes à valider (${aValider.length})`}
           lien={{ libelle: 'Ajuster ou refuser dans Demandes', onClick: () => onNaviguer('demandes') }}>
           {aValider.map(d => (
@@ -229,6 +276,27 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
               badge={d.demandeur_id === currentUser.id ? 'Votre demande : un autre devra réceptionner' : null}
               action={{ libelle: enCours === d.id ? 'Validation…' : 'Valider tel quel', disabled: enCours !== null, onClick: () => validerTelQuel(d) }} />
           ))}
+        </Section>
+      )}
+
+      {/* 3 bis. Achats à confirmer avec la facture (propriétaire) */}
+      {estProprietaire && aConfirmer.nombre > 0 && (
+        <Section icone={FileCheck} titre={`Achats à confirmer avec la facture (${aConfirmer.nombre})`}>
+          {(aConfirmer.a_confirmer || []).map(a => {
+            const recu = (a.recus || []).find(x => x.present);
+            const occupe = enCours !== null;
+            return (
+              <Ligne key={a.depense_id}
+                titre={`${a.produit} : ${qte(a.quantite)} ${a.unite || ''}`}
+                texte={`${new Intl.NumberFormat('fr-FR').format(a.montant)} F${a.prix_unitaire !== null ? ` · ${new Intl.NumberFormat('fr-FR').format(a.prix_unitaire)} F l'unité` : ''} · ${a.nature}`}
+                note={`Saisi par ${a.par || '-'} ${depuis(a.le)} · ${recu ? 'reçu joint' : (a.recus || []).length ? 'reçu disparu du stockage' : 'aucun reçu'}`}
+                actions={[
+                  ...(recu ? [{ libelle: 'Voir le reçu', secondaire: true, onClick: () => voirRecu(recu.chemin) }] : []),
+                  { libelle: enCours === 'achat-' + a.depense_id ? 'Envoi…' : 'Conforme', disabled: occupe, onClick: () => confirmerAchat(a, true) },
+                  { libelle: 'Non conforme', secondaire: true, disabled: occupe, onClick: () => confirmerAchat(a, false) }
+                ]} />
+            );
+          })}
         </Section>
       )}
 
@@ -308,7 +376,8 @@ function Section({ icone: Icone, titre, alerte = false, lien = null, children })
   );
 }
 
-function Ligne({ titre, texte, note, badge, action }) {
+function Ligne({ titre, texte, note, badge, action, actions }) {
+  const boutons = actions || (action ? [action] : []);
   return (
     <div className="p-4 flex flex-col md:flex-row md:items-center gap-3">
       <div className="flex-1 min-w-0 space-y-1">
@@ -317,13 +386,17 @@ function Ligne({ titre, texte, note, badge, action }) {
         <div className="text-xs text-gray-600">{note}</div>
       </div>
       {badge && <span className="self-start md:self-auto text-xs font-semibold text-blue-900 bg-blue-100 rounded-full px-3 py-1">{badge}</span>}
-      {action && (
-        <button onClick={action.onClick} disabled={action.disabled}
-          className={`self-start md:self-auto px-4 min-h-[44px] rounded-lg font-medium disabled:opacity-50 ${action.secondaire
-            ? 'border border-orange-700 text-orange-800 bg-white hover:bg-orange-50'
-            : 'bg-orange-700 hover:bg-orange-800 text-white'}`}>
-          {action.libelle}
-        </button>
+      {boutons.length > 0 && (
+        <div className="self-start md:self-auto flex flex-wrap gap-2">
+          {boutons.map(b => (
+            <button key={b.libelle} onClick={b.onClick} disabled={b.disabled}
+              className={`px-4 min-h-[44px] rounded-lg font-medium disabled:opacity-50 ${b.secondaire
+                ? 'border border-orange-700 text-orange-800 bg-white hover:bg-orange-50'
+                : 'bg-orange-700 hover:bg-orange-800 text-white'}`}>
+              {b.libelle}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

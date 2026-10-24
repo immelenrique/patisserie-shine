@@ -269,3 +269,82 @@ Les fichiers sont gardés par le service de stockage de Supabase, qui appartient
 **Mise en production :** d'abord `partie4_achats_recus.sql`, puis l'application. Dans l'autre sens, l'ancienne application fonctionne encore : elle ignore simplement la dépense créée, et la base refuse d'elle-même toute modification d'une dépense d'achat.
 
 Annulation : `partie4_annulation.sql` (SQL Editor). Les dépenses déjà créées restent, comme dépenses ordinaires.
+
+## Partie 5 : caisse ouverte, comptage de l'argent à l'aveugle
+
+### Ce qui était faux
+- **Montant attendu montré avant le comptage :** la clôture affichait « Montant théorique : X » puis demandait le montant réel. Il suffisait de recopier X et de garder un éventuel excédent, sans écart visible.
+- **Calcul par le navigateur, écriture libre :** le montant attendu était calculé par l'écran (ventes du jour civil, sans fond de caisse), et n'importe quel compte pouvait écrire un arrêt de caisse.
+- **Jamais utilisé :** en production, 0 arrêt, 0 ouverture et 0 relevé de caisse.
+
+### Ce que fait `partie5_caisse.sql` (aucune suppression : exécutable directement)
+- **`ouvrir_caisse(fond)` :** la caissière (ou le propriétaire, un gérant) déclare le fond de caisse. Une seule caisse ouverte par personne, même en cas de double appui simultané : la seconde demande renvoie la caisse existante, fond inchangé.
+- **`cloturer_caisse(montant, confirmer, motif)` :**
+  - la base calcule le montant attendu : fond + ventes non annulées de la personne depuis l'ouverture ;
+  - si le comptage est juste, la caisse est clôturée ;
+  - sinon la réponse dit seulement « écart », **sans révéler le montant attendu**, et l'on recompte ;
+  - chaque comptage est gardé, y compris ceux refaits ;
+  - pour clôturer avec un écart, un motif est obligatoire ; le propriétaire et les gérants sont alors prévenus (attendu, compté, nombre de comptages, motif).
+- **Écriture fermée :** ouvertures, relevés et arrêts de caisse ne s'écrivent plus que par ces deux fonctions.
+- **Récapitulatif :** section « Caisses » (fond, ventes, attendu, compté, écart, nombre de comptages). En points à vérifier :
+  - les écarts de caisse, avec le premier comptage quand on a recompté ;
+  - les caisses ouvertes depuis plus de 16 h (clôture oubliée) ;
+  - les ventes faites sans caisse ouverte (argent compté nulle part).
+
+### Application
+- **Caisse :** bandeau « Caisse ouverte depuis HH:MM · fond X » ou « Caisse fermée », bouton « Ouvrir la caisse ». La première vente d'une caisse fermée demande d'abord le fond de caisse ; si l'on annule, la vente n'est pas faite.
+- **Clôture :** « Montant compté », sans montant affiché. En cas d'écart : « Nouveau comptage » et « Motif » (laisser vide pour simplement recompter). Le détail (fond, ventes, attendu, compté, écart) n'est montré qu'après la clôture.
+- La fenêtre de saisie accepte 0 quand c'est permis (fond de caisse vide).
+
+### Limite
+La caissière voit ses ventes dans « Ventes du jour » : elle pourrait refaire le calcul elle-même. Le comptage à l'aveugle empêche de recopier un chiffre donné par l'écran. Chaque comptage reste gardé et chaque écart est signalé.
+
+### Tests
+- `PGHOST=... ./tests/lancer_caisse.sh` :
+  - passage 1 : **29/29** (scénario, deux tests de concurrence réels : ouvertures et clôtures simultanées), annulation exacte sur 347 objets ;
+  - passages 2 à 5, sur des bases neuves : non-régression **195/195**, stock **66/66**, récapitulatif **47/47**, achats **34/34**.
+- **Changement voulu dans le scénario de sécurité :** l'écriture directe d'un arrêt de caisse est refusée.
+- **Banc navigateur :** `parcours_caisse.js` **18/18** (ouverture avec fond, vente, comptage faux sans que l'attendu soit montré, recomptage, clôture avec motif, alerte, vente caisse fermée, fond nul, récapitulatif). Les autres parcours passent avec la partie 5, en version de production : 28/28, 14/14, 11/11, 22/22, 14/14, et le tour des 20 écrans 5/5. La base est préparée avec `PARTIE5=1`.
+
+**Mise en production : d'abord `partie5_caisse.sql`, puis l'application.**
+- Dans cet ordre, l'ancienne application fonctionne encore pour vendre ; seule son ancienne clôture est refusée, et elle n'a jamais servi.
+- Dans l'autre ordre, la nouvelle application ne pourrait pas ouvrir de caisse, donc pas vendre.
+
+Annulation : `partie5_annulation.sql` (SQL Editor). Les caisses et relevés déjà enregistrés restent.
+
+## Partie 6 : le magasinier, et les achats confirmés sur facture
+
+### Ce qui est demandé
+Le magasinier réceptionne la marchandise achetée et la fait sortir : c'est lui qui valide les demandes, seul. La propriétaire suit tout, et confirme avec les factures les quantités et montants qu'il a saisis.
+
+### Ce que fait `partie6_magasinier.sql` (SQL Editor : il contient un DROP CONSTRAINT)
+- **Rôle `magasinier` :** ajouté à la liste des rôles acceptés.
+- **Entrées :** `creer_produit` et `reapprovisionner_produit` lui sont ouvertes. Chaque achat crée sa dépense à son nom, avec la photo de la facture (partie 4).
+- **Sorties :** `valider_demande_groupee` et `refuser_demande` lui sont ouvertes. Pour ces quatre fonctions, seul le contrôle du rôle change. Le magasinier est prévenu de chaque nouvelle demande, et voit les envois qui partent du stock principal.
+- **Ce qu'il ne peut pas faire :**
+  - corriger une quantité du stock, modifier un prix d'achat, archiver un produit ;
+  - annuler un envoi, réceptionner un envoi ;
+  - tenir une caisse ;
+  - lire le journal du stock, le récapitulatif ou les confirmations.
+- **Contrôle de ses sorties :** la personne qui reçoit compte sans voir la quantité envoyée (partie 1). Un écart est donc inscrit « validé par le magasinier, compté par X ».
+- **`confirmer_achat(dépense, conforme, commentaire)`, propriétaire seulement :**
+  - « conforme » : la facture correspond à la quantité et au montant saisis ;
+  - « non conforme » : le constat est obligatoire, et les gérants ainsi que l'auteur de l'achat sont prévenus ;
+  - la confirmation ne se modifie pas et ne se supprime pas ; un second envoi renvoie la première réponse ;
+  - si la quantité en stock est fausse, la propriétaire la rectifie ensuite par une correction motivée (partie 2).
+- **`achats_a_confirmer()`, propriétaire seulement :** les achats pas encore comparés à la facture (avec quantité, prix unitaire, auteur et reçu), et les achats non conformes des 30 derniers jours.
+
+### Application
+- **Équipe :** le rôle « Magasinier » se choisit à la création et à la modification d'un compte. Le serveur refuse aussi tout rôle inconnu à la création.
+- **Le magasinier voit trois onglets :** À faire, Stock Principal (créer, réapprovisionner avec la photo de la facture), Demandes (toutes les demandes, validation et refus). Son « À faire » contient les demandes à valider.
+- **La propriétaire :** section « Achats à confirmer avec la facture » dans « À faire », avec « Voir le reçu », « Conforme » et « Non conforme ». Le récapitulatif liste aussi les achats à confirmer et les achats non conformes.
+
+### Tests
+- `PGHOST=... ./tests/lancer_magasinier.sh` :
+  - passage 1 : **57/57**. Cela comprend le scénario, deux validations simultanées de la même demande (un seul envoi) et deux confirmations simultanées du même achat (une seule). L'annulation est refusée tant qu'un compte est magasinier, puis exacte sur 349 objets ;
+  - passages 2 à 6, sur des bases neuves : non-régression **195/195**, stock **66/66**, récapitulatif **47/47**, achats **34/34**, caisse **24/24**.
+- **Banc navigateur :** `parcours_magasinier.js` **22/22**. Il couvre les onglets du magasinier, la validation depuis « À faire », deux achats (dont un avec facture), la confirmation « conforme » et « non conforme », le récapitulatif et l'écran Équipe. La base est préparée avec `PARTIE6=1`.
+
+**Mise en production : d'abord `partie5_caisse.sql`, puis `partie6_magasinier.sql` (SQL Editor), puis l'application.** Créez ensuite le compte du magasinier depuis l'écran Utilisateurs.
+
+Annulation : `partie6_annulation.sql` (SQL Editor). Elle est refusée tant qu'un compte a le rôle magasinier. Les confirmations déjà faites sont affichées, puis supprimées avec leur table. Achats, dépenses, demandes et envois restent.

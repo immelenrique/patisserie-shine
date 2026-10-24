@@ -71,7 +71,7 @@ export async function PUT(request) {
     }
 
     // Validation du rôle
-    const rolesValides = ['admin', 'employe_production', 'employe_boutique', 'employe_cuisine']
+    const rolesValides = ['admin', 'employe_production', 'employe_boutique', 'employe_cuisine', 'magasinier']
     if (!rolesValides.includes(role)) {
       console.error('❌ Rôle invalide:', role)
       return NextResponse.json(

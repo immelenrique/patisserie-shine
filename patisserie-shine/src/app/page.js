@@ -41,7 +41,7 @@ import {
 } from 'lucide-react';
 
 // Libellés affichés à la place des rôles techniques
-const LIBELLES_ROLES = { admin: 'Gérant', employe_boutique: 'Boutique', employe_production: 'Production', employe_cuisine: 'Cuisine' };
+const LIBELLES_ROLES = { admin: 'Gérant', employe_boutique: 'Boutique', employe_production: 'Production', employe_cuisine: 'Cuisine', magasinier: 'Magasinier' };
 
 // Au-delà de 7 onglets, la barre est regroupée par tâche : une rangée de groupes, puis les onglets du groupe ouvert
 const ONGLETS_SANS_GROUPES = 7;
@@ -259,6 +259,11 @@ useEffect(() => {
           'view_recettes', 'view_demandes', 'view_production'
         ];
         return defaultPermissions.includes(permission);
+      }
+
+      // Magasinier : entrées (achats) et sorties (demandes) du stock principal
+      if (currentUser?.role === 'magasinier') {
+        return ['view_stock', 'view_demandes'].includes(permission);
       }
 
       if (currentUser?.role === 'employe_boutique') {

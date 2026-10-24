@@ -77,6 +77,12 @@ const ATTENDU = /realtime\/v1|WebSocket/
   await tuile.click()
   await p.getByPlaceholder('0').fill('1000')
   await p.getByRole('button', { name: /Finaliser la Vente/ }).evaluate((b) => { b.click(); b.click() })
+  // Caisse fermée : la vente demande d'abord le fond de caisse (partie 5)
+  const ouverture = p.getByRole('dialog').getByLabel(/Fond de caisse/)
+  if (await ouverture.waitFor({ timeout: 3000 }).then(() => true, () => false)) {
+    await ouverture.fill('0')
+    await p.getByRole('dialog').getByRole('button', { name: 'Ouvrir la caisse', exact: true }).click()
+  }
   await p.waitForTimeout(3500)
   verifier('2. caisse : une seule vente enregistrée malgré le double clic', sql('SELECT count(*) FROM ventes') === String(Number(ventesAvant) + 1))
   verifier('2. caisse : 2 croissants pour 1 000 F, stock décompté de 2',

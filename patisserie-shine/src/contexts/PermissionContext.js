@@ -25,6 +25,10 @@ const DEFAULT_PERMISSIONS = {
     'view_demandes',
     'view_caisse'
   ],
+  magasinier: [
+    'view_stock',
+    'view_demandes'
+  ],
   admin: [] // Admin géré séparément
 };
 

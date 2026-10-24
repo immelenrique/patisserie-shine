@@ -19,6 +19,8 @@ if [ "${PARTIE2:-0}" = 1 ]; then $D -f $M/partie2_stock_principal.sql >/dev/null
 if [ "${PARTIE3:-0}" = 1 ]; then $D -f $M/partie3_recapitulatif.sql >/dev/null || { echo "ECHEC partie 3"; exit 1; }; fi
 # Partie 4 si demandée (PARTIE4=1, avec les parties 2 et 3)
 if [ "${PARTIE4:-0}" = 1 ]; then $D -f $M/partie4_achats_recus.sql >/dev/null || { echo "ECHEC partie 4"; exit 1; }; fi
+# Partie 5 si demandée (PARTIE5=1, avec les parties 2 à 4)
+if [ "${PARTIE5:-0}" = 1 ]; then $D -f $M/partie5_caisse.sql >/dev/null || { echo "ECHEC partie 5"; exit 1; }; fi
 $D >/dev/null <<'SQL'
 INSERT INTO produits (id, nom, prix_achat, quantite, quantite_restante, unite_id) VALUES (6, 'Pain', 0, 30, 30, 1);
 INSERT INTO prix_vente_produits (produit_id, prix, actif) VALUES (6, 500, true);
@@ -34,4 +36,13 @@ DELETE FROM lignes_vente WHERE id > 100;
 CREATE ROLE authenticator LOGIN PASSWORD 'e2e' NOINHERIT;
 GRANT anon, authenticated, service_role TO authenticator;
 SQL
+# Partie 6 si demandée (PARTIE6=1, avec les parties 2 à 5) : rôle magasinier et son compte
+if [ "${PARTIE6:-0}" = 1 ]; then
+  $D -f $M/partie6_magasinier.sql >/dev/null || { echo "ECHEC partie 6"; exit 1; }
+  $D >/dev/null <<'SQL'
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+ ('f0000000-0000-4000-8000-000000000014', 'magasin@shine.local', '{"username":"magasin","nom":"Moussa (magasin)"}');
+UPDATE profiles SET role = 'magasinier', force_password_change = false WHERE username = 'magasin';
+SQL
+fi
 echo "base e2e prête"

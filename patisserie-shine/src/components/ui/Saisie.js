@@ -48,7 +48,9 @@ function FenetreSaisie({ titre, message, details, champs = [], confirmer = 'Conf
       const v = String(valeurs[c.nom] ?? '').trim();
       if (c.type === 'number') {
         const n = parseFloat(v.replace(',', '.'));
-        if (Number.isNaN(n) || n <= 0) return setErreur(`${c.label} : indiquez un nombre supérieur à 0.`);
+        if (Number.isNaN(n) || v === '') return setErreur(`${c.label} : indiquez un nombre.`);
+        // zero: true accepte 0 (fond de caisse vide, caisse vide)
+        if (c.zero ? n < 0 : n <= 0) return setErreur(`${c.label} : indiquez un nombre ${c.zero ? 'positif ou nul' : 'supérieur à 0'}.`);
         if (c.max !== undefined && n > c.max) return setErreur(`${c.label} : ${c.max} au maximum.`);
         resultat[c.nom] = n;
       } else {

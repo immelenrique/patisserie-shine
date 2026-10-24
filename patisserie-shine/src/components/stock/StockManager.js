@@ -633,7 +633,7 @@ export default function StockManager({ currentUser }) {
             </button>
           )}
           
-          {(currentUser.role === 'admin' || currentUser.role === 'employe_production') && (
+          {['admin', 'employe_production', 'magasinier'].includes(currentUser.role) && (
             <button 
               onClick={() => setShowAddModal(true)}
               className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 py-2 rounded-lg hover:from-orange-600 hover:to-amber-600 transition-all duration-200 flex items-center space-x-2"
@@ -937,7 +937,7 @@ export default function StockManager({ currentUser }) {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
-                          {(currentUser.role === 'admin' || currentUser.role === 'employe_production') && (
+                          {['admin', 'employe_production', 'magasinier'].includes(currentUser.role) && (
                             <>
                               <button
                                 onClick={() => startReappro(product)}

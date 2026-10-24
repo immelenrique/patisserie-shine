@@ -40,6 +40,13 @@ export async function POST(request) {
         { status: 400 }
       )
     }
+    const rolesValides = ['admin', 'employe_production', 'employe_boutique', 'employe_cuisine', 'magasinier']
+    if (!rolesValides.includes(role)) {
+      return NextResponse.json(
+        { error: `Rôle invalide. Rôles acceptés: ${rolesValides.join(', ')}` },
+        { status: 400 }
+      )
+    }
 
     // Vérifier l'autorisation
     const authHeader = request.headers.get('authorization')
