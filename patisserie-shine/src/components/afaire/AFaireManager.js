@@ -36,6 +36,8 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
   // Inventaires attendus pour les lieux de la personne ; pertes à décider (propriétaire)
   const [inventairesAFaire, setInventairesAFaire] = useState([]);
   const [pertesAValider, setPertesAValider] = useState([]);
+  // Recettes sans rendement : la production ne peut pas les utiliser (gérants)
+  const [recettesACompleter, setRecettesACompleter] = useState([]);
   const recuInputRef = useRef(null);
   const recuCibleRef = useRef(null);
   const enCoursRef = useRef(false);
@@ -99,6 +101,15 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
         .limit(30);
       if (rAchats.error) console.warn('Achats sans reçu indisponibles:', rAchats.error.message);
       setAchatsSansRecu(rAchats.error ? [] : (rAchats.data || []));
+      if (estAdmin) {
+        const [rRec, rFiches] = await Promise.all([
+          supabase.from('recettes').select('nom_produit'),
+          supabase.from('recettes_fiches').select('nom_produit')
+        ]);
+        // Sans la partie 9 en base, la table des fiches n'existe pas : la section reste vide
+        const avecFiche = new Set((rFiches.data || []).map(f => f.nom_produit));
+        setRecettesACompleter(rFiches.error ? [] : [...new Set((rRec.data || []).map(r => r.nom_produit))].filter(n => !avecFiche.has(n)).sort());
+      }
       // Sans la partie 8 en base, les fonctions n'existent pas encore : les sections restent vides
       const rInv = await supabase.rpc('inventaires_a_faire');
       if (rInv.error) console.warn('Inventaires à faire indisponibles:', rInv.error.message);
@@ -235,7 +246,7 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
 
   const LIEUX_INV = { principal: 'Stock principal', atelier: 'Atelier', boutique: 'Boutique' };
   const nbTaches = bloques.length + aReceptionner.length + aValider.length + ecarts.length + achatsSansRecu.length + (aConfirmer.nombre || 0)
-    + inventairesAFaire.length + pertesAValider.length;
+    + inventairesAFaire.length + pertesAValider.length + (recettesACompleter.length ? 1 : 0);
 
   if (loading) {
     return (
@@ -337,6 +348,15 @@ export default function AFaireManager({ currentUser, hasPermission, onNaviguer }
                 { libelle: 'Refuser', secondaire: true, disabled: enCours !== null, onClick: () => deciderPerte(x, false) }
               ]} />
           ))}
+        </Section>
+      )}
+
+      {/* 2 quater. Recettes à compléter (gérants) */}
+      {estAdmin && recettesACompleter.length > 0 && (
+        <Section icone={ClipboardCheck} titre={`Recettes à compléter (${recettesACompleter.length})`}>
+          <Ligne titre={recettesACompleter.join(', ')}
+            texte="Indiquez combien chaque recette donne par fournée et la marge acceptée : sans cela, l'atelier ne peut pas déclarer sa production."
+            action={{ libelle: 'Ouvrir les recettes', onClick: () => onNaviguer('recettes') }} />
         </Section>
       )}
 

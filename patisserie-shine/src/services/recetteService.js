@@ -64,9 +64,8 @@ export const recetteService = {
           unite: recette.produit_ingredient?.unite?.label || '',
           prix_achat: recette.produit_ingredient?.prix_achat || 0,
           quantite_achat: recette.produit_ingredient?.quantite || 1,
-          cout_ingredient: recette.produit_ingredient?.quantite > 0
-            ? (recette.quantite_necessaire / recette.produit_ingredient.quantite) * recette.produit_ingredient.prix_achat
-            : 0,
+          // prix_achat est déjà un prix à l'unité (moyenne pondérée des achats)
+          cout_ingredient: recette.quantite_necessaire * (recette.produit_ingredient?.prix_achat || 0),
           // Stock ATELIER (pas stock principal)
           stock_atelier_disponible: stockAtelier,
           ingredient_disponible: ingredientDisponible,

@@ -49,4 +49,6 @@ fi
 if [ "${PARTIE7:-0}" = 1 ]; then $D -f $M/partie7_achats_reserves.sql >/dev/null || { echo "ECHEC partie 7"; exit 1; }; fi
 # Partie 8 si demandée (PARTIE8=1, avec la partie 7) : inventaires à l'aveugle et pertes
 if [ "${PARTIE8:-0}" = 1 ]; then $D -f $M/partie8_inventaires_pertes.sql >/dev/null || { echo "ECHEC partie 8"; exit 1; }; fi
+# Partie 9 si demandée (PARTIE9=1, avec la partie 8) : production par recette, recettes protégées
+if [ "${PARTIE9:-0}" = 1 ]; then $D -f $M/partie9_production_recettes.sql >/dev/null || { echo "ECHEC partie 9"; exit 1; }; fi
 echo "base e2e prête"
