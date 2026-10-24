@@ -411,7 +411,7 @@ Annulation : `partie7_annulation.sql`.
   - pour le propriétaire, « Rythme des inventaires ».
 - **« À faire » :** « Inventaires à faire » pour chacun ; « Pertes à valider » (Accepter / Refuser) pour le propriétaire.
 - **Récapitulatif :**
-  - en points à vérifier : écarts d'inventaire, pertes acceptées, inventaires attendus pas encore faits ;
+  - en points à vérifier : écarts d'inventaire, pertes acceptées, inventaires en retard (une échéance passée a été manquée : hier pour le soir, le jour prévu pour la semaine ; un inventaire simplement à faire aujourd'hui n'est pas un retard) ;
   - une section « Inventaires et pertes ».
 
 ### Limite
@@ -421,7 +421,7 @@ La personne qui compte peut ouvrir l'écran de son stock et y lire la quantité 
 
 ### Tests
 - `PGHOST=... ./tests/lancer_inventaires.sh` :
-  - passage 1 : **71/71**. Cela comprend l'annulation sur base vide (exacte, 357 objets), le scénario de 68 vérifications et deux tests de concurrence (inventaire ouvert deux fois, perte acceptée deux fois), puis l'annulation avec des données (stock et journal conservés) ;
+  - passage 1 : **76/76**. Cela comprend l'annulation sur base vide (exacte, 357 objets), le scénario de 73 vérifications (dont l'inventaire attendu et l'inventaire en retard) et deux tests de concurrence (inventaire ouvert deux fois, perte acceptée deux fois), puis l'annulation avec des données (stock et journal conservés) ;
   - passages 2 à 8, sur des bases neuves : non-régression **195/195**, stock **66/66**, récapitulatif **47/47**, achats **34/34**, caisse **24/24**, magasinier **51/51**, achats réservés **11/11**.
 - **Banc navigateur :** `parcours_inventaires.js` **23/23**. Il couvre :
   - l'inventaire du soir de l'atelier, avec écart, recomptage et raison ;
