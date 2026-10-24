@@ -147,7 +147,7 @@ function Contenu({ recap, titre }) {
   const inv = recap.inventaires || {};
   const ecartsInventaire = (inv.inventaires || []).flatMap(i => (i.ecarts || []).map(e => ({ ...e, inventaire: i })));
   const pertesAcceptees = (inv.pertes || []).filter(x => x.statut === 'acceptee');
-  const inventairesManques = (inv.en_retard || []).filter(x => x.attendu);
+  const inventairesManques = (inv.en_retard || []).filter(x => x.en_retard);
   const nbPoints = (alertes.transit_24h || []).length + (alertes.meme_personne || []).length + (alertes.ecarts || []).length
     + corrections.length + (ventes.annulations || []).length + comptesParAutre.length + (journal.intact === false ? 1 : 0)
     + (alertes.achats_sans_recu || []).length + (alertes.recus_disparus || []).length + (alertes.depenses_modifiees || []).length
@@ -238,8 +238,8 @@ function Contenu({ recap, titre }) {
           <Liste titre="Pertes acceptées" lignes={pertesAcceptees}
             rendu={(x) => <>{heure(x.le)} — {LIEUX[x.lieu]} : {x.produit} <b>{qte(x.quantite)} {x.unite || ''}</b> ({utils.formatCFA(x.valeur)}), déclarée par {x.par || '-'}, acceptée par {x.decide_par || '-'}. Motif : « {x.motif} »</>} />
 
-          <Liste titre="Inventaires attendus pas encore faits (état actuel)" lignes={inventairesManques}
-            rendu={(x) => <>{LIEUX[x.lieu]} : {x.frequence === 'quotidienne' ? 'inventaire du soir' : 'inventaire de la semaine'} attendu depuis le {new Date(x.depuis + 'T12:00:00').toLocaleDateString('fr-FR')}
+          <Liste titre="Inventaires en retard (état actuel)" lignes={inventairesManques}
+            rendu={(x) => <>{LIEUX[x.lieu]} : {x.frequence === 'quotidienne' ? 'l\'inventaire du soir n\'a pas été fait hier' : `l'inventaire de la semaine, prévu le ${new Date(x.depuis + 'T12:00:00').toLocaleDateString('fr-FR')}, n'a pas été fait`}
               {x.dernier ? `, dernier fait le ${heure(x.dernier)}` : ', aucun fait jusqu\'ici'}{x.en_cours_id ? ` (inventaire n°${x.en_cours_id} en cours)` : ''}</>} />
 
           {inv.pertes_en_attente > 0 && (

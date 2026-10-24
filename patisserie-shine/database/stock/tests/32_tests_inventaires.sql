@@ -12,6 +12,23 @@
 \set uid_prod 'f0000000-0000-4000-8000-000000000011'
 \set uid_proprio 'b0000000-0000-4000-8000-000000000002'
 
+-- ============ 0. Attendu ou en retard (réglages anciens ; boutique prévue hier, stock principal aujourd'hui) ============
+UPDATE inventaires_reglages SET modifie_le = now() - interval '10 days';
+UPDATE inventaires_reglages SET jour = extract(isodow FROM (now() AT TIME ZONE 'Africa/Ouagadougou')::date - 1) WHERE lieu = 'boutique';
+UPDATE inventaires_reglages SET jour = extract(isodow FROM (now() AT TIME ZONE 'Africa/Ouagadougou')::date) WHERE lieu = 'principal';
+SELECT inventaires_a_faire(true) AS retards \gset
+SELECT tests.verifier('inventaire', 'retard : l''inventaire du soir d''hier manque à l''atelier',
+  format('SELECT 1 FROM jsonb_array_elements(%L::jsonb) x WHERE x->>''lieu'' = ''atelier'' AND (x->>''en_retard'')::boolean', :'retards'), 'lignes=1');
+SELECT tests.verifier('inventaire', 'retard : l''inventaire de la boutique, prévu hier, manque',
+  format('SELECT 1 FROM jsonb_array_elements(%L::jsonb) x WHERE x->>''lieu'' = ''boutique'' AND (x->>''en_retard'')::boolean', :'retards'), 'lignes=1');
+SELECT tests.verifier('inventaire', 'stock principal prévu aujourd''hui : attendu, pas en retard',
+  format('SELECT 1 FROM jsonb_array_elements(%L::jsonb) x WHERE x->>''lieu'' = ''principal'' AND (x->>''attendu'')::boolean AND NOT (x->>''en_retard'')::boolean', :'retards'), 'lignes=1');
+-- Un réglage fait aujourd'hui : l'échéance manquée d'hier lui est antérieure, ce n'est pas un retard
+UPDATE inventaires_reglages SET modifie_le = now() WHERE lieu = 'atelier';
+SELECT tests.verifier('inventaire', 'réglage de l''atelier fait aujourd''hui : attendu, pas en retard',
+  'SELECT 1 FROM jsonb_array_elements((SELECT inventaires_a_faire(true))) x WHERE x->>''lieu'' = ''atelier'' AND (x->>''attendu'')::boolean AND NOT (x->>''en_retard'')::boolean', 'lignes=1');
+UPDATE inventaires_reglages SET jour = extract(isodow FROM (now() AT TIME ZONE 'Africa/Ouagadougou')::date) WHERE lieu = 'principal';
+
 -- ============ A. Qui compte où ; les quantités attendues restent cachées ============
 SET ROLE authenticated;
 SELECT set_config('request.jwt.claims', :VEND, false);
@@ -174,6 +191,8 @@ SELECT tests.verifier('inventaire', 'les auteurs sont prévenus de la décision'
   format('SELECT 1 FROM notifications WHERE destinataire_id IN (%L, %L) AND message LIKE ''Perte %%'' HAVING count(DISTINCT destinataire_id) = 2', :'uid_prod', :'uid_vend'), 'lignes=1');
 SELECT tests.verifier('inventaire', 'récap : 6 inventaires (3 terminés, 3 annulés), 3 pertes, aucune en attente',
   format('SELECT 1 WHERE jsonb_array_length(%L::jsonb -> ''inventaires'') = 6 AND jsonb_array_length(%L::jsonb -> ''pertes'') = 3 AND (%L::jsonb ->> ''pertes_en_attente'')::int = 0', :'r', :'r', :'r'), 'lignes=1');
+SELECT tests.verifier('inventaire', 'récap : plus aucun inventaire en retard (les trois lieux faits aujourd''hui)',
+  format('SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements(%L::jsonb -> ''en_retard'') x WHERE (x->>''en_retard'')::boolean)', :'r'), 'lignes=1');
 SELECT tests.verifier('inventaire', 'récap : écart du sucre avec ses 2 comptages, le premier à 38, et son motif',
   format('SELECT 1 FROM jsonb_array_elements(%L::jsonb -> ''inventaires'') i, jsonb_array_elements(i -> ''ecarts'') e WHERE e->>''produit'' = ''Sucre'' AND (e->>''comptages'')::int = 2 AND (e->>''premier'')::numeric = 38 AND (e->>''valeur'')::numeric = -600 AND e->>''motif'' LIKE ''sac percé%%''', :'r'), 'lignes=1');
 

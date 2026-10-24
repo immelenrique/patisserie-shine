@@ -452,6 +452,9 @@ END;
 $function$;
 
 -- Inventaires attendus (état actuel). p_tous : tous les lieux (récapitulatif), sinon ceux de la personne connectée.
+-- « attendu » : à faire pour la période en cours (aujourd'hui, ou depuis le jour prévu de la semaine).
+-- « en_retard » : une échéance passée a été manquée (hier pour le soir, le jour prévu pour la semaine),
+-- en ne comptant que les échéances postérieures au dernier réglage.
 CREATE OR REPLACE FUNCTION public.inventaires_a_faire(p_tous boolean DEFAULT false)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -469,8 +472,14 @@ BEGIN
   END IF;
   RETURN (
     SELECT coalesce(jsonb_agg(jsonb_build_object('lieu', x.lieu, 'mode', x.mode, 'nombre', x.nombre, 'frequence', x.frequence,
-             'depuis', x.depuis, 'dernier', x.dernier, 'en_cours_id', x.en_cours, 'attendu', x.attendu) ORDER BY x.lieu), '[]'::jsonb)
+             'depuis', x.depuis, 'dernier', x.dernier, 'en_cours_id', x.en_cours, 'attendu', x.attendu,
+             'en_retard', x.attendu AND x.echeance_manquee IS NOT NULL AND x.echeance_manquee >= x.regle_le
+               AND NOT EXISTS (SELECT 1 FROM inventaires i WHERE i.lieu = x.lieu AND i.statut = 'termine'
+                                  AND i.cloture_le >= (x.echeance_manquee::timestamp AT TIME ZONE 'Africa/Ouagadougou'))) ORDER BY x.lieu), '[]'::jsonb)
       FROM (SELECT r.lieu, r.mode, r.nombre, r.frequence, d.depuis,
+                   (r.modifie_le AT TIME ZONE 'Africa/Ouagadougou')::date AS regle_le,
+                   CASE WHEN r.frequence = 'quotidienne' THEN v_auj - 1
+                        WHEN r.frequence = 'hebdomadaire' AND v_auj > d.depuis THEN d.depuis END AS echeance_manquee,
                    (SELECT max(i.cloture_le) FROM inventaires i WHERE i.lieu = r.lieu AND i.statut = 'termine') AS dernier,
                    (SELECT i.id FROM inventaires i WHERE i.lieu = r.lieu AND i.statut = 'en_cours') AS en_cours,
                    r.frequence <> 'aucune' AND NOT EXISTS (
