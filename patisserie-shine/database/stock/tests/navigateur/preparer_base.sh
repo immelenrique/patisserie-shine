@@ -51,4 +51,15 @@ if [ "${PARTIE7:-0}" = 1 ]; then $D -f $M/partie7_achats_reserves.sql >/dev/null
 if [ "${PARTIE8:-0}" = 1 ]; then $D -f $M/partie8_inventaires_pertes.sql >/dev/null || { echo "ECHEC partie 8"; exit 1; }; fi
 # Partie 9 si demandée (PARTIE9=1, avec la partie 8) : production par recette, recettes protégées
 if [ "${PARTIE9:-0}" = 1 ]; then $D -f $M/partie9_production_recettes.sql >/dev/null || { echo "ECHEC partie 9"; exit 1; }; fi
+# Cuisine : un compte, trois plats en stock (le Jus au prix du stock, 600 F)
+$D >/dev/null <<'SQL'
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+ ('f0000000-0000-4000-8000-000000000015', 'cuisine@shine.local', '{"username":"cuisine","nom":"Fatou (cuisine)"}');
+UPDATE profiles SET role = 'employe_cuisine', force_password_change = false WHERE username = 'cuisine';
+INSERT INTO produits_cuisine (id, nom, prix_vente, actif) VALUES (1, 'Riz sauce', 1500, true), (2, 'Jus', 500, true), (3, 'Poulet braisé', 3000, true);
+SELECT setval('produits_cuisine_id_seq', 3);
+INSERT INTO stock_cuisine (produit_cuisine_id, quantite_disponible, quantite_vendue, prix_vente) VALUES (1, 10, 0, NULL), (2, 20, 0, 600), (3, 5, 0, NULL);
+SQL
+# Partie 10 si demandée (PARTIE10=1, avec la partie 9) : cuisine sécurisée
+if [ "${PARTIE10:-0}" = 1 ]; then $D -f $M/partie10_cuisine.sql >/dev/null || { echo "ECHEC partie 10"; exit 1; }; fi
 echo "base e2e prête"

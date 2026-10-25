@@ -14,9 +14,11 @@ import {
   Printer,
   Receipt,
   BarChart3,
-  ChefHat
+  ChefHat,
+  XCircle
 } from 'lucide-react';
 import { Card, Modal } from '../ui';
+import { useCaisse, BoutonsCaisse, BandeauCaisse } from '../caisse/useCaisse';
 
 export default function CaisseCuisineManager({ currentUser }) {
   const [produitsCuisine, setProduitsCuisine] = useState([]);
@@ -32,6 +34,15 @@ export default function CaisseCuisineManager({ currentUser }) {
   const [enregistrementEnCours, setEnregistrementEnCours] = useState(false);
   // Verrou synchrone : deux clics rapprochés arrivent avant que l'état ne désactive le bouton
   const enregistrementRef = useRef(false);
+  // Clé du panier : conservée entre deux essais du même panier, oubliée dès qu'il change
+  const cleVenteRef = useRef(null);
+  // Caisse commune avec la boutique : les ventes cuisine comptent dans le montant attendu à la clôture
+  const { caisse, chargerCaisse, ouvrirCaisse, effectuerCloture, clotureEnCours, fenetreSaisie, demander } = useCaisse(currentUser);
+  const estGerant = currentUser?.role === 'admin';
+
+  useEffect(() => {
+    cleVenteRef.current = null;
+  }, [panier, montantDonne]);
 
   useEffect(() => {
     loadData();
@@ -39,6 +50,7 @@ export default function CaisseCuisineManager({ currentUser }) {
 
   const loadData = async () => {
     setLoading(true);
+    chargerCaisse();
     try {
       const [produitsResult, ventesResult] = await Promise.all([
         caisseCuisineService.getProduitsDisponibles(),
@@ -130,29 +142,40 @@ export default function CaisseCuisineManager({ currentUser }) {
     enregistrementRef.current = true;
     setEnregistrementEnCours(true);
 
+    if (!cleVenteRef.current) cleVenteRef.current = utils.genererCle();
+
     try {
-      const venteData = {
+      // Chaque vente appartient à une caisse ouverte : sinon l'argent encaissé ne serait compté nulle part
+      if (!caisse && !(await ouvrirCaisse())) return;
+
+      const { vente, error, coupure } = await caisseCuisineService.enregistrerVente({
         items: panier,
-        total: totalPanier,
         montant_donne: montantDonneNum,
-        monnaie_rendue: monnaieARendre,
-        vendeur_id: currentUser.id
-      };
+        cle: cleVenteRef.current
+      });
 
-      const { vente, error } = await caisseCuisineService.enregistrerVente(venteData);
-
-      if (error) {
-        alert('Erreur lors de l\'enregistrement : ' + error);
+      if (coupure) {
+        alert('Connexion perdue : la vente a peut-être été enregistrée.\n\n'
+          + 'Vérifiez la connexion puis cliquez de nouveau sur « Finaliser la Vente » : '
+          + 'elle ne sera pas comptée deux fois.');
         return;
       }
 
+      if (error) {
+        alert('Erreur lors de l\'enregistrement : ' + error);
+        // Le stock ou un prix a pu changer depuis le chargement de l'écran
+        loadData();
+        return;
+      }
+
+      // Le reçu reprend ce que la base a réellement enregistré (prix, total, monnaie)
       const recu = {
         numero: vente.numero_ticket,
         date: new Date().toLocaleString('fr-FR'),
-        items: panier,
-        total: totalPanier,
-        montant_donne: montantDonneNum,
-        monnaie_rendue: monnaieARendre,
+        items: vente.items,
+        total: vente.total,
+        montant_donne: vente.montant_donne,
+        monnaie_rendue: vente.monnaie_rendue,
         vendeur: currentUser.nom || currentUser.username,
         boutique: 'Pâtisserie Shine - Cuisine'
       };
@@ -177,6 +200,25 @@ export default function CaisseCuisineManager({ currentUser }) {
       enregistrementRef.current = false;
       setEnregistrementEnCours(false);
     }
+  };
+
+  // Annulation réservée au propriétaire et aux gérants : le stock est remis et le motif gardé
+  const annulerVente = async (vente) => {
+    const r = await demander({
+      titre: `Annuler la vente ${vente.numero_ticket}`,
+      message: `Montant : ${utils.formatCFA(vente.total)}. Les articles reviennent en stock ; l'annulation est gardée et visible par la propriétaire.`,
+      champs: [{ nom: 'motif', label: 'Motif de l\'annulation', placeholder: 'ex. : le client a rendu le plat', min: 10 }],
+      confirmer: 'Annuler la vente',
+      danger: true
+    });
+    if (!r) return;
+    const { error } = await caisseCuisineService.annulerVente(vente.id, r.motif);
+    if (error) {
+      alert('Annulation impossible : ' + error);
+      return;
+    }
+    alert(`Vente ${vente.numero_ticket} annulée.`);
+    loadData();
   };
 
   const imprimerRecu = (receiptData = lastReceipt) => {
@@ -364,8 +406,13 @@ export default function CaisseCuisineManager({ currentUser }) {
             <p className="text-sm text-gray-500">Session</p>
             <p className="font-semibold">{new Date().toLocaleDateString('fr-FR')}</p>
           </div>
+          {activeTab === 'caisse' && (
+            <BoutonsCaisse caisse={caisse} ouvrir={ouvrirCaisse} cloturer={effectuerCloture} clotureEnCours={clotureEnCours} />
+          )}
         </div>
       </div>
+
+      {activeTab === 'caisse' && <BandeauCaisse caisse={caisse} />}
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -671,7 +718,7 @@ export default function CaisseCuisineManager({ currentUser }) {
                               setLastReceipt({
                                 numero: vente.numero_ticket,
                                 date: new Date(vente.created_at).toLocaleString('fr-FR'),
-                                items: vente.items,
+                                items: (vente.items || []).map(i => ({ nom: i.nom_produit, prix: i.prix_unitaire, quantite: i.quantite })),
                                 total: vente.total,
                                 montant_donne: vente.montant_donne,
                                 monnaie_rendue: vente.monnaie_rendue,
@@ -684,6 +731,16 @@ export default function CaisseCuisineManager({ currentUser }) {
                           >
                             <Printer className="w-4 h-4" />
                           </button>
+                          {estGerant && (
+                            <button
+                              onClick={() => annulerVente(vente)}
+                              className="ml-3 text-red-600 hover:text-red-800"
+                              title="Annuler la vente"
+                              aria-label={`Annuler la vente ${vente.numero_ticket}`}
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -751,6 +808,7 @@ export default function CaisseCuisineManager({ currentUser }) {
           </div>
         )}
       </Modal>
+      {fenetreSaisie}
     </div>
   );
 }

@@ -55,6 +55,7 @@ function FenetreSaisie({ titre, message, details, champs = [], confirmer = 'Conf
         resultat[c.nom] = n;
       } else {
         if (c.obligatoire && v.length < 3) return setErreur(`${c.label} : obligatoire (3 caractères au moins).`);
+        if (c.min && v.length < c.min) return setErreur(`${c.label} : ${c.min} caractères au moins.`);
         resultat[c.nom] = v;
       }
     }

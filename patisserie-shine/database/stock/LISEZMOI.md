@@ -502,3 +502,39 @@ Annulation : `partie9_annulation.sql` (SQL Editor).
 - Les fiches et l'historique des recettes sont affichés, puis supprimés.
 - Les productions restent, sans leur détail.
 - Les recettes redeviennent modifiables par tous, comme avant.
+
+## Partie 10 : cuisine sécurisée, comme la boutique
+
+### Ce qui était faux
+- **Ventes :** l'écran de caisse cuisine écrivait lui-même la vente, ses lignes, le stock et les mouvements. Le prix et le total venaient du navigateur, et une coupure entre deux écritures laissait une vente sans baisse de stock (ou l'inverse). Un double clic enregistrait la vente deux fois.
+- **Stock :** tout compte cuisine pouvait modifier le stock cuisine, et l'historique des mouvements pouvait être modifié ou effacé. Une vente pouvait être supprimée sans trace.
+- **Caisse :** la caissière cuisine n'avait ni ouverture ni clôture : l'argent encaissé n'était compté nulle part.
+- **Reçu réimprimé** depuis « Ventes du jour » : les articles s'affichaient sans prix (champs mal nommés).
+
+### Ce que fait `partie10_cuisine.sql` (aucune suppression : exécutable directement)
+- **`enregistrer_vente_cuisine(articles, montant donné, clé)`,** pour la cuisine, le propriétaire et les gérants :
+  - le prix (celui du stock, à défaut celui du produit) et le total sont calculés par la base ;
+  - vente, lignes, baisse du stock et mouvements sont écrits ensemble, ou rien ;
+  - la même vente envoyée deux fois (même clé) n'est enregistrée qu'une fois.
+- **`annuler_vente_cuisine(vente, motif)`,** pour le propriétaire et les gérants : motif de 10 caractères au moins, 7 jours au plus ; le stock est remis et l'annulation gardée (`annulations_ventes_cuisine`, ajout seul).
+- **`entree_stock_cuisine` et `ajuster_stock_cuisine`,** pour le propriétaire et les gérants : chaque entrée et chaque correction (motif obligatoire) est inscrite dans l'historique. Une entrée renvoyée avec la même clé ne compte qu'une fois.
+- **Fermeture :** ventes, lignes, stock et mouvements de la cuisine ne s'écrivent plus en direct ; l'historique des mouvements ne se modifie plus ; aucune vente ne se supprime.
+- **Caisse :** `ouvrir_caisse` et `cloturer_caisse` acceptent la cuisine. Le montant attendu à la clôture compte les ventes boutique et cuisine de la personne depuis l'ouverture (toujours à l'aveugle).
+- **`recap_cuisine(du, au)`,** pour la propriétaire : ventes par vendeur, annulations, entrées et corrections du stock, ventes faites sans caisse ouverte.
+
+### Application
+- **Caisse cuisine :** même fonctionnement que la boutique. La caisse s'ouvre à la première vente (fond déclaré) ou par « Ouvrir la caisse », et se clôture à l'aveugle. Le reçu reprend ce que la base a enregistré. En cas de coupure, un nouveau clic ne compte pas la vente deux fois.
+- **Ventes du jour :** bouton d'annulation (motif) pour le propriétaire et les gérants.
+- **Stock cuisine :** « Corriger » sur chaque produit (quantité réelle et motif), « Vider tout » demande un motif, l'historique affiche avant → après et le motif.
+- **Ouverture et clôture de caisse :** un seul code pour la boutique et la cuisine (`components/caisse/useCaisse.js`).
+- **Récapitulatif :** une section « Cuisine », et en points à vérifier les ventes cuisine annulées, les corrections du stock cuisine et les ventes cuisine faites sans caisse ouverte.
+
+**À savoir :** il n'existe aujourd'hui aucun compte « Cuisine ». Pour que la caissière cuisine vende, il faut lui créer un compte avec ce rôle.
+
+### Tests
+- `PGHOST=... ./tests/lancer_cuisine.sh` :
+  - passage 1 : **60/60**. Cela comprend l'annulation sur base vide (exacte, 400 objets), le scénario de 56 vérifications, deux tests de concurrence (même vente envoyée deux fois, deux ventes simultanées des derniers articles), puis l'annulation avec des données ;
+  - passages 2 à 10, sur des bases neuves : non-régression **195/195**, stock **65/65**, récapitulatif **47/47**, achats **34/34**, caisse **24/24**, magasinier **51/51**, achats réservés **11/11**, inventaires **69/69**, production **39/39**.
+- **Banc navigateur :** `parcours_cuisine.js` **19/19**. Il couvre la vente avec ouverture de caisse, la clôture à l'aveugle (ventes cuisine comprises), l'entrée de stock en double clic comptée une fois, la correction motivée, l'annulation d'une vente et le récapitulatif. La base est préparée avec `PARTIE10=1`.
+
+**Mise en production : d'abord `partie10_cuisine.sql`, puis l'application.**

@@ -183,163 +183,44 @@ export const stockCuisineService = {
   },
 
   /**
-   * Crée ou met à jour le stock cuisine (admin uniquement)
-   * @param {Object} stockData - Données du stock
+   * Entrée en stock cuisine (propriétaire et gérants), par la base : quantité ajoutée, prix éventuel,
+   * mouvement tracé ; la même entrée renvoyée avec la même clé n'est comptée qu'une fois
+   * @param {Object} stockData - { produit_cuisine_id, quantite_disponible, prix_vente, commentaire, cle }
    * @returns {Object} { stock, error }
    */
   async createOrUpdateStock(stockData) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-
-      // Vérifier si le stock existe déjà
-      const { data: existing } = await supabase
-        .from('stock_cuisine')
-        .select('id, quantite_disponible')
-        .eq('produit_cuisine_id', stockData.produit_cuisine_id)
-        .single()
-
-      if (existing) {
-        // Mettre à jour le stock existant
-        const nouvelleQuantite = (existing.quantite_disponible || 0) + (stockData.quantite_disponible || 0)
-
-        const { data, error } = await supabase
-          .from('stock_cuisine')
-          .update({
-            quantite_disponible: nouvelleQuantite,
-            prix_vente: stockData.prix_vente,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existing.id)
-          .select()
-          .single()
-
-        if (error) return { stock: null, error: error.message }
-
-        // Enregistrer le mouvement
-        await this.enregistrerMouvement({
-          produit_cuisine_id: stockData.produit_cuisine_id,
-          type_mouvement: 'entree',
-          quantite: stockData.quantite_disponible,
-          quantite_avant: existing.quantite_disponible,
-          quantite_apres: nouvelleQuantite,
-          utilisateur_id: user?.id,
-          commentaire: 'Ajout de stock par admin'
-        })
-
-        return { stock: data, error: null }
-
-      } else {
-        // Créer un nouveau stock
-        const { data, error } = await supabase
-          .from('stock_cuisine')
-          .insert({
-            ...stockData,
-            created_at: new Date().toISOString()
-          })
-          .select()
-          .single()
-
-        if (error) return { stock: null, error: error.message }
-
-        // Enregistrer le mouvement
-        await this.enregistrerMouvement({
-          produit_cuisine_id: stockData.produit_cuisine_id,
-          type_mouvement: 'entree',
-          quantite: stockData.quantite_disponible,
-          quantite_avant: 0,
-          quantite_apres: stockData.quantite_disponible,
-          utilisateur_id: user?.id,
-          commentaire: 'Création initiale du stock'
-        })
-
-        return { stock: data, error: null }
-      }
-
-    } catch (error) {
-      console.error('Erreur dans createOrUpdateStock:', error)
+    const { data, error } = await supabase.rpc('entree_stock_cuisine', {
+      p_produit_cuisine_id: stockData.produit_cuisine_id,
+      p_quantite: stockData.quantite_disponible,
+      p_prix_vente: stockData.prix_vente ?? null,
+      p_commentaire: stockData.commentaire || null,
+      p_cle: stockData.cle || null
+    })
+    if (error) {
+      console.error('Erreur entree_stock_cuisine:', error)
       return { stock: null, error: error.message }
     }
+    return { stock: data, error: null }
   },
 
   /**
-   * Ajuste la quantité d'un stock (admin uniquement)
+   * Correction de la quantité en stock (propriétaire et gérants), motif obligatoire, tracée
    * @param {number} produitCuisineId - ID du produit cuisine
-   * @param {number} nouvelleQuantite - Nouvelle quantité
+   * @param {number} nouvelleQuantite - Quantité réellement présente
+   * @param {string} motif - Raison de la correction
    * @returns {Object} { success, error }
    */
-  async ajusterQuantite(produitCuisineId, nouvelleQuantite) {
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-
-      // Récupérer le stock actuel
-      const { data: stock } = await supabase
-        .from('stock_cuisine')
-        .select('id, quantite_disponible')
-        .eq('produit_cuisine_id', produitCuisineId)
-        .single()
-
-      if (!stock) {
-        return { success: false, error: 'Stock non trouvé' }
-      }
-
-      const quantiteAvant = stock.quantite_disponible
-
-      // Mettre à jour la quantité
-      const { error: updateError } = await supabase
-        .from('stock_cuisine')
-        .update({
-          quantite_disponible: nouvelleQuantite,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', stock.id)
-
-      if (updateError) {
-        return { success: false, error: updateError.message }
-      }
-
-      // Enregistrer le mouvement
-      await this.enregistrerMouvement({
-        produit_cuisine_id: produitCuisineId,
-        type_mouvement: 'ajustement',
-        quantite: Math.abs(nouvelleQuantite - quantiteAvant),
-        quantite_avant: quantiteAvant,
-        quantite_apres: nouvelleQuantite,
-        utilisateur_id: user?.id,
-        commentaire: `Ajustement de stock: ${quantiteAvant} -> ${nouvelleQuantite}`
-      })
-
-      return { success: true, error: null }
-
-    } catch (error) {
-      console.error('Erreur dans ajusterQuantite:', error)
+  async ajusterQuantite(produitCuisineId, nouvelleQuantite, motif) {
+    const { error } = await supabase.rpc('ajuster_stock_cuisine', {
+      p_produit_cuisine_id: produitCuisineId,
+      p_nouvelle_quantite: nouvelleQuantite,
+      p_motif: motif
+    })
+    if (error) {
+      console.error('Erreur ajuster_stock_cuisine:', error)
       return { success: false, error: error.message }
     }
-  },
-
-  /**
-   * Enregistre un mouvement de stock
-   * @param {Object} mouvementData - Données du mouvement
-   * @returns {Object} { success, error }
-   */
-  async enregistrerMouvement(mouvementData) {
-    try {
-      const { error } = await supabase
-        .from('mouvements_stock_cuisine')
-        .insert({
-          ...mouvementData,
-          created_at: new Date().toISOString()
-        })
-
-      if (error) {
-        console.error('Erreur enregistrement mouvement:', error)
-        return { success: false, error: error.message }
-      }
-
-      return { success: true, error: null }
-    } catch (error) {
-      console.error('Erreur dans enregistrerMouvement:', error)
-      return { success: false, error: error.message }
-    }
+    return { success: true, error: null }
   },
 
   /**
