@@ -183,16 +183,14 @@ END $$;
 -- ---------------------------------------------------------------------
 -- 3. Chaque donnée porte sa boulangerie ; règles d'accès étanches
 -- ---------------------------------------------------------------------
-CREATE TEMP TABLE tables_globales (t text PRIMARY KEY) ON COMMIT DROP;
-INSERT INTO tables_globales VALUES ('boulangeries'), ('profiles'), ('partie12_avant'), ('unites'), ('modules'), ('permissions'),
-  ('role_permissions'), ('roles_custom'), ('user_permissions'), ('password_change_log'), ('partie11_truncate_retire');
-
+-- Tables communes aux deux boulangeries (comptes, droits, unités) : pas de colonne boulangerie_id
 DO $$
 DECLARE
   v record;
 BEGIN
   FOR v IN SELECT c.relname AS t FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'r'
-            AND c.relname NOT IN (SELECT t FROM tables_globales) ORDER BY 1 LOOP
+            AND c.relname <> ALL (ARRAY['boulangeries', 'profiles', 'partie12_avant', 'unites', 'modules', 'permissions',
+              'role_permissions', 'roles_custom', 'user_permissions', 'password_change_log', 'partie11_truncate_retire']) ORDER BY 1 LOOP
     EXECUTE format('ALTER TABLE public.%I ADD COLUMN boulangerie_id integer NOT NULL DEFAULT 1 REFERENCES public.boulangeries (id)', v.t);
     EXECUTE format('ALTER TABLE public.%I ALTER COLUMN boulangerie_id SET DEFAULT public.boulangerie_saisie()', v.t);
     EXECUTE format('CREATE INDEX %I ON public.%I (boulangerie_id)', left(v.t, 45) || '_boulangerie_idx', v.t);
