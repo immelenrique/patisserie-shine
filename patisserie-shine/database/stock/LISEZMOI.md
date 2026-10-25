@@ -553,3 +553,19 @@ Annulation : `partie9_annulation.sql` (SQL Editor).
 - `PGHOST=... ./tests/lancer_truncate.sh` :
   - passage 1 : **11/11**, annulation exacte (412 objets), puis annulation avec des données ;
   - passages 2 à 11 : non-régression **195/195**, stock **65/65**, récapitulatif **47/47**, achats **34/34**, caisse **24/24**, magasinier **51/51**, achats réservés **11/11**, inventaires **69/69**, production **39/39**, cuisine **56/56**.
+
+## Remise à zéro de la plateforme (demandée par la propriétaire)
+
+### Sauvegarde (faite le 2026-10-25, avant tout effacement)
+- Schéma `sauvegarde_20261025` : copie des 54 tables de l'application et des comptes de connexion (207 553 lignes, nombres vérifiés table par table). Invisible depuis le site ; sert à restaurer si besoin. `sauvegarde_20261025.inventaire` donne le nombre de lignes de chaque table copiée.
+
+### Ce que fait `remise_a_zero.sql` (SQL Editor : il efface des données)
+- **Efface :** ventes, demandes, envois, stocks, produits, référentiel, recettes, productions, dépenses, caisses, inventaires, pertes, notifications, journaux et historiques (44 tables). Les numéros repartent de 1.
+- **Garde :** comptes et rôles (profils, permissions, modules, rôles), unités, réglages des inventaires, journal des mots de passe.
+- **Sécurités :**
+  - refus si la sauvegarde manque ou si une table contient plus de lignes que la sauvegarde (activité après la sauvegarde : refaire la sauvegarde) ;
+  - refus si une table gardée dépend d'une table effacée ;
+  - les protections des journaux sont levées le temps de l'effacement puis remises, et l'on vérifie à la fin qu'elles sont actives.
+
+### Tests
+- `PGHOST=... ./tests/lancer_remise_a_zero.sh` : **14/14**. Refus sans sauvegarde, refus avec une sauvegarde périmée, effacement complet avec les comptes gardés, protections remises, puis achat, demande et caisse qui refonctionnent sur la base vide.
