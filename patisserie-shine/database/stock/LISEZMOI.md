@@ -538,3 +538,18 @@ Annulation : `partie9_annulation.sql` (SQL Editor).
 - **Banc navigateur :** `parcours_cuisine.js` **19/19**. Il couvre la vente avec ouverture de caisse, la clôture à l'aveugle (ventes cuisine comprises), l'entrée de stock en double clic comptée une fois, la correction motivée, l'annulation d'une vente et le récapitulatif. La base est préparée avec `PARTIE10=1`.
 
 **Mise en production : d'abord `partie10_cuisine.sql`, puis l'application.**
+
+## Partie 11 : plus de vidage de table par les comptes connectés
+
+### Ce qui était faux
+- Les comptes connectés avaient le droit TRUNCATE sur presque toutes les tables (ventes, comptes, stock…). Ce droit vide une table d'un coup, sans tenir compte des règles d'accès ni des protections ligne par ligne. Le site ne permet pas de l'utiliser, mais rien ne justifiait de le garder.
+
+### Ce que fait `partie11_truncate.sql` (aucune suppression : exécutable directement)
+- Retire TRUNCATE aux comptes connectés et anonymes sur toutes les tables. Les tables créées plus tard ne le reçoivent plus.
+- Garde la liste des droits retirés (`partie11_truncate_retire`, illisible par les comptes) pour le retour arrière.
+- Aucun changement pour l'application : lecture et écritures autorisées restent identiques.
+
+### Tests
+- `PGHOST=... ./tests/lancer_truncate.sh` :
+  - passage 1 : **11/11**, annulation exacte (412 objets), puis annulation avec des données ;
+  - passages 2 à 11 : non-régression **195/195**, stock **65/65**, récapitulatif **47/47**, achats **34/34**, caisse **24/24**, magasinier **51/51**, achats réservés **11/11**, inventaires **69/69**, production **39/39**, cuisine **56/56**.
