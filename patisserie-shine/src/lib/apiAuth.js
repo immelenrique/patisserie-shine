@@ -36,7 +36,7 @@ export async function authenticateRequest(request, supabaseAdmin) {
 
   const { data: profile, error: profileError } = await supabaseAdmin
     .from('profiles')
-    .select('id, username, role, actif, is_super_admin')
+    .select('id, username, role, actif, is_super_admin, boulangerie_id, boulangerie_active')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -75,6 +75,26 @@ export async function requireAdmin(request, supabaseAdmin) {
 export function refuserSiSuperAdminProtege(auth, cible) {
   if (cible?.is_super_admin && !auth.profile?.is_super_admin && auth.user.id !== cible.id) {
     return errorResponse('Le compte d\'un super administrateur ne peut être modifié que par un super administrateur', 403)
+  }
+  return null
+}
+
+/**
+ * Boulangerie de l'appelant : la sienne, ou pour un super admin celle qu'il affiche (null = toutes).
+ * Les routes utilisent la clé service, qui ne passe pas par les règles d'accès : elles filtrent elles-mêmes.
+ */
+export function boulangerieAppelant(auth) {
+  return auth.profile?.is_super_admin ? (auth.profile?.boulangerie_active ?? null) : (auth.profile?.boulangerie_id ?? 0)
+}
+
+/**
+ * Un gérant ne gère que les comptes de sa boulangerie ; un super admin gère tous les comptes.
+ * @returns {NextResponse|null} la réponse de refus, ou null si l'action est permise
+ */
+export function refuserSiAutreBoulangerie(auth, cible) {
+  if (auth.profile?.is_super_admin || !cible || cible.is_super_admin) return null
+  if (cible.boulangerie_id !== auth.profile?.boulangerie_id) {
+    return errorResponse('Ce compte appartient à une autre boulangerie', 403)
   }
   return null
 }

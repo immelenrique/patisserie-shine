@@ -6,7 +6,7 @@ M=$(cd "$N/../.." && pwd)
 P="psql -p ${PGPORT:-55432} -U postgres -q -v ON_ERROR_STOP=1"
 $P -d postgres -c "DROP DATABASE IF EXISTS shine_e2e" >/dev/null 2>&1
 $P -d postgres -c "DROP DATABASE IF EXISTS shine_test" >/dev/null 2>&1
-$P -d postgres -c "DROP ROLE IF EXISTS authenticator" -c "DROP ROLE IF EXISTS anon" -c "DROP ROLE IF EXISTS authenticated" -c "DROP ROLE IF EXISTS service_role" >/dev/null 2>&1
+$P -d postgres -c "DROP ROLE IF EXISTS authenticator" -c "DROP ROLE IF EXISTS shine_fonctions" -c "DROP ROLE IF EXISTS anon" -c "DROP ROLE IF EXISTS authenticated" -c "DROP ROLE IF EXISTS service_role" >/dev/null 2>&1
 $P -d postgres -c "CREATE DATABASE shine_e2e" >/dev/null
 D="$P -d shine_e2e"
 for f in 00_emulation_supabase 01_schema 02_policies 03_functions_triggers 05_seed; do $D -f $B/$f.sql >/dev/null || { echo "ECHEC $f"; exit 1; }; done
@@ -62,4 +62,21 @@ INSERT INTO stock_cuisine (produit_cuisine_id, quantite_disponible, quantite_ven
 SQL
 # Partie 10 si demandée (PARTIE10=1, avec la partie 9) : cuisine sécurisée
 if [ "${PARTIE10:-0}" = 1 ]; then $D -f $M/partie10_cuisine.sql >/dev/null || { echo "ECHEC partie 10"; exit 1; }; fi
+# Partie 11 si demandée : plus de TRUNCATE pour les comptes connectés
+if [ "${PARTIE11:-0}" = 1 ]; then $D -f $M/partie11_truncate.sql >/dev/null || { echo "ECHEC partie 11"; exit 1; }; fi
+# Partie 12 si demandée : deux boulangeries ; comptes et une farine en boutique à Abidjan
+if [ "${PARTIE12:-0}" = 1 ]; then
+  $D -f $M/partie12_boulangeries.sql >/dev/null || { echo "ECHEC partie 12"; exit 1; }
+  $D >/dev/null <<'SQL'
+INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+ ('a2000000-0000-4000-8000-000000000001', 'admin_abj@shine.local', '{"username":"admin_abj","nom":"Koffi","boulangerie_id":"2"}'),
+ ('a2000000-0000-4000-8000-000000000002', 'vend_abj@shine.local', '{"username":"vend_abj","nom":"Aya","boulangerie_id":"2"}');
+UPDATE profiles SET role = 'admin', force_password_change = false WHERE username = 'admin_abj';
+UPDATE profiles SET role = 'employe_boutique', force_password_change = false WHERE username = 'vend_abj';
+UPDATE boulangeries SET adresse = E'Cocody Angré\nAbidjan', telephones = '07 07 07 07 07' WHERE id = 2;
+INSERT INTO produits (nom, prix_achat, quantite, quantite_restante, unite_id, boulangerie_id) VALUES ('Attiéké', 0, 40, 40, 1, 2);
+INSERT INTO stock_boutique (produit_id, nom_produit, quantite_disponible, quantite_vendue, prix_vente, boulangerie_id)
+  SELECT id, 'Attiéké', 20, 0, 700, 2 FROM produits WHERE nom = 'Attiéké';
+SQL
+fi
 echo "base e2e prête"

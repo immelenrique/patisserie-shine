@@ -3,7 +3,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireAdmin } from '../../../../lib/apiAuth'
+import { requireAdmin, boulangerieAppelant } from '../../../../lib/apiAuth'
 
 // Clé service_role obligatoire : l'annulation passe par la fonction annuler_vente_boutique,
 // exécutable uniquement par le serveur
@@ -63,7 +63,9 @@ export async function POST(request) {
 
     if (annulationError) {
       // P0002 : vente introuvable ; 55000 : déjà annulée, statut ou délai ; 22023 : motif invalide
+      // 42501 : vente d'une autre boulangerie que celle de l'admin
       const status = annulationError.code === 'P0002' ? 404
+        : annulationError.code === '42501' ? 403
         : annulationError.code === '55000' ? 409
         : annulationError.code === '22023' ? 400
         : 500
@@ -119,11 +121,12 @@ export async function GET(request) {
     // Récupérer la vente
     const { data: vente, error: venteError } = await supabaseAdmin
       .from('ventes')
-      .select('id, numero_ticket, total, statut, created_at')
+      .select('id, numero_ticket, total, statut, created_at, boulangerie_id')
       .eq('id', venteId)
       .single()
 
-    if (venteError || !vente) {
+    // Une vente d'une autre boulangerie que celle affichée par l'admin : introuvable pour lui
+    if (venteError || !vente || vente.boulangerie_id !== boulangerieAppelant(auth)) {
       return NextResponse.json(
         { canCancel: false, reason: 'Vente introuvable' },
         { status: 404 }

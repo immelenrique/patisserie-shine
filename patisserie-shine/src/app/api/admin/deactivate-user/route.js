@@ -1,7 +1,7 @@
 // src/app/api/admin/deactivate-user/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireAdmin, refuserSiSuperAdminProtege } from '../../../../lib/apiAuth'
+import { requireAdmin, refuserSiSuperAdminProtege, refuserSiAutreBoulangerie } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -31,7 +31,7 @@ export async function POST(request) {
     // Protéger le propriétaire
     const { data: targetUser, error: targetError } = await supabaseAdmin
       .from('profiles')
-      .select('id, username, is_super_admin')
+      .select('id, username, is_super_admin, boulangerie_id')
       .eq('id', userId)
       .maybeSingle()
 
@@ -48,6 +48,10 @@ export async function POST(request) {
         { status: 403 }
       )
     }
+
+    // Un gérant ne gère que les comptes de sa boulangerie
+    const refusBoulangerie = refuserSiAutreBoulangerie(auth, targetUser)
+    if (refusBoulangerie) return refusBoulangerie
 
     const refus = refuserSiSuperAdminProtege(auth, targetUser)
     if (refus) return refus

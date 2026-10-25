@@ -1,7 +1,7 @@
 // src/app/api/admin/update-user/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireAdmin, refuserSiSuperAdminProtege } from '../../../../lib/apiAuth'
+import { requireAdmin, refuserSiSuperAdminProtege, refuserSiAutreBoulangerie } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -43,7 +43,7 @@ export async function PUT(request) {
     // Vérifier que l'utilisateur existe
     const { data: existingUser, error: userError } = await supabaseAdmin
       .from('profiles')
-      .select('id, username, role, nom, is_super_admin')
+      .select('id, username, role, nom, is_super_admin, boulangerie_id')
       .eq('id', userId)
       .single()
 
@@ -63,6 +63,10 @@ export async function PUT(request) {
         { status: 403 }
       )
     }
+
+    // Un gérant ne modifie que les comptes de sa boulangerie
+    const refusBoulangerie = refuserSiAutreBoulangerie(auth, existingUser)
+    if (refusBoulangerie) return refusBoulangerie
 
     // Le rôle d'un super admin n'est changé que par un super admin
     if (existingUser.role !== role) {
