@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase-client';
 import {
   AlertTriangle, Clock, UserCheck, FileText, Truck, Package, CreditCard, Receipt,
-  Users, Archive, Printer, RefreshCw, ShieldCheck, ShieldAlert, ShoppingBag, Lock, ClipboardCheck, ChefHat
+  Users, Archive, Printer, RefreshCw, ShieldCheck, ShieldAlert, ShoppingBag, Lock, ClipboardCheck, ChefHat, Utensils
 } from 'lucide-react';
 import { Card } from '../ui';
 import { recuService } from '../../services';
@@ -52,21 +52,24 @@ export default function RecapManager({ currentUser }) {
     setLoading(true);
     setErreur('');
     try {
-      const [{ data, error }, conf, inv, prod] = await Promise.all([
+      const [{ data, error }, conf, inv, prod, cuis] = await Promise.all([
         supabase.rpc('recap_periode', { p_du: debut, p_au: fin }),
         // Achats pas encore comparés à la facture (état actuel) ; absent tant que la partie 6 n'est pas en base
         supabase.rpc('achats_a_confirmer'),
         // Inventaires et pertes de la période ; absent tant que la partie 8 n'est pas en base
         supabase.rpc('recap_inventaires', { p_du: debut, p_au: fin }),
         // Productions et recettes ; absent tant que la partie 9 n'est pas en base
-        supabase.rpc('recap_productions', { p_du: debut, p_au: fin })
+        supabase.rpc('recap_productions', { p_du: debut, p_au: fin }),
+        // Cuisine ; absent tant que la partie 10 n'est pas en base
+        supabase.rpc('recap_cuisine', { p_du: debut, p_au: fin })
       ]);
       if (error) throw error;
       if (conf.error) console.warn('Achats à confirmer indisponibles:', conf.error.message);
       if (inv.error) console.warn('Inventaires indisponibles:', inv.error.message);
       if (prod.error) console.warn('Productions indisponibles:', prod.error.message);
+      if (cuis.error) console.warn('Cuisine indisponible:', cuis.error.message);
       // Seule la dernière demande s'affiche (clics rapides sur plusieurs jours)
-      if (numero === demandeRef.current) setRecap({ ...data, confirmations: conf.error ? null : conf.data, inventaires: inv.error ? null : inv.data, productions: prod.error ? null : prod.data });
+      if (numero === demandeRef.current) setRecap({ ...data, confirmations: conf.error ? null : conf.data, inventaires: inv.error ? null : inv.data, productions: prod.error ? null : prod.data, cuisine: cuis.error ? null : cuis.data });
     } catch (err) {
       console.error('Erreur récapitulatif:', err);
       if (numero === demandeRef.current) {
@@ -154,13 +157,16 @@ function Contenu({ recap, titre }) {
   const prod = recap.productions || {};
   const horsMarge = (prod.productions || []).filter(x => x.hors_marge);
   const recettesModifiees = prod.recettes_modifiees || [];
+  const cuisine = recap.cuisine || {};
+  const correctionsCuisine = (cuisine.mouvements || []).filter(m => m.type !== 'entree' || m.motif);
   const nbPoints = (alertes.transit_24h || []).length + (alertes.meme_personne || []).length + (alertes.ecarts || []).length
     + corrections.length + (ventes.annulations || []).length + comptesParAutre.length + (journal.intact === false ? 1 : 0)
     + (alertes.achats_sans_recu || []).length + (alertes.recus_disparus || []).length + (alertes.depenses_modifiees || []).length
     + (alertes.ecarts_caisse || []).length + (alertes.caisses_ouvertes || []).length + (alertes.ventes_hors_caisse || []).length
     + (recap.confirmations?.nombre || 0) + (recap.confirmations?.non_conformes || []).length
     + ecartsInventaire.length + pertesAcceptees.length + (inv.pertes_en_attente || 0) + inventairesManques.length
-    + horsMarge.length + recettesModifiees.length;
+    + horsMarge.length + recettesModifiees.length
+    + (cuisine.annulations || []).length + correctionsCuisine.length + (cuisine.hors_caisse || []).length;
 
   return (
     <div className="space-y-6">
@@ -258,6 +264,15 @@ function Contenu({ recap, titre }) {
               {x.action !== 'suppression' && x.apres?.fiche && ` : ${x.apres.fiche.rendement} par fournée (-${x.apres.fiche.marge_moins} / +${x.apres.fiche.marge_plus}), ${(x.apres.lignes || []).map(l => `${l.produit} ${qte(l.quantite)}`).join(', ')}`}
               {x.avant?.lignes?.length > 0 && x.action !== 'suppression' && ` — avant : ${x.avant.lignes.map(l => `${l.produit} ${qte(l.quantite)}`).join(', ')}`}</>} />
 
+          <Liste titre="Cuisine : ventes annulées" lignes={cuisine.annulations}
+            rendu={(a) => <>{heure(a.le)} — ticket {a.ticket} ({utils.formatCFA(a.montant)}) vendu par {a.vendeur || '-'}, annulé par <b>{a.annule_par || '-'}</b>. Motif : « {a.motif} »</>} />
+
+          <Liste titre="Cuisine : corrections du stock et articles remis en stock" lignes={correctionsCuisine}
+            rendu={(m) => <>{heure(m.le)} — {m.produit} : {qte(m.avant)} → <b>{qte(m.apres)}</b> par {m.par || '-'}. {m.motif ? <>Motif : « {m.motif} »</> : m.commentaire}</>} />
+
+          <Liste titre="Cuisine : ventes faites sans caisse ouverte" lignes={cuisine.hors_caisse}
+            rendu={(x) => <><b>{x.vendeur || '-'}</b> : {x.nombre} vente(s) pour {utils.formatCFA(x.total)}, comptées dans aucune caisse</>} />
+
           {(prod.recettes_sans_rendement || []).length > 0 && (
             <p className="text-sm text-gray-600">Recette(s) sans rendement, donc inutilisables pour produire : {prod.recettes_sans_rendement.join(', ')} (à compléter dans « Recettes »).</p>
           )}
@@ -339,6 +354,24 @@ function Contenu({ recap, titre }) {
           </div>
         </div>
       </Section>
+
+      {/* Cuisine */}
+      {recap.cuisine && (
+        <Section icone={Utensils} titre={`Cuisine : ${cuisine.ventes?.nombre || 0} tickets, ${utils.formatCFA(cuisine.ventes?.total || 0)}`}>
+          <div className="grid md:grid-cols-2 gap-4 p-4">
+            <div>
+              <h4 className="font-medium text-sm mb-2">Par vendeur</h4>
+              <Tableau entetes={['Vendeur', 'Tickets', 'Total']} lignes={cuisine.ventes?.par_vendeur} interne
+                rendu={(v) => [v.vendeur || '-', v.nombre, utils.formatCFA(v.total)]} />
+            </div>
+            <div>
+              <h4 className="font-medium text-sm mb-2">Entrées et corrections du stock</h4>
+              <Tableau entetes={['Heure', 'Produit', 'Mouvement', 'Par']} lignes={cuisine.mouvements} interne
+                rendu={(m) => [heure(m.le), m.produit, `${m.type === 'entree' ? '+' + qte(m.quantite) : m.type} (${qte(m.avant)} → ${qte(m.apres)})`, m.par || '-']} />
+            </div>
+          </div>
+        </Section>
+      )}
 
       {/* Productions de l'atelier */}
       {recap.productions && (

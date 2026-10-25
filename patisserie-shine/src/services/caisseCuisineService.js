@@ -7,126 +7,44 @@ import { supabase } from '../lib/supabase-client'
  */
 export const caisseCuisineService = {
   /**
-   * Génère un numéro de ticket unique pour les ventes cuisine
-   * Format: CUIS-YYYYMMDD-XXXX
-   * @returns {string} Numéro de ticket
+   * Enregistre une vente cuisine en une seule transaction côté base (fonction enregistrer_vente_cuisine) :
+   * stock vérifié et verrouillé, prix et total calculés par la base, tout ou rien.
+   * @param {Object} venteData - { items: [{ id, quantite }], montant_donne, cle }
+   * @returns {Object} { vente, error, coupure } - vente.items : [{ id, nom, prix, quantite, total }]
    */
-  async genererNumeroTicket() {
+  async enregistrerVente(venteData) {
     try {
-      const today = new Date()
-      const dateStr = today.toISOString().split('T')[0].replace(/-/g, '')
+      // La clé identifie le panier : renvoyée lors d'un nouvel essai, elle évite d'enregistrer
+      // deux fois une vente dont la réponse s'est perdue
+      const { data, error } = await supabase.rpc('enregistrer_vente_cuisine', {
+        p_items: venteData.items.map(item => ({ id: item.id, quantite: item.quantite })),
+        p_montant_donne: venteData.montant_donne,
+        p_cle: venteData.cle || null
+      })
 
-      // Compter le nombre de ventes du jour
-      const { count } = await supabase
-        .from('ventes_cuisine')
-        .select('*', { count: 'exact', head: true })
-        .gte('created_at', `${today.toISOString().split('T')[0]}T00:00:00`)
-        .lte('created_at', `${today.toISOString().split('T')[0]}T23:59:59`)
+      if (error) throw error
 
-      const numero = String((count || 0) + 1).padStart(4, '0')
-      return `CUIS-${dateStr}-${numero}`
+      return { vente: data, error: null }
     } catch (error) {
-      console.error('Erreur génération numéro ticket:', error)
-      // Fallback avec timestamp
-      return `CUIS-${Date.now()}`
+      console.error('Erreur enregistrerVente cuisine:', error)
+      // Sans code d'erreur, la base n'a pas répondu (coupure réseau) : la vente a pu être enregistrée
+      return { vente: null, error: error.message, coupure: !error.code }
     }
   },
 
   /**
-   * Enregistre une vente cuisine
-   * @param {Object} venteData - Données de la vente
-   * @returns {Object} { vente, error }
+   * Annule une vente cuisine (propriétaire et gérants) : stock remis, annulation gardée avec son motif
+   * @param {number} venteId
+   * @param {string} motif - au moins 10 caractères
+   * @returns {Object} { resultat, error }
    */
-  async enregistrerVente(venteData) {
-    try {
-      const { items, total, montant_donne, monnaie_rendue, vendeur_id } = venteData
-
-      // Générer le numéro de ticket
-      const numeroTicket = await this.genererNumeroTicket()
-
-      // Créer la vente
-      const { data: vente, error: venteError } = await supabase
-        .from('ventes_cuisine')
-        .insert({
-          numero_ticket: numeroTicket,
-          vendeur_id,
-          total,
-          montant_donne,
-          monnaie_rendue,
-          statut: 'validee',
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single()
-
-      if (venteError) {
-        console.error('Erreur création vente:', venteError)
-        return { vente: null, error: venteError.message }
-      }
-
-      // Créer les lignes de vente et mettre à jour le stock
-      for (const item of items) {
-        // Créer la ligne de vente
-        const { error: ligneError } = await supabase
-          .from('lignes_vente_cuisine')
-          .insert({
-            vente_cuisine_id: vente.id,
-            produit_cuisine_id: item.id,
-            nom_produit: item.nom,
-            quantite: item.quantite,
-            prix_unitaire: item.prix,
-            sous_total: item.prix * item.quantite,
-            created_at: new Date().toISOString()
-          })
-
-        if (ligneError) {
-          console.error('Erreur création ligne vente:', ligneError)
-          // Continuer malgré l'erreur pour ne pas bloquer la vente
-        }
-
-        // Mettre à jour le stock cuisine
-        const { data: stock } = await supabase
-          .from('stock_cuisine')
-          .select('id, quantite_disponible, quantite_vendue')
-          .eq('produit_cuisine_id', item.id)
-          .single()
-
-        if (stock) {
-          const nouvelleQuantiteDisponible = (stock.quantite_disponible || 0) - item.quantite
-          const nouvelleQuantiteVendue = (stock.quantite_vendue || 0) + item.quantite
-
-          await supabase
-            .from('stock_cuisine')
-            .update({
-              quantite_disponible: Math.max(0, nouvelleQuantiteDisponible),
-              quantite_vendue: nouvelleQuantiteVendue,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', stock.id)
-
-          // Enregistrer le mouvement de stock
-          await supabase
-            .from('mouvements_stock_cuisine')
-            .insert({
-              produit_cuisine_id: item.id,
-              type_mouvement: 'vente',
-              quantite: item.quantite,
-              quantite_avant: stock.quantite_disponible,
-              quantite_apres: nouvelleQuantiteDisponible,
-              utilisateur_id: vendeur_id,
-              reference_id: vente.id,
-              commentaire: `Vente - Ticket ${numeroTicket}`,
-              created_at: new Date().toISOString()
-            })
-        }
-      }
-
-      return { vente, error: null }
-
-    } catch (error) {
-      console.error('Erreur dans enregistrerVente:', error)
-      return { vente: null, error: error.message }
+  async annulerVente(venteId, motif) {
+    const { data, error } = await supabase.rpc('annuler_vente_cuisine', { p_vente_id: venteId, p_motif: motif })
+    if (error) {
+      console.error('Erreur annulerVente cuisine:', error)
+      return { resultat: null, error: error.message }
     }
+    return { resultat: data, error: null }
   },
 
   /**

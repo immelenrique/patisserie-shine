@@ -2,11 +2,11 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { stockCuisineService, uniteService } from '../../services';
 import { utils } from '../../utils/formatters';
-import { ChefHat, Plus, Search, AlertTriangle, History, Trash2, Package } from 'lucide-react';
-import { Card, Modal } from '../ui';
+import { ChefHat, Plus, Search, AlertTriangle, History, Trash2, Package, Pencil } from 'lucide-react';
+import { Card, Modal, useSaisie } from '../ui';
 
 export default function StockCuisineManager({ currentUser }) {
   // États - TOUJOURS initialiser avec des tableaux vides
@@ -38,10 +38,18 @@ export default function StockCuisineManager({ currentUser }) {
     prix_vente: ''
   });
   const [submitting, setSubmitting] = useState(false);
+  const [fenetreSaisie, demander] = useSaisie();
+  // Clé de l'entrée en cours : un second envoi de la même saisie (double clic, réponse perdue) ne compte pas deux fois
+  const cleEntreeRef = useRef(null);
+  const estGerant = currentUser?.role === 'admin';
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    cleEntreeRef.current = null;
+  }, [newStock]);
 
   const loadData = async () => {
     setLoading(true);
@@ -216,19 +224,23 @@ export default function StockCuisineManager({ currentUser }) {
       return;
     }
 
+    if (submitting) return;
     setSubmitting(true);
     setError('');
+    if (!cleEntreeRef.current) cleEntreeRef.current = utils.genererCle();
 
     try {
       const result = await stockCuisineService.createOrUpdateStock({
         produit_cuisine_id: parseInt(newStock.produit_cuisine_id),
         quantite_disponible: quantity,
-        prix_vente: newStock.prix_vente ? parseFloat(newStock.prix_vente) : null
+        prix_vente: newStock.prix_vente ? parseFloat(newStock.prix_vente) : null,
+        cle: cleEntreeRef.current
       });
 
       if (result.error) {
         setError(result.error);
       } else {
+        cleEntreeRef.current = null;
         alert('Stock ajouté avec succès !');
         setShowAddStockModal(false);
         setNewStock({
@@ -253,23 +265,14 @@ export default function StockCuisineManager({ currentUser }) {
       return;
     }
 
-    const confirmation = window.confirm(
-      '⚠️ ATTENTION ⚠️\n\n' +
-      'Vous êtes sur le point de VIDER TOUT LE STOCK CUISINE.\n' +
-      'Toutes les quantités seront mises à 0.\n\n' +
-      'Cette action est irréversible.\n\n' +
-      'Voulez-vous vraiment continuer ?'
-    );
-
-    if (!confirmation) return;
-
-    const doubleConfirmation = window.confirm(
-      'Confirmation finale:\n\n' +
-      'Êtes-vous ABSOLUMENT SÛR de vouloir vider tout le stock cuisine ?\n\n' +
-      'Tapez OK pour confirmer.'
-    );
-
-    if (!doubleConfirmation) return;
+    const r = await demander({
+      titre: 'Vider tout le stock cuisine',
+      message: 'Toutes les quantités seront mises à 0. Chaque correction est gardée avec son motif et visible par la propriétaire.',
+      champs: [{ nom: 'motif', label: 'Motif', placeholder: 'ex. : fin de service, invendus jetés', obligatoire: true }],
+      confirmer: 'Vider le stock',
+      danger: true
+    });
+    if (!r) return;
 
     setLoading(true);
     setError('');
@@ -287,7 +290,8 @@ export default function StockCuisineManager({ currentUser }) {
       let compteur = 0;
       for (const stock of allStocks) {
         if (stock.quantite_disponible > 0) {
-          await stockCuisineService.ajusterQuantite(stock.produit_cuisine_id, 0);
+          const { error: erreurCorrection } = await stockCuisineService.ajusterQuantite(stock.produit_cuisine_id, 0, r.motif);
+          if (erreurCorrection) throw new Error(erreurCorrection);
           compteur++;
         }
       }
@@ -304,6 +308,26 @@ export default function StockCuisineManager({ currentUser }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Correction d'un produit : la quantité réellement présente et le motif (gardés dans l'historique)
+  const corrigerStock = async (stock) => {
+    const r = await demander({
+      titre: `Corriger « ${stock.produit?.nom || 'produit'} »`,
+      message: `Quantité enregistrée : ${stock.quantite_disponible}.`,
+      champs: [
+        { nom: 'quantite', label: 'Quantité réellement présente', type: 'number', zero: true },
+        { nom: 'motif', label: 'Motif de la correction', placeholder: 'ex. : plat renversé', obligatoire: true }
+      ],
+      confirmer: 'Corriger'
+    });
+    if (!r) return;
+    const { error: erreurCorrection } = await stockCuisineService.ajusterQuantite(stock.produit_cuisine_id, r.quantite, r.motif);
+    if (erreurCorrection) {
+      alert('Correction impossible : ' + erreurCorrection);
+      return;
+    }
+    await loadData();
   };
 
   // États de chargement
@@ -444,6 +468,15 @@ export default function StockCuisineManager({ currentUser }) {
                   </div>
                 )}
               </div>
+              {estGerant && (
+                <button
+                  onClick={() => corrigerStock(stock)}
+                  className="mt-3 text-sm text-gray-600 hover:text-gray-900 flex items-center"
+                >
+                  <Pencil className="w-3 h-3 mr-1" />
+                  Corriger
+                </button>
+              )}
             </Card>
           ))
         ) : (
@@ -656,12 +689,12 @@ export default function StockCuisineManager({ currentUser }) {
                 value={newStock.prix_vente}
                 onChange={(e) => setNewStock({ ...newStock, prix_vente: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
-                placeholder="Laisser vide pour utiliser le prix du produit"
+                placeholder="Laisser vide pour garder le prix actuel"
                 min="0"
                 step="1"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Si vide, le prix du produit sera utilisé
+                Si vide, le prix actuel est gardé (à défaut, celui du produit)
               </p>
             </div>
 
@@ -717,6 +750,7 @@ export default function StockCuisineManager({ currentUser }) {
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Type</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Quantité</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Utilisateur</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500">Détail</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -737,6 +771,11 @@ export default function StockCuisineManager({ currentUser }) {
                           {mouvement.quantite} {mouvement.produit?.unite?.label || ''}
                         </td>
                         <td className="px-4 py-2 text-sm">{mouvement.utilisateur?.nom || 'Système'}</td>
+                        <td className="px-4 py-2 text-xs text-gray-600">
+                          {mouvement.quantite_avant != null && `${mouvement.quantite_avant} → ${mouvement.quantite_apres}`}
+                          {mouvement.commentaire && <div>{mouvement.commentaire}</div>}
+                          {mouvement.raison && !mouvement.raison.startsWith('cle:') && <div>Motif : {mouvement.raison}</div>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -760,6 +799,7 @@ export default function StockCuisineManager({ currentUser }) {
           </div>
         </Modal>
       )}
+      {fenetreSaisie}
     </div>
   );
 }
