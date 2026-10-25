@@ -1,597 +1,218 @@
-// src/components/production/ProductionManager.js (CORRECTION COMPLÈTE)
-
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase-client';
-import { productionService, recetteService } from '../../services';
 import { utils } from '../../utils/formatters';
-import { Plus, ChefHat, Calendar, MapPin, User, AlertTriangle, CheckCircle, Clock, Package, Info, Store } from 'lucide-react';
-import { Card, Modal, StatusBadge } from '../ui';
+import { Plus, ChefHat, AlertTriangle, Info, Truck } from 'lucide-react';
+import { Card, Modal } from '../ui';
 
+const qte = (n) => (n === null || n === undefined ? '-' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(n));
+const FORMULAIRE_VIDE = { recette: '', fournees: '1', quantite: '', envoyer: true };
+
+// Production de l'atelier par recette : les matières de la recette (fournées × quantités) sortent du stock atelier,
+// le produit fini y entre, puis part à la boutique par un envoi compté à l'arrivée. Une quantité obtenue hors de la
+// marge de la recette est signalée au propriétaire. Tout est calculé et enregistré par la base (declarer_production).
 export default function ProductionManager({ currentUser }) {
+  const peutProduire = ['admin', 'employe_production'].includes(currentUser.role);
+  const [fiches, setFiches] = useState([]);
+  const [sansFiche, setSansFiche] = useState([]);
+  const [lignes, setLignes] = useState({});
+  const [stockAtelier, setStockAtelier] = useState({});
   const [productions, setProductions] = useState([]);
-  const [produitsRecettes, setProduitsRecettes] = useState([]);
+  const [noms, setNoms] = useState({});
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
-    produit: '',
-    quantite: '',
-    destination: 'Boutique',
-    date_production: new Date().toISOString().split('T')[0]
-  });
-  const [recetteInfo, setRecetteInfo] = useState(null);
-  const [prixRecetteInfo, setPrixRecetteInfo] = useState(null);
+  const [erreur, setErreur] = useState('');
+  const [ouvert, setOuvert] = useState(false);
+  const [form, setForm] = useState(FORMULAIRE_VIDE);
+  const [enCours, setEnCours] = useState(false);
+  const verrouRef = useRef(false);
+  const cleRef = useRef(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { charger(); }, []);
+  // Toute modification du formulaire est une nouvelle production (nouvelle clé anti-doublon)
+  useEffect(() => { cleRef.current = null; }, [form]);
 
-  useEffect(() => {
-    if (formData.produit) {
-      loadRecetteInfo();
-      loadPrixRecette(); // 🔧 AJOUT: Charger le prix de la recette
-    } else {
-      setRecetteInfo(null);
-      setPrixRecetteInfo(null);
-    }
-  }, [formData.produit]);
-
-  const loadData = async () => {
+  const charger = async () => {
     setLoading(true);
-    try {
-      const [productionsResult, produitsResult] = await Promise.all([
-        productionService.getAll(),
-        recetteService.getProduitsRecettes()
-      ]);
-
-      if (productionsResult.error) throw new Error(productionsResult.error);
-      if (produitsResult.error) throw new Error(produitsResult.error);
-
-      setProductions(productionsResult.productions);
-      setProduitsRecettes(produitsResult.produits);
-      setError('');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+    const [rFiches, rRecettes, rStock, rProd] = await Promise.all([
+      supabase.from('recettes_fiches').select('*').order('nom_produit'),
+      supabase.from('recettes').select('nom_produit, produit_ingredient_id, quantite_necessaire, produit:produits!recettes_produit_ingredient_id_fkey(nom, unite:unites(label))'),
+      supabase.from('stock_atelier').select('produit_id, quantite_disponible'),
+      supabase.from('productions').select('*').order('created_at', { ascending: false }).limit(30)
+    ]);
+    const err = [rFiches, rRecettes, rStock, rProd].find(r => r.error);
+    if (err) setErreur('Chargement impossible : ' + err.error.message);
+    const parRecette = {};
+    for (const r of rRecettes.data || []) (parRecette[r.nom_produit] = parRecette[r.nom_produit] || []).push(r);
+    const avecFiche = (rFiches.data || []).filter(f => parRecette[f.nom_produit]);
+    setFiches(avecFiche);
+    setSansFiche(Object.keys(parRecette).filter(n => !avecFiche.some(f => f.nom_produit === n)).sort());
+    setLignes(parRecette);
+    setStockAtelier(Object.fromEntries((rStock.data || []).map(s => [s.produit_id, Number(s.quantite_disponible)])));
+    setProductions(rProd.data || []);
+    // Les productions n'ont pas de lien direct vers les profils : les noms sont lus à part
+    const ids = [...new Set((rProd.data || []).map(p => p.producteur_id).filter(Boolean))];
+    if (ids.length) {
+      const { data } = await supabase.from('profiles').select('id, nom, username').in('id', ids);
+      setNoms(Object.fromEntries((data || []).map(p => [p.id, p.nom || p.username])));
     }
+    setLoading(false);
   };
 
-  const loadRecetteInfo = async () => {
-    try {
-      const { recettes, error } = await recetteService.getRecettesProduit(formData.produit);
-      
-      if (error) {
-        console.error('Erreur chargement recette:', error);
-        return;
-      }
+  const fiche = fiches.find(f => f.nom_produit === form.recette);
+  const fournees = parseFloat(String(form.fournees).replace(',', '.')) || 0;
+  const besoins = (lignes[form.recette] || []).map(l => {
+    const besoin = Number(l.quantite_necessaire) * fournees;
+    const stock = stockAtelier[l.produit_ingredient_id] ?? 0;
+    return { nom: l.produit?.nom || '?', unite: l.produit?.unite?.label || '', besoin, stock, manque: Math.max(0, besoin - Math.max(stock, 0)) };
+  });
+  const attendu = fiche ? { mini: fournees * (fiche.rendement - fiche.marge_moins), maxi: fournees * (Number(fiche.rendement) + Number(fiche.marge_plus)), centre: fournees * fiche.rendement } : null;
 
-      if (recettes && recettes.length > 0) {
-        const coutTotal = recettes.reduce((sum, r) => {
-          const produit = r.produit_ingredient;
-          if (produit && produit.prix_achat && produit.quantite) {
-            return sum + ((produit.prix_achat / produit.quantite) * r.quantite_necessaire);
-          }
-          return sum;
-        }, 0);
-
-        setRecetteInfo({
-          ingredients: recettes,
-          coutUnitaire: coutTotal,
-          nombreIngredients: recettes.length
-        });
-      }
-    } catch (err) {
-      console.error('Erreur dans loadRecetteInfo:', err);
-    }
-  };
-
-  // 🔧 NOUVELLE FONCTION: Charger le prix de la recette
- const loadPrixRecette = async () => {
-  try {
-    console.log('🔍 Recherche prix pour:', formData.produit);
-    
-    const { data: prixData, error: prixError } = await supabase
-      .from('prix_vente_recettes')
-      .select('prix_vente, actif')
-      .eq('nom_produit', formData.produit)
-      .eq('actif', true)
-      .maybeSingle(); // 🔧 AJOUTER maybeSingle() au lieu de single()
-    
-    console.log('📊 Résultat recherche prix:', { prixData, prixError });
-    
-    if (prixError) {
-      console.warn('⚠️ Erreur recherche prix:', prixError);
-      setPrixRecetteInfo(null);
-    } else if (prixData && prixData.prix_vente) {
-      console.log('✅ Prix trouvé:', prixData.prix_vente);
-      setPrixRecetteInfo({
-        prix_vente: parseFloat(prixData.prix_vente),
-        source: 'recette'
-      });
-    } else {
-      console.warn('⚠️ Aucun prix trouvé pour:', formData.produit);
-      setPrixRecetteInfo(null);
-    }
-  } catch (err) {
-    console.error('❌ Exception loadPrixRecette:', err);
-    setPrixRecetteInfo(null);
-  }
-};
-
-
-  const handleSubmit = async (e) => {
+  const enregistrer = async (e) => {
     e.preventDefault();
-    setSubmitting(true);
-    setError('');
-    
-    try {
-      // 🔧 VÉRIFICATION: Prix obligatoire pour destination Boutique
-      if (formData.destination === 'Boutique' && (!prixRecetteInfo || !prixRecetteInfo.prix_vente)) {
-  setError(`Aucun prix de vente défini pour "${formData.produit}". Définissez d'abord le prix dans l'onglet Recettes.`);
-  setSubmitting(false);
-  return;
-}
-
-      const result = await productionService.createProduction({
-        produit: formData.produit,
-        quantite: parseFloat(formData.quantite),
-        destination: formData.destination,
-        date_production: formData.date_production
-      });
-
-      if (result.error) {
-        setError(result.error);
-        return;
-      }
-
-      let message = `✅ Production créée avec succès !\n\n${result.production?.message || ''}`;
-      
-      if (formData.destination === 'Boutique' && prixRecetteInfo) {
-        message += `\n\n🏪 Produit ajouté au stock boutique avec prix: ${utils.formatCFA(prixRecetteInfo.prix_vente)}`;
-      } else {
-        message += `\n\n📦 Produit stocké pour: ${formData.destination}`;
-      }
-      
-      alert(message);
-
-      // Réinitialiser le formulaire
-      setShowAddModal(false);
-      setFormData({
-        produit: '',
-        quantite: '',
-        destination: 'Boutique',
-        date_production: new Date().toISOString().split('T')[0]
-      });
-      setRecetteInfo(null);
-      setPrixRecetteInfo(null);
-      
-      loadData();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSubmitting(false);
+    if (verrouRef.current) return;
+    const quantite = parseFloat(String(form.quantite).replace(',', '.'));
+    if (!fiche || !(fournees > 0) || !(quantite > 0)) {
+      alert('Choisissez la recette, le nombre de fournées et la quantité réellement obtenue.');
+      return;
     }
-  };
-
-  const calculatedStats = {
-    totalProductions: productions.length,
-    productionsJour: productions.filter(p => p.date_production === new Date().toISOString().split('T')[0]).length,
-    productionsTerminees: productions.filter(p => p.statut === 'termine').length,
-    productionsEnCours: productions.filter(p => p.statut === 'en_cours').length
+    if (!cleRef.current) cleRef.current = utils.genererCle();
+    verrouRef.current = true;
+    setEnCours(true);
+    const { data, error } = await supabase.rpc('declarer_production', {
+      p_recette: form.recette, p_fournees: fournees, p_quantite: quantite, p_envoyer: form.envoyer, p_cle: cleRef.current
+    });
+    verrouRef.current = false;
+    setEnCours(false);
+    if (error) return alert('Production non enregistrée : ' + error.message);
+    if (data.deja_enregistre) {
+      alert('Cette production était déjà enregistrée.');
+    } else {
+      const manques = (data.matieres || []).filter(m => Number(m.manque) > 0);
+      alert(`Production n°${data.production_id} enregistrée : ${qte(data.quantite)} « ${data.produit} ».`
+        + `\n\nMatières retirées du stock atelier :\n` + (data.matieres || []).map(m => `• ${m.produit} : ${qte(m.retire)} ${m.unite || ''}`).join('\n')
+        + (manques.length ? `\n\nPas assez au stock enregistré (noté, sans blocage) :\n` + manques.map(m => `• ${m.produit} : ${qte(m.manque)} ${m.unite || ''}`).join('\n') : '')
+        + (data.hors_marge ? `\n\nQuantité hors de la marge de la recette (${qte(data.min)} à ${qte(data.max)}) : le propriétaire est prévenu.` : '')
+        + (data.envoi_id ? `\n\nEnvoi n°${data.envoi_id} vers la boutique : elle comptera à l'arrivée.` : `\n\nLe produit est au stock atelier ; envoyez-le depuis « Stock Atelier ».`));
+    }
+    setOuvert(false);
+    setForm(FORMULAIRE_VIDE);
+    charger();
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="spinner"></div>
-        <span className="ml-2">Chargement des productions...</span>
-      </div>
-    );
+    return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600"></div></div>;
   }
 
   return (
     <div className="space-y-6">
-      {/* En-tête */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center">
-            <ChefHat className="w-8 h-8 text-orange-600 mr-3" />
-            Production - Produits Finis
-          </h1>
-          <p className="text-gray-600">Création de produits finis - Ajout direct au stock boutique</p>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center"><ChefHat className="w-8 h-8 text-orange-600 mr-3" />Production de l'atelier</h1>
+          <p className="text-gray-600">Les matières de la recette sortent du stock atelier ; le produit fini part à la boutique, qui le compte à l'arrivée.</p>
         </div>
-        {(currentUser.role === 'admin' || currentUser.role === 'employe_production') && (
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="btn-primary"
-            disabled={produitsRecettes.length === 0}
-          >
-            <Plus className="w-4 h-4" />
-            Nouvelle Production
+        {peutProduire && (
+          <button onClick={() => { setForm(FORMULAIRE_VIDE); setOuvert(true); }} disabled={fiches.length === 0}
+            className="self-start bg-orange-700 hover:bg-orange-800 text-white px-5 min-h-[44px] rounded-lg font-medium flex items-center disabled:opacity-50">
+            <Plus className="w-4 h-4 mr-2" />Nouvelle production
           </button>
         )}
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <AlertTriangle className="w-5 h-5 text-red-600 mr-2" />
-            <span className="text-red-800">{error}</span>
-          </div>
+      {erreur && <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4">{erreur}</div>}
+
+      {sansFiche.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-900 text-sm flex items-start">
+          <AlertTriangle className="w-5 h-5 mr-2 mt-0.5 shrink-0" />
+          <span>Recette(s) sans rendement, donc pas encore utilisables : {sansFiche.join(', ')}.
+            Le propriétaire ou un gérant indique dans « Recettes » combien chacune donne par fournée et la marge acceptée.</span>
         </div>
       )}
 
-      {produitsRecettes.length === 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center">
-            <AlertTriangle className="w-5 h-5 text-yellow-600 mr-2" />
-            <span className="text-yellow-800">
-              Aucune recette disponible. Créez des recettes dans l'onglet "Recettes" pour pouvoir enregistrer des productions.
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Message d'information sur le nouveau processus */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex items-start">
-          <Info className="w-5 h-5 text-blue-600 mr-2 mt-0.5" />
-          <div className="text-blue-800">
-            <h4 className="font-medium mb-1">🔄 Processus de production automatisé</h4>
-            <p className="text-sm">
-              <strong>Important :</strong><br/>
-              ✅ <strong>Prix automatique :</strong> Le prix défini dans la recette est utilisé automatiquement<br/>
-              🏪 <strong>Ajout direct au stock boutique</strong> selon la destination<br/>
-              📦 <strong>Les ingrédients sont déduits</strong> automatiquement du stock atelier<br/>
-              💰 <strong>Pas besoin de re-saisir le prix</strong> si déjà défini dans la recette
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Statistiques rapides */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="p-6">
-          <div className="flex items-center">
-            <ChefHat className="w-8 h-8 text-blue-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">Productions totales</p>
-              <p className="text-2xl font-bold text-gray-900">{calculatedStats.totalProductions}</p>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-6">
-          <div className="flex items-center">
-            <CheckCircle className="w-8 h-8 text-green-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">Terminées</p>
-              <p className="text-2xl font-bold text-gray-900">{calculatedStats.productionsTerminees}</p>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-6">
-          <div className="flex items-center">
-            <Clock className="w-8 h-8 text-orange-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">En cours</p>
-              <p className="text-2xl font-bold text-gray-900">{calculatedStats.productionsEnCours}</p>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-6">
-          <div className="flex items-center">
-            <Store className="w-8 h-8 text-purple-600" />
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">Vers Boutique</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {productions.filter(p => p.destination === 'Boutique').length}
-              </p>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Liste des productions */}
-      <Card>
-        <div className="flex justify-between items-center mb-4 p-6 border-b">
-          <h3 className="text-lg font-semibold">Historique des Productions</h3>
-          <div className="text-sm text-gray-500">
-            {productions.length} production{productions.length > 1 ? 's' : ''}
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="table w-full">
-            <thead>
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Produit</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Quantité</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Destination</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Producteur</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Statut</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Coût Ingrédients</th>
-              </tr>
-            </thead>
-            <tbody>
-              {productions.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="text-center py-8 text-gray-500">
-                    <ChefHat className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                    Aucune production enregistrée
-                    <br />
-                    <span className="text-sm">Créez votre première production</span>
-                  </td>
-                </tr>
-              ) : (
-                productions.map((production) => (
-                  <tr key={production.id}>
-                    <td className="px-6 py-4 font-medium">{production.produit}</td>
-                    <td className="px-6 py-4 font-semibold text-blue-600">
-                      {utils.formatNumber(production.quantite, 1)} unité{production.quantite > 1 ? 's' : ''}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center">
-                        {production.destination === 'Boutique' ? (
-                          <Store className="w-4 h-4 text-green-600 mr-1" />
-                        ) : (
-                          <MapPin className="w-4 h-4 text-gray-400 mr-1" />
-                        )}
-                        <span className={production.destination === 'Boutique' ? 'text-green-600 font-medium' : ''}>
-                          {production.destination}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">{utils.formatDate(production.date_production)}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center">
-                        <User className="w-4 h-4 text-gray-400 mr-1" />
-                        {production.producteur?.nom || 'Non spécifié'}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <StatusBadge status={production.statut || 'termine'} />
-                    </td>
-                    <td className="px-6 py-4">
-                      {production.cout_ingredients ? 
-                        <span className="font-semibold text-green-600">
-                          {utils.formatCFA(production.cout_ingredients)}
-                        </span> : 
-                        <span className="text-gray-400">Calculé auto</span>
-                      }
-                    </td>
+      <Card hover={false}>
+        <div className="p-4 border-b"><h3 className="font-semibold">Dernières productions</h3></div>
+        {productions.length === 0 ? <p className="p-4 text-gray-500">Aucune production enregistrée.</p> : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>{['Date', 'Recette', 'Fournées', 'Obtenu', 'Attendu', 'Coût des matières', 'Envoi', 'Par'].map(t => <th key={t} className="px-3 py-2 text-left font-medium text-gray-600 whitespace-nowrap">{t}</th>)}</tr>
+              </thead>
+              <tbody className="divide-y">
+                {productions.map(p => (
+                  <tr key={p.id} className="align-top">
+                    <td className="px-3 py-2 whitespace-nowrap">{utils.formatDateTime(p.created_at)}</td>
+                    <td className="px-3 py-2">{p.recette || p.produit}{p.recette && p.produit !== p.recette ? ` → ${p.produit}` : ''}</td>
+                    <td className="px-3 py-2">{p.fournees ?? '-'}</td>
+                    <td className="px-3 py-2 font-medium">{qte(p.quantite)}</td>
+                    <td className="px-3 py-2">{p.quantite_attendue === null || p.quantite_attendue === undefined ? '-' : (
+                      <span className={p.hors_marge ? 'text-red-700 font-semibold' : ''}>{qte(p.quantite_min)} à {qte(p.quantite_max)}{p.hors_marge ? ' (hors marge)' : ''}</span>)}</td>
+                    <td className="px-3 py-2">{utils.formatCFA(p.cout_ingredients || 0)}</td>
+                    <td className="px-3 py-2">{p.envoi_id ? `n°${p.envoi_id}` : '-'}</td>
+                    <td className="px-3 py-2">{noms[p.producteur_id] || '-'}</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
 
-      {/* Modal de création */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold mb-4 flex items-center">
-              <Plus className="w-5 h-5 mr-2 text-orange-600" />
-              Nouvelle Production
-            </h3>
-            
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Produit à produire *
-                  </label>
-                  <select
-                    value={formData.produit}
-                    onChange={(e) => setFormData({...formData, produit: e.target.value})}
-                    className="form-input w-full"
-                    required
-                    disabled={submitting}
-                  >
-                    <option value="">Sélectionner un produit</option>
-                    {produitsRecettes.map((produit) => (
-                      <option key={produit} value={produit}>
-                        {produit}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Seuls les produits avec recettes sont disponibles
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Quantité à produire *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0.1"
-                    value={formData.quantite}
-                    onChange={(e) => setFormData({...formData, quantite: e.target.value})}
-                    className="form-input w-full"
-                    placeholder="1.0"
-                    required
-                    disabled={submitting}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Multiplicateur de la recette (ex: 2 = double portion)
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Destination *
-                  </label>
-                  <select
-                    value={formData.destination}
-                    onChange={(e) => setFormData({...formData, destination: e.target.value})}
-                    className="form-input w-full"
-                    disabled={submitting}
-                  >
-                    <option value="Boutique">🏪 Boutique (vente directe)</option>
-                    <option value="Commande">📦 Commande client</option>
-                    <option value="Stock">📋 Stock (réserve)</option>
-                    <option value="Événement">🎉 Événement spécial</option>
-                    <option value="Test">🧪 Test/Échantillon</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Date de production
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.date_production}
-                    onChange={(e) => setFormData({...formData, date_production: e.target.value})}
-                    className="form-input w-full"
-                    required
-                    disabled={submitting}
-                  />
-                </div>
-              </div>
-
-              {/* 🔧 AFFICHAGE DU PRIX AUTOMATIQUE */}
-              {formData.destination === 'Boutique' && prixRecetteInfo && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h4 className="font-medium text-green-800 mb-3 flex items-center">
-                    <Store className="w-5 h-5 mr-2" />
-                    Configuration Boutique Automatique
-                  </h4>
-                  <div className="bg-white border border-green-300 rounded-lg p-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-green-700">Prix de vente unitaire:</span>
-                      <span className="font-bold text-xl text-green-600">
-                        {utils.formatCFA(prixRecetteInfo.prix_vente)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-green-600 mt-2">
-                      ✅ Prix récupéré automatiquement depuis la recette
-                    </div>
-                    {recetteInfo && formData.quantite && (
-                      <div className="mt-3 pt-3 border-t border-green-200">
-                        <div className="grid grid-cols-2 gap-4 text-xs">
-                          <div>
-                            <span className="text-green-700">Coût production unitaire:</span>
-                            <div className="font-semibold">{utils.formatCFA(recetteInfo.coutUnitaire)}</div>
-                          </div>
-                          <div>
-                            <span className="text-green-700">Marge unitaire:</span>
-                            <div className="font-semibold text-blue-600">
-                              {utils.formatCFA(prixRecetteInfo.prix_vente - recetteInfo.coutUnitaire)}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-3 text-xs text-green-700">
-                    ✓ Le produit sera ajouté directement au stock boutique avec ce prix
-                    <br />
-                    ✓ Disponible immédiatement pour la vente en caisse
-                  </div>
-                </div>
-              )}
-
-              {/* ALERTE SI PAS DE PRIX POUR BOUTIQUE */}
-              {formData.destination === 'Boutique' && !prixRecetteInfo && formData.produit && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <h4 className="font-medium text-red-800 mb-2 flex items-center">
-                    <AlertTriangle className="w-5 h-5 mr-2" />
-                    Prix de vente requis
-                  </h4>
-                  <p className="text-red-700 text-sm">
-                    Aucun prix de vente défini pour "{formData.produit}".
-                    <br />
-                    Vous devez d'abord définir le prix dans l'onglet "Recettes" lors de la création de la recette.
-                  </p>
-                </div>
-              )}
-
-              {/* Informations sur la recette sélectionnée */}
-              {recetteInfo && formData.quantite && (
-                <div className="border rounded-lg p-4 bg-gray-50">
-                  <h4 className="font-medium mb-3 flex items-center">
-                    <Package className="w-5 h-5 text-blue-600 mr-2" />
-                    Aperçu de la production
-                  </h4>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                    <div className="bg-white p-3 rounded border">
-                      <p className="text-gray-600">Ingrédients nécessaires</p>
-                      <p className="font-semibold text-lg">{recetteInfo.nombreIngredients}</p>
-                    </div>
-                    <div className="bg-white p-3 rounded border">
-                      <p className="text-gray-600">Coût unitaire estimé</p>
-                      <p className="font-semibold text-lg text-green-600">
-                        {utils.formatCFA(recetteInfo.coutUnitaire)}
-                      </p>
-                    </div>
-                    <div className="bg-white p-3 rounded border">
-                      <p className="text-gray-600">Coût total estimé</p>
-                      <p className="font-semibold text-lg text-blue-600">
-                        {utils.formatCFA(recetteInfo.coutUnitaire * parseFloat(formData.quantite || 0))}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded">
-                    <p className="text-orange-700 text-sm">
-                      <CheckCircle className="w-4 h-4 inline mr-1" />
-                      Les ingrédients seront automatiquement déduits du stock atelier.
-                      <br />
-                      <Store className="w-4 h-4 inline mr-1" />
-                      Le produit fini sera ajouté au stock boutique (plus de stock principal).
-                    </p>
-                  </div>
-                </div>
-              )}
-              
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddModal(false);
-                    setRecetteInfo(null);
-                    setPrixRecetteInfo(null);
-                    setError('');
-                  }}
-                  className="btn-secondary"
-                  disabled={submitting}
-                >
-                  Annuler
-                </button>
-                <button 
-                  type="submit" 
-                  className="btn-primary"
-                  disabled={submitting || (formData.destination === 'Boutique' && !prixRecetteInfo)}
-                >
-                  {submitting ? (
-                    <>
-                      <div className="spinner w-4 h-4"></div>
-                      Création...
-                    </>
-                  ) : (
-                    <>
-                      <ChefHat className="w-4 h-4" />
-                      Enregistrer Production
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
+      <Modal isOpen={ouvert} onClose={() => setOuvert(false)} title="Nouvelle production" size="lg">
+        <form onSubmit={enregistrer} className="space-y-4">
+          <label className="block text-sm font-medium">Recette
+            <select value={form.recette} onChange={(e) => setForm(f => ({ ...f, recette: e.target.value }))}
+              className="mt-1 w-full border border-gray-300 rounded-lg px-3 min-h-[44px]">
+              <option value="">Choisir…</option>
+              {fiches.map(f => <option key={f.nom_produit} value={f.nom_produit}>{f.nom_produit} → {f.produit_fini}</option>)}
+            </select>
+          </label>
+          {fiche && (
+            <p className="text-sm text-gray-700 flex items-start"><Info className="w-4 h-4 mr-1 mt-0.5 shrink-0" />
+              Une fournée donne environ {qte(fiche.rendement)} « {fiche.produit_fini} » (de {qte(fiche.rendement - fiche.marge_moins)} à {qte(Number(fiche.rendement) + Number(fiche.marge_plus))}).</p>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-sm font-medium">Nombre de fournées
+              <input type="number" min="0" step="any" inputMode="decimal" value={form.fournees} onChange={(e) => setForm(f => ({ ...f, fournees: e.target.value }))}
+                className="mt-1 w-full border border-gray-300 rounded-lg px-3 min-h-[44px]" />
+            </label>
+            <label className="text-sm font-medium">Quantité obtenue
+              <input type="number" min="0" step="any" inputMode="decimal" value={form.quantite} onChange={(e) => setForm(f => ({ ...f, quantite: e.target.value }))}
+                className="mt-1 w-full border border-gray-300 rounded-lg px-3 min-h-[44px]" placeholder={attendu ? `environ ${qte(attendu.centre)}` : ''} />
+            </label>
           </div>
-        </div>
-      )}
+          {fiche && besoins.length > 0 && (
+            <div className="border rounded-lg overflow-hidden">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50"><tr><th className="px-3 py-2 text-left">Matière</th><th className="px-3 py-2 text-left">Retirée de l'atelier</th><th className="px-3 py-2 text-left">Stock atelier enregistré</th></tr></thead>
+                <tbody className="divide-y">
+                  {besoins.map(b => (
+                    <tr key={b.nom} className={b.manque > 0 ? 'bg-amber-50' : ''}>
+                      <td className="px-3 py-2">{b.nom}</td>
+                      <td className="px-3 py-2">{qte(b.besoin)} {b.unite}</td>
+                      <td className="px-3 py-2">{qte(b.stock)} {b.unite}{b.manque > 0 && <span className="ml-2 text-amber-900 text-xs font-semibold">manque {qte(b.manque)} (noté, sans blocage)</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {attendu && Number(form.quantite) > 0 && (Number(form.quantite) < attendu.mini || Number(form.quantite) > attendu.maxi) && (
+            <p role="status" className="text-sm text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              Hors de la marge de la recette ({qte(attendu.mini)} à {qte(attendu.maxi)}) : la production sera enregistrée et le propriétaire prévenu.
+            </p>
+          )}
+          <label className="flex items-center gap-2 text-sm min-h-[44px]">
+            <input type="checkbox" checked={form.envoyer} onChange={(e) => setForm(f => ({ ...f, envoyer: e.target.checked }))} className="w-5 h-5" />
+            <Truck className="w-4 h-4" />Envoyer tout à la boutique maintenant (elle comptera à l'arrivée)
+          </label>
+          <div className="flex gap-3 justify-end pt-2">
+            <button type="button" onClick={() => setOuvert(false)} className="px-4 min-h-[44px] rounded-lg border border-gray-300 hover:bg-gray-50">Annuler</button>
+            <button type="submit" disabled={enCours || !fiche} className="px-5 min-h-[44px] rounded-lg bg-orange-700 hover:bg-orange-800 text-white font-medium disabled:opacity-50">
+              {enCours ? 'Enregistrement…' : 'Enregistrer la production'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

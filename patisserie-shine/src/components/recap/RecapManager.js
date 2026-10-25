@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase-client';
 import {
   AlertTriangle, Clock, UserCheck, FileText, Truck, Package, CreditCard, Receipt,
-  Users, Archive, Printer, RefreshCw, ShieldCheck, ShieldAlert, ShoppingBag, Lock, ClipboardCheck
+  Users, Archive, Printer, RefreshCw, ShieldCheck, ShieldAlert, ShoppingBag, Lock, ClipboardCheck, ChefHat
 } from 'lucide-react';
 import { Card } from '../ui';
 import { recuService } from '../../services';
@@ -52,18 +52,21 @@ export default function RecapManager({ currentUser }) {
     setLoading(true);
     setErreur('');
     try {
-      const [{ data, error }, conf, inv] = await Promise.all([
+      const [{ data, error }, conf, inv, prod] = await Promise.all([
         supabase.rpc('recap_periode', { p_du: debut, p_au: fin }),
         // Achats pas encore comparés à la facture (état actuel) ; absent tant que la partie 6 n'est pas en base
         supabase.rpc('achats_a_confirmer'),
         // Inventaires et pertes de la période ; absent tant que la partie 8 n'est pas en base
-        supabase.rpc('recap_inventaires', { p_du: debut, p_au: fin })
+        supabase.rpc('recap_inventaires', { p_du: debut, p_au: fin }),
+        // Productions et recettes ; absent tant que la partie 9 n'est pas en base
+        supabase.rpc('recap_productions', { p_du: debut, p_au: fin })
       ]);
       if (error) throw error;
       if (conf.error) console.warn('Achats à confirmer indisponibles:', conf.error.message);
       if (inv.error) console.warn('Inventaires indisponibles:', inv.error.message);
+      if (prod.error) console.warn('Productions indisponibles:', prod.error.message);
       // Seule la dernière demande s'affiche (clics rapides sur plusieurs jours)
-      if (numero === demandeRef.current) setRecap({ ...data, confirmations: conf.error ? null : conf.data, inventaires: inv.error ? null : inv.data });
+      if (numero === demandeRef.current) setRecap({ ...data, confirmations: conf.error ? null : conf.data, inventaires: inv.error ? null : inv.data, productions: prod.error ? null : prod.data });
     } catch (err) {
       console.error('Erreur récapitulatif:', err);
       if (numero === demandeRef.current) {
@@ -148,12 +151,16 @@ function Contenu({ recap, titre }) {
   const ecartsInventaire = (inv.inventaires || []).flatMap(i => (i.ecarts || []).map(e => ({ ...e, inventaire: i })));
   const pertesAcceptees = (inv.pertes || []).filter(x => x.statut === 'acceptee');
   const inventairesManques = (inv.en_retard || []).filter(x => x.en_retard);
+  const prod = recap.productions || {};
+  const horsMarge = (prod.productions || []).filter(x => x.hors_marge);
+  const recettesModifiees = prod.recettes_modifiees || [];
   const nbPoints = (alertes.transit_24h || []).length + (alertes.meme_personne || []).length + (alertes.ecarts || []).length
     + corrections.length + (ventes.annulations || []).length + comptesParAutre.length + (journal.intact === false ? 1 : 0)
     + (alertes.achats_sans_recu || []).length + (alertes.recus_disparus || []).length + (alertes.depenses_modifiees || []).length
     + (alertes.ecarts_caisse || []).length + (alertes.caisses_ouvertes || []).length + (alertes.ventes_hors_caisse || []).length
     + (recap.confirmations?.nombre || 0) + (recap.confirmations?.non_conformes || []).length
-    + ecartsInventaire.length + pertesAcceptees.length + (inv.pertes_en_attente || 0) + inventairesManques.length;
+    + ecartsInventaire.length + pertesAcceptees.length + (inv.pertes_en_attente || 0) + inventairesManques.length
+    + horsMarge.length + recettesModifiees.length;
 
   return (
     <div className="space-y-6">
@@ -242,6 +249,19 @@ function Contenu({ recap, titre }) {
             rendu={(x) => <>{LIEUX[x.lieu]} : {x.frequence === 'quotidienne' ? 'l\'inventaire du soir n\'a pas été fait hier' : `l'inventaire de la semaine, prévu le ${new Date(x.depuis + 'T12:00:00').toLocaleDateString('fr-FR')}, n'a pas été fait`}
               {x.dernier ? `, dernier fait le ${heure(x.dernier)}` : ', aucun fait jusqu\'ici'}{x.en_cours_id ? ` (inventaire n°${x.en_cours_id} en cours)` : ''}</>} />
 
+          <Liste titre="Productions hors de la marge de la recette" lignes={horsMarge}
+            rendu={(x) => <>{heure(x.le)} — {x.recette} : <b>{qte(x.quantite)} {x.produit}</b> obtenus pour {qte(x.min)} à {qte(x.max)} attendus ({qte(x.fournees)} fournée(s)), déclarés par {x.par || '-'}</>} />
+
+          <Liste titre="Recettes modifiées ou supprimées" lignes={recettesModifiees}
+            rendu={(x) => <>{heure(x.le)} — « {x.recette} » {x.action === 'suppression' ? 'supprimée' : x.avant ? 'modifiée' : 'créée'} par <b>{x.par || '-'}</b>
+              {x.action === 'suppression' && ` (motif : « ${x.motif} »)`}
+              {x.action !== 'suppression' && x.apres?.fiche && ` : ${x.apres.fiche.rendement} par fournée (-${x.apres.fiche.marge_moins} / +${x.apres.fiche.marge_plus}), ${(x.apres.lignes || []).map(l => `${l.produit} ${qte(l.quantite)}`).join(', ')}`}
+              {x.avant?.lignes?.length > 0 && x.action !== 'suppression' && ` — avant : ${x.avant.lignes.map(l => `${l.produit} ${qte(l.quantite)}`).join(', ')}`}</>} />
+
+          {(prod.recettes_sans_rendement || []).length > 0 && (
+            <p className="text-sm text-gray-600">Recette(s) sans rendement, donc inutilisables pour produire : {prod.recettes_sans_rendement.join(', ')} (à compléter dans « Recettes »).</p>
+          )}
+
           {inv.pertes_en_attente > 0 && (
             <p className="text-sm text-gray-600">{inv.pertes_en_attente} perte(s) en attente de votre décision, dans « À faire ».</p>
           )}
@@ -319,6 +339,17 @@ function Contenu({ recap, titre }) {
           </div>
         </div>
       </Section>
+
+      {/* Productions de l'atelier */}
+      {recap.productions && (
+        <Section icone={ChefHat} titre={`Productions (${(prod.productions || []).length})`}>
+          <Tableau entetes={['Heure', 'Recette', 'Fournées', 'Obtenu', 'Attendu', 'Matières manquantes', 'Coût', 'Envoi', 'Par']} lignes={prod.productions}
+            rendu={(x) => [heure(x.le), `${x.recette || '-'} → ${x.produit}`, qte(x.fournees), qte(x.quantite),
+              x.min === null || x.min === undefined ? '-' : <span className={x.hors_marge ? 'text-red-700 font-semibold' : ''}>{qte(x.min)} à {qte(x.max)}</span>,
+              (x.manques || []).length ? x.manques.map(m => `${m.produit} ${qte(m.manque)}`).join(', ') : '-',
+              utils.formatCFA(x.cout || 0), x.envoi_id ? `n°${x.envoi_id}` : '-', x.par || '-']} />
+        </Section>
+      )}
 
       {/* Inventaires et pertes */}
       {recap.inventaires && (
