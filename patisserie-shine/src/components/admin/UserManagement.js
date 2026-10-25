@@ -27,13 +27,18 @@ export default function UserManagement({ currentUser }) {
     nom: '',
     telephone: '',
     role: 'employe_boutique',
-    password: ''
+    password: '',
+    boulangerie_id: ''
   });
   const [editFormData, setEditFormData] = useState({
     nom: '',
     telephone: '',
-    role: 'employe_boutique'
+    role: 'employe_boutique',
+    boulangerie_id: ''
   });
+  // Boulangeries (partie 12) : la propriétaire affecte chaque compte ; un gérant crée dans la sienne
+  const [boulangeries, setBoulangeries] = useState([]);
+  const nomBoulangerie = (id) => boulangeries.find(b => b.id === id)?.nom;
   const [passwordData, setPasswordData] = useState({
     newPassword: '',
     confirmPassword: ''
@@ -44,6 +49,7 @@ export default function UserManagement({ currentUser }) {
     if (currentUser?.role === 'admin' || currentUser?.username === 'proprietaire') {
       loadUsers();
     }
+    supabase.from('boulangeries').select('id, nom').order('id').then(({ data }) => setBoulangeries(data || []));
   }, [currentUser]);
 
   const loadUsers = async () => {
@@ -99,7 +105,8 @@ export default function UserManagement({ currentUser }) {
       nom: formData.nom,
       telephone: formData.telephone,
       role: formData.role,
-      password: formData.password
+      password: formData.password,
+      boulangerie_id: formData.boulangerie_id ? Number(formData.boulangerie_id) : null
     });
 
     if (error) {
@@ -129,7 +136,9 @@ export default function UserManagement({ currentUser }) {
       const { user, error } = await userService.updateUser(selectedUser.id, {
         nom: editFormData.nom,
         telephone: editFormData.telephone,
-        role: editFormData.role
+        role: editFormData.role,
+        // Seule la propriétaire change la boulangerie d'un compte (vérifié aussi par la base)
+        ...(currentUser?.is_super_admin && editFormData.boulangerie_id ? { boulangerie_id: Number(editFormData.boulangerie_id) } : {})
       });
 
       if (error) {
@@ -233,7 +242,8 @@ export default function UserManagement({ currentUser }) {
     setEditFormData({
       nom: user.nom || '',
       telephone: user.telephone || '',
-      role: user.role || 'employe_boutique'
+      role: user.role || 'employe_boutique',
+      boulangerie_id: user.boulangerie_id ? String(user.boulangerie_id) : ''
     });
     setShowEditModal(true);
     setMessage({ type: '', text: '' });
@@ -252,7 +262,8 @@ export default function UserManagement({ currentUser }) {
       nom: '',
       telephone: '',
       role: 'employe_boutique',
-      password: ''
+      password: '',
+      boulangerie_id: ''
     });
   };
 
@@ -502,6 +513,12 @@ export default function UserManagement({ currentUser }) {
                     </div>
                   </div>
 
+                  {boulangeries.length > 1 && (
+                    <div className="text-sm text-amber-800">
+                      🏪 {user.is_super_admin ? 'Toutes les boulangeries' : (nomBoulangerie(user.boulangerie_id) || '-')}
+                    </div>
+                  )}
+
                   {user.telephone && (
                     <div className="text-sm text-gray-600">
                       📞 {user.telephone}
@@ -642,6 +659,23 @@ export default function UserManagement({ currentUser }) {
             />
           </div>
 
+          {currentUser?.is_super_admin && boulangeries.length > 1 && (
+            <div>
+              <label htmlFor="boulangerie-creation" className="block text-sm font-medium text-gray-700 mb-2">Boulangerie *</label>
+              <select
+                id="boulangerie-creation"
+                value={formData.boulangerie_id}
+                onChange={(e) => setFormData({...formData, boulangerie_id: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                required
+              >
+                <option value="">Choisir…</option>
+                {boulangeries.map(b => <option key={b.id} value={String(b.id)}>{b.nom}</option>)}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Le compte ne verra que les données de cette boulangerie.</p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Rôle *</label>
             <select
@@ -766,6 +800,20 @@ export default function UserManagement({ currentUser }) {
                 placeholder="Ex: +226 70 00 01 02 03"
               />
             </div>
+
+            {currentUser?.is_super_admin && boulangeries.length > 1 && !selectedUser.is_super_admin && (
+              <div>
+                <label htmlFor="boulangerie-modification" className="block text-sm font-medium text-gray-700 mb-2">Boulangerie</label>
+                <select
+                  id="boulangerie-modification"
+                  value={editFormData.boulangerie_id}
+                  onChange={(e) => setEditFormData({...editFormData, boulangerie_id: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                >
+                  {boulangeries.map(b => <option key={b.id} value={String(b.id)}>{b.nom}</option>)}
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Rôle *</label>

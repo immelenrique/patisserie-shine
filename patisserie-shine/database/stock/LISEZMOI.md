@@ -553,3 +553,57 @@ Annulation : `partie9_annulation.sql` (SQL Editor).
 - `PGHOST=... ./tests/lancer_truncate.sh` :
   - passage 1 : **11/11**, annulation exacte (412 objets), puis annulation avec des données ;
   - passages 2 à 11 : non-régression **195/195**, stock **65/65**, récapitulatif **47/47**, achats **34/34**, caisse **24/24**, magasinier **51/51**, achats réservés **11/11**, inventaires **69/69**, production **39/39**, cuisine **56/56**.
+
+## Partie 12 : une application, deux boulangeries (Ouagadougou, Abidjan)
+
+### Décision de la propriétaire
+- **Une seule application.** Chaque compte est affecté à une boulangerie à sa création et ne voit que la sienne. La propriétaire voit les deux.
+
+### Ce que fait `partie12_boulangeries.sql` (SQL Editor recommandé : il retire des contraintes pour les recréer)
+- **Boulangeries :**
+  - table `boulangeries` : Ouagadougou (1), Abidjan (2), avec l'adresse et les téléphones imprimés sur le ticket ;
+  - `modifier_boulangerie`, pour la propriétaire.
+- **Comptes :**
+  - `profiles.boulangerie_id` : la boulangerie du compte, obligatoire sauf pour un super administrateur ;
+  - `profiles.boulangerie_active` : la boulangerie affichée par un super administrateur (NULL = toutes, en lecture seule).
+  - Seule la propriétaire change la boulangerie d'un compte.
+- **Données :**
+  - chaque table de données reçoit `boulangerie_id`, rempli par la base ;
+  - une règle d'accès `boulangerie_etanche` par table : on ne lit et n'écrit que dans sa boulangerie ;
+  - en mode « toutes », la propriétaire lit tout mais ne saisit rien ;
+  - sans personne connectée (SQL Editor), une nouvelle donnée va à Ouagadougou.
+- **Fonctions :**
+  - les fonctions appartiennent au rôle `shine_fonctions`, soumis aux règles d'accès. L'étanchéité vaut donc aussi à l'intérieur des fonctions (stock, caisse, récapitulatifs, notifications…) ;
+  - le rôle est membre d'`authenticated`, ce qui lui donne l'accès à `auth.uid()` ;
+  - restent à `postgres` : les fonctions qu'utilisent les règles d'accès (`role_courant`, `est_super_admin`, `boulangerie_courante`…), celles qui touchent aux comptes de connexion ou au stockage des reçus (`recu_present`, `recu_du_compte`), `safe_delete_user` et `handle_new_user`.
+- **Noms uniques par boulangerie :** produits, recettes, fiches de recette, prix des recettes, référentiel, réglages d'inventaire. Abidjan reçoit les mêmes réglages d'inventaire qu'Ouagadougou.
+- **Journal infalsifiable :** une chaîne par boulangerie. `verifier_journal_stock` vérifie chacune.
+- **Annulation de vente (route serveur) :** seulement une vente de la boulangerie de l'admin qui annule.
+
+### Application
+- **En-tête :**
+  - la boulangerie du compte ;
+  - pour la propriétaire, un sélecteur (Ouagadougou, Abidjan, Toutes) et le réglage des coordonnées du ticket.
+- **Utilisateurs :**
+  - la boulangerie de chaque compte ;
+  - à la création, la propriétaire choisit la boulangerie, et un gérant crée dans la sienne.
+  - Les routes serveur (création, modification, suppression, mot de passe, liste, annulation de vente) refusent un compte ou une vente d'une autre boulangerie.
+- **Ticket :** adresse et téléphones de la boulangerie de la caisse.
+
+### Pour les parties suivantes
+- **Une nouvelle table de données** doit recevoir `boulangerie_id` (défaut `boulangerie_saisie()`), la règle `boulangerie_etanche` et la règle `acces_fonctions`.
+- **Une nouvelle fonction SECURITY DEFINER** doit appartenir à `shine_fonctions`.
+- **Contrôle :** le scénario 35 vérifie ces deux points et échoue sinon.
+
+### Tests
+- `PGHOST=... ./tests/lancer_boulangeries.sh` :
+  - passage 1 : **44/44**. Cela comprend l'annulation sur base vide (exacte, 413 objets), le scénario d'étanchéité de 43 vérifications et le refus du retour arrière quand Abidjan a des données ;
+  - passages 2 à 12 : non-régression **195/195**, stock **65/65**, récapitulatif **47/47**, achats **34/34**, caisse **24/24**, magasinier **51/51**, achats réservés **11/11**, inventaires **69/69**, production **39/39**, cuisine **56/56**, TRUNCATE **10/10**.
+- **Banc navigateur :** `parcours_boulangeries.js` **18/18**. Il couvre :
+  - la vente et le ticket à Abidjan ;
+  - l'absence des données d'Abidjan à Ouaga ;
+  - les comptes visibles par le gérant d'Abidjan ;
+  - le passage d'une boulangerie à l'autre pour la propriétaire.
+  La base est préparée avec `PARTIE12=1`.
+
+**Mise en production : d'abord `partie12_boulangeries.sql`, puis l'application.**

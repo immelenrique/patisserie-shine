@@ -17,12 +17,13 @@ CREATE TABLE auth.users (
 
 -- Mêmes définitions que Supabase : l'identité vient des claims JWT de la requête
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$
-  SELECT nullif(coalesce(current_setting('request.jwt.claim.sub', true),
-         (current_setting('request.jwt.claims', true)::jsonb ->> 'sub')), '')::uuid
+  -- Comme en production : une identité vide (après la fin d'une transaction) vaut « personne »
+  SELECT coalesce(nullif(current_setting('request.jwt.claim.sub', true), ''),
+         (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub'))::uuid
 $$;
 CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$
-  SELECT nullif(coalesce(current_setting('request.jwt.claim.role', true),
-         (current_setting('request.jwt.claims', true)::jsonb ->> 'role')), '')::text
+  SELECT coalesce(nullif(current_setting('request.jwt.claim.role', true), ''),
+         (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'))::text
 $$;
 CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS $$
   SELECT coalesce(nullif(current_setting('request.jwt.claim', true), ''),

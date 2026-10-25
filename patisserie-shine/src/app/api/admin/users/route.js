@@ -1,7 +1,7 @@
 // src/app/api/admin/users/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireAdmin } from '../../../../lib/apiAuth'
+import { requireAdmin, boulangerieAppelant } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -20,10 +20,15 @@ export async function GET(request) {
     if (auth.error) return auth.error
 
     // Récupérer tous les utilisateurs avec leurs profils
-    const { data: profiles, error: profilesError } = await supabaseAdmin
+    // Les comptes de la boulangerie de l'appelant, et les super administrateurs (sans boulangerie) ;
+    // tous, pour un super administrateur en mode « toutes les boulangeries »
+    let requete = supabaseAdmin
       .from('profiles')
       .select('*')
       .order('created_at', { ascending: false })
+    const boulangerie = boulangerieAppelant(auth)
+    if (boulangerie !== null) requete = requete.or(`boulangerie_id.eq.${Number(boulangerie)},boulangerie_id.is.null`)
+    const { data: profiles, error: profilesError } = await requete
 
     if (profilesError) {
       console.error('Erreur récupération profils:', profilesError)

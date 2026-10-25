@@ -88,7 +88,8 @@ export const userService = {
           telephone: userData.telephone?.trim() || '',
           role: userData.role,
           password: userData.password,
-          force_password_change: userData.force_password_change !== false
+          force_password_change: userData.force_password_change !== false,
+          boulangerie_id: userData.boulangerie_id || null
         })
       })
 

@@ -3,6 +3,7 @@
 // recu : { numero, date ('jj/mm/aaaa hh:mm:ss'), items: [{ nom, prix, quantite }], total, montant_donne,
 //          monnaie_rendue, vendeur, lieu ('Cuisine' pour la caisse cuisine, sinon rien) }
 import { utils } from './formatters'
+import { boulangerieService } from '../services/boulangerieService'
 
 const ENTREPRISE = {
   activites: 'PÂTISSERIE · BOULANGERIE · GLACIER',
@@ -14,8 +15,19 @@ const ENTREPRISE = {
 
 const montant = (n) => new Intl.NumberFormat('fr-FR').format(Math.round(Number(n) || 0))
 
+// Coordonnées de la boulangerie de la caisse (lues à l'ouverture de l'application) ; à défaut, Ouagadougou
+function coordonnees() {
+  const b = boulangerieService.enCache()?.courante
+  if (!b) return { adresse: ENTREPRISE.adresse, telephones: ENTREPRISE.telephones }
+  return {
+    adresse: b.adresse ? b.adresse.split('\n').map(l => l.trim()).filter(Boolean) : [b.nom],
+    telephones: b.telephones || ''
+  }
+}
+
 export function contenuTicket(recu) {
   const e = utils.escapeHtml
+  const coord = coordonnees()
   const [jour, heure = ''] = String(recu.date || new Date().toLocaleString('fr-FR')).split(' ')
   const items = recu.items || []
   const sousTotal = items.reduce((s, i) => s + (Number(i.prix) || 0) * (Number(i.quantite) || 0), 0)
@@ -28,8 +40,8 @@ export function contenuTicket(recu) {
     <div class="c">
       <img src="${window.location.origin}/logo-shine.png" alt="Pâtisserie Shine" class="logo">
       <div class="act">${ENTREPRISE.activites}</div>
-      <div class="adr">${ENTREPRISE.adresse.map(e).join('<br>')}</div>
-      <div class="tel">${e(ENTREPRISE.telephones)}</div>
+      <div class="adr">${coord.adresse.map(e).join('<br>')}</div>
+      ${coord.telephones ? `<div class="tel">${e(coord.telephones)}</div>` : ''}
     </div>
     <div class="sep"></div>
     <div class="titre">TICKET DE CAISSE${recu.lieu ? ` — ${e(recu.lieu).toUpperCase()}` : ''}</div>

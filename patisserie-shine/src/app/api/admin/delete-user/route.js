@@ -1,7 +1,7 @@
 // src/app/api/admin/delete-user/route.js
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { requireAdmin, refuserSiSuperAdminProtege } from '../../../../lib/apiAuth'
+import { requireAdmin, refuserSiSuperAdminProtege, refuserSiAutreBoulangerie } from '../../../../lib/apiAuth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -33,7 +33,7 @@ export async function DELETE(request) {
     // Récupérer les informations de l'utilisateur
     const { data: targetUser, error: userError } = await supabaseAdmin
       .from('profiles')
-      .select('id, username, nom, role, actif, is_super_admin')
+      .select('id, username, nom, role, actif, is_super_admin, boulangerie_id')
       .eq('id', userId)
       .single()
 
@@ -53,6 +53,10 @@ export async function DELETE(request) {
         { status: 403 }
       )
     }
+
+    // Un gérant ne gère que les comptes de sa boulangerie
+    const refusBoulangerie = refuserSiAutreBoulangerie(auth, targetUser)
+    if (refusBoulangerie) return refusBoulangerie
 
     const refus = refuserSiSuperAdminProtege(auth, targetUser)
     if (refus) return refus

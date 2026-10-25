@@ -29,7 +29,7 @@ export async function POST(request) {
     
     // Récupérer les données
     const body = await request.json()
-    const { username, nom, telephone, role, password, force_password_change } = body
+    const { username, nom, telephone, role, password, force_password_change, boulangerie_id } = body
     
     console.log('📝 Données reçues:', { username, nom, role });
     
@@ -77,7 +77,7 @@ export async function POST(request) {
     // Vérifier les permissions admin
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('role, username')
+      .select('role, username, is_super_admin, boulangerie_id, boulangerie_active')
       .eq('id', user.id)
       .single()
 
@@ -98,6 +98,17 @@ export async function POST(request) {
     }
 
     console.log('✅ Permissions admin confirmées');
+
+    // Boulangerie du nouveau compte : celle du gérant qui le crée ; la propriétaire choisit
+    const boulangerieCompte = profile.is_super_admin
+      ? (Number(boulangerie_id) || profile.boulangerie_active || null)
+      : profile.boulangerie_id
+    if (!boulangerieCompte) {
+      return NextResponse.json(
+        { error: 'Choisissez la boulangerie du nouveau compte' },
+        { status: 400 }
+      )
+    }
 
     // Nettoyer le username
     const cleanUsername = username.toLowerCase().trim().replace(/[^a-z0-9_]/g, '')
@@ -150,7 +161,8 @@ export async function POST(request) {
         username: cleanUsername,
         nom: nom.trim(),
         role: role,
-        telephone: telephone?.trim() || ''
+        telephone: telephone?.trim() || '',
+        boulangerie_id: String(boulangerieCompte)
       }
     })
 
@@ -186,6 +198,7 @@ export async function POST(request) {
           telephone: telephone?.trim() || '',
           role: role,
           actif: true,
+          boulangerie_id: boulangerieCompte,
           force_password_change: force_password_change !== false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -214,6 +227,7 @@ export async function POST(request) {
           telephone: telephone?.trim() || '',
           role: role,
           actif: true,
+          boulangerie_id: boulangerieCompte,
           force_password_change: force_password_change !== false,
           updated_at: new Date().toISOString()
         })

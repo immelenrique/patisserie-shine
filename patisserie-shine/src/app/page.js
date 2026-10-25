@@ -25,6 +25,7 @@ import UserManagement from '../components/admin/UserManagement';
 import PermissionsManager from '../components/admin/PermissionsManager';
 import StockCuisineManager from '../components/cuisine/StockCuisineManager';
 import CaisseCuisineManager from '../components/cuisine/CaisseCuisineManager';
+import ChoixBoulangerie from '../components/layout/ChoixBoulangerie';
 import { Modal } from '../components/ui';
 import { supabase } from '../lib/supabase-client';
 import { statsService, authService, userService, permissionsService } from '../services';
@@ -464,6 +465,7 @@ console.log('Available:', availableTabs.map(t => t.label));
       </div>
       
       <div className="flex items-center gap-1 sm:gap-4">
+        <ChoixBoulangerie />
         <div className="flex items-center gap-2 text-sm text-gray-600">
           <User className="w-4 h-4 hidden sm:block" />
           <span className="hidden sm:inline">{currentUser.nom || currentUser.username}</span>
