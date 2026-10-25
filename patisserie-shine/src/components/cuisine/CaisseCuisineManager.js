@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { caisseCuisineService } from '../../services';
 import { utils } from '../../utils/formatters';
+import { imprimerTicket } from '../../utils/ticket';
 import {
   ShoppingCart,
   Plus,
@@ -221,145 +222,8 @@ export default function CaisseCuisineManager({ currentUser }) {
     loadData();
   };
 
-  const imprimerRecu = (receiptData = lastReceipt) => {
-    if (!receiptData) return;
-
-    const contenuRecu = `
-      <div style="font-family: 'Courier New', monospace; max-width: 300px; margin: 0 auto; padding: 20px;">
-        <div style="text-align: center; margin-bottom: 20px;">
-          <h3 style="margin: 5px 0; font-size: 18px;">PÂTISSERIE SHINE</h3>
-          <p style="margin: 5px 0; font-size: 14px; font-weight: bold;">🍳 CUISINE 🍳</p>
-          <p style="margin: 5px 0; font-size: 12px;">Tel: +226 05 07 39 00</p>
-          <p style="margin: 5px 0; font-size: 14px;">Reçu N° ${utils.escapeHtml(receiptData.numero)}</p>
-          <p style="margin: 5px 0; font-size: 12px;">${utils.escapeHtml(receiptData.date)}</p>
-        </div>
-
-        <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
-
-        ${receiptData.items.map(item => `
-          <div style="margin: 8px 0;">
-            <div style="font-weight: bold;">${utils.escapeHtml(item.nom)}</div>
-            <div style="display: flex; justify-content: space-between; padding-left: 10px; font-size: 12px;">
-              <span>${item.quantite} × ${utils.formatCFA(item.prix)}</span>
-              <span>${utils.formatCFA(item.prix * item.quantite)}</span>
-            </div>
-          </div>
-        `).join('')}
-
-        <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
-
-        <div style="font-weight: bold; font-size: 14px;">
-          <div style="display: flex; justify-content: space-between; margin: 5px 0;">
-            <span>TOTAL:</span>
-            <span>${utils.formatCFA(receiptData.total)}</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; margin: 5px 0;">
-            <span>Espèces:</span>
-            <span>${utils.formatCFA(receiptData.montant_donne)}</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; margin: 5px 0;">
-            <span>Monnaie:</span>
-            <span>${utils.formatCFA(receiptData.monnaie_rendue)}</span>
-          </div>
-        </div>
-
-        <hr style="border: none; border-top: 1px dashed #000; margin: 10px 0;">
-
-        <div style="text-align: center; margin-top: 15px;">
-          <p style="margin: 5px 0;">Servi par: ${utils.escapeHtml(receiptData.vendeur)}</p>
-          <p style="margin: 10px 0; font-weight: bold;">MERCI DE VOTRE VISITE</p>
-          <p style="margin: 5px 0; font-size: 10px;">BON APPÉTIT !</p>
-        </div>
-      </div>
-    `;
-
-    const fenetreImpression = window.open('', '_blank', 'width=400,height=600');
-
-    if (!fenetreImpression) {
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'absolute';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = 'none';
-      document.body.appendChild(iframe);
-
-      const doc = iframe.contentWindow.document;
-      doc.open();
-      doc.write(`
-        <html>
-          <head>
-            <title>Reçu ${utils.escapeHtml(receiptData.numero)}</title>
-            <style>
-              @media print {
-                body { margin: 0; padding: 10px; }
-              }
-            </style>
-          </head>
-          <body>${contenuRecu}</body>
-        </html>
-      `);
-      doc.close();
-
-      setTimeout(() => {
-        iframe.contentWindow.print();
-        setTimeout(() => {
-          document.body.removeChild(iframe);
-        }, 100);
-      }, 250);
-
-      return;
-    }
-
-    fenetreImpression.document.open();
-    fenetreImpression.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Reçu ${utils.escapeHtml(receiptData.numero)}</title>
-          <style>
-            @page {
-              size: 80mm auto;
-              margin: 5mm;
-            }
-            body {
-              margin: 0;
-              padding: 10px;
-            }
-            @media print {
-              body {
-                margin: 0;
-                padding: 5px;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          ${contenuRecu}
-        </body>
-      </html>
-    `);
-
-    fenetreImpression.document.close();
-
-    fenetreImpression.onload = function() {
-      setTimeout(() => {
-        fenetreImpression.print();
-
-        if (fenetreImpression.onafterprint !== undefined) {
-          fenetreImpression.onafterprint = function() {
-            fenetreImpression.close();
-          };
-        } else {
-          setTimeout(() => {
-            if (!fenetreImpression.closed) {
-              fenetreImpression.close();
-            }
-          }, 5000);
-        }
-      }, 250);
-    };
-  };
+  // Ticket au modèle de la pâtisserie (src/utils/ticket.js), marqué « Cuisine »
+  const imprimerRecu = (receiptData = lastReceipt) => imprimerTicket(receiptData && { ...receiptData, lieu: 'Cuisine' });
 
   const produitsFiltres = produitsCuisine.filter(p =>
     p.nom.toLowerCase().includes(searchTerm.toLowerCase())
