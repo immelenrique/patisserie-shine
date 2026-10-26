@@ -33,7 +33,7 @@ export default function ChoixBoulangerie() {
       titre: `Coordonnées de ${b.nom}`,
       message: 'Elles sont imprimées en haut du ticket de caisse.',
       champs: [
-        { nom: 'adresse', label: 'Adresse', valeur: b.adresse || '', placeholder: 'ex. Cocody, Abidjan' },
+        { nom: 'adresse', label: 'Adresse', valeur: b.adresse || '', placeholder: 'ex. Cocody Angré\nAbidjan', lignes: 2, aide: 'Chaque ligne ici devient une ligne du ticket.' },
         { nom: 'telephones', label: 'Téléphones', valeur: b.telephones || '', placeholder: 'ex. 07 00 00 00 00' }
       ],
       confirmer: 'Enregistrer'

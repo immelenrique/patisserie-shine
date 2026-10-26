@@ -10,6 +10,7 @@ import { Modal } from './Modal';
 //   const r = await demander({ titre, message, champs: [{ nom: 'motif', label: 'Motif', obligatoire: true }] });
 //   if (!r) return;          // annulé
 //   r.motif                  // texte saisi, sans espaces autour
+//   lignes: 2 sur un champ : zone de texte sur plusieurs lignes (les retours à la ligne sont gardés)
 //
 // Sans champs, la fenêtre sert de confirmation : elle renvoie {} ou null.
 export function useSaisie() {
@@ -76,19 +77,31 @@ function FenetreSaisie({ titre, message, details, champs = [], confirmer = 'Conf
             <label htmlFor={`saisie-${c.nom}`} className="block text-sm font-medium text-gray-700 mb-1">
               {c.label}{c.obligatoire || c.type === 'number' ? ' *' : ' (facultatif)'}
             </label>
-            <input
-              id={`saisie-${c.nom}`}
-              ref={i === 0 ? premierRef : undefined}
-              type={c.type === 'number' ? 'number' : 'text'}
-              inputMode={c.type === 'number' ? 'decimal' : undefined}
-              step={c.type === 'number' ? 'any' : undefined}
-              min={c.type === 'number' ? '0' : undefined}
-              max={c.max}
-              placeholder={c.placeholder || ''}
-              value={valeurs[c.nom]}
-              onChange={(e) => { setErreur(''); setValeurs(v => ({ ...v, [c.nom]: e.target.value })); }}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-orange-500"
-            />
+            {c.lignes ? (
+              <textarea
+                id={`saisie-${c.nom}`}
+                ref={i === 0 ? premierRef : undefined}
+                rows={c.lignes}
+                placeholder={c.placeholder || ''}
+                value={valeurs[c.nom]}
+                onChange={(e) => { setErreur(''); setValeurs(v => ({ ...v, [c.nom]: e.target.value })); }}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            ) : (
+              <input
+                id={`saisie-${c.nom}`}
+                ref={i === 0 ? premierRef : undefined}
+                type={c.type === 'number' ? 'number' : 'text'}
+                inputMode={c.type === 'number' ? 'decimal' : undefined}
+                step={c.type === 'number' ? 'any' : undefined}
+                min={c.type === 'number' ? '0' : undefined}
+                max={c.max}
+                placeholder={c.placeholder || ''}
+                value={valeurs[c.nom]}
+                onChange={(e) => { setErreur(''); setValeurs(v => ({ ...v, [c.nom]: e.target.value })); }}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            )}
             {c.aide && <p className="text-xs text-gray-500 mt-1">{c.aide}</p>}
           </div>
         ))}
