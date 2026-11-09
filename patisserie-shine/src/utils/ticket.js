@@ -9,7 +9,7 @@ const ENTREPRISE = {
   activites: 'PÂTISSERIE · BOULANGERIE · GLACIER',
   adresse: ['Balkuis, non loin de la station Shell', 'Ouagadougou'],
   telephones: '74 48 67 98 / 05 07 39 00',
-  merci: 'Merci pour votre confiance !',
+  merci: 'Merci pour votre confiance\u00a0!',
   slogan: ['Le goût qui illumine', 'vos moments']
 }
 
@@ -45,7 +45,7 @@ export function contenuTicket(recu) {
     </div>
     <div class="sep"></div>
     <div class="titre">TICKET DE CAISSE${recu.lieu ? ` — ${e(recu.lieu).toUpperCase()}` : ''}</div>
-    <div>N° : ${e(recu.numero)}</div>
+    <div class="num">N° : ${e(recu.numero)}</div>
     <div>Date : ${e(jour)}</div>
     <div>Heure : ${e(heure.slice(0, 5))}</div>
     <div>Caissier(ère) : ${e(recu.vendeur || '-')}</div>
@@ -73,27 +73,31 @@ export function contenuTicket(recu) {
 }
 
 const STYLE = `
-  @page { size: auto; margin: 0; }
+  @page { size: 58mm auto; margin: 0; }
   html, body { margin: 0; padding: 0; }
-  .ticket { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #000; width: 100%; box-sizing: border-box; padding: 4px 3mm 8px; line-height: 1.35; }
+  /* Rouleau de 58 mm : la tête n'imprime que 48 mm environ, le ticket tient dans 46 mm */
+  .ticket { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #000; width: 46mm; box-sizing: border-box; padding: 2mm 0 6mm 1mm; line-height: 1.3; overflow: hidden; }
+  .num { font-size: 9px; word-break: break-all; }
   .c { text-align: center; }
-  .logo { width: 38mm; max-width: 80%; display: block; margin: 0 auto 2px; }
+  .logo { width: 32mm; max-width: 80%; display: block; margin: 0 auto 2px; }
   .act { font-size: 9px; letter-spacing: 1px; font-weight: bold; margin-top: 2px; }
   .adr { margin-top: 4px; }
   .tel { font-weight: bold; margin-top: 2px; }
   .sep { border-top: 1px dashed #000; margin: 6px 0; }
-  .titre { text-align: center; font-weight: bold; font-size: 15px; margin-bottom: 3px; }
-  table { width: 100%; border-collapse: collapse; }
+  .titre { text-align: center; font-weight: bold; font-size: 13px; margin-bottom: 3px; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
   th { text-align: left; border-bottom: 1px solid #000; padding: 1px 0; }
-  td { padding: 1px 0; vertical-align: top; }
-  .q { width: 9%; text-align: left; }
-  .d { padding-right: 3px; }
-  .n { text-align: right; white-space: nowrap; padding-left: 4px; }
+  td { padding: 1px 0; vertical-align: top; word-wrap: break-word; }
+  .q { width: 6mm; text-align: left; }
+  .d { padding-right: 2px; }
+  th.n:nth-of-type(3), td.n:nth-of-type(3) { width: 10mm; }
+  th.n:last-child, td.n:last-child { width: 12mm; }
+  .n { text-align: right; white-space: nowrap; padding-left: 2px; }
   .l { display: flex; justify-content: space-between; }
-  .tot { padding-left: 25%; }
+  .tot { padding-left: 15%; }
   .tot .l span:last-child { font-weight: bold; }
-  .g { font-weight: bold; font-size: 13px; }
-  .merci { font-family: 'Brush Script MT', 'Segoe Script', cursive; font-style: italic; font-size: 17px; margin: 4px 0 3px; }
+  .g { font-weight: bold; font-size: 12px; }
+  .merci { font-family: 'Brush Script MT', 'Segoe Script', cursive; font-style: italic; font-size: 15px; margin: 4px 0 3px; }
 `
 
 // Imprime le ticket : fenêtre d'impression, ou cadre caché si les fenêtres sont bloquées.
