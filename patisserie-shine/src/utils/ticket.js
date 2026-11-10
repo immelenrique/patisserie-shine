@@ -73,7 +73,8 @@ export function contenuTicket(recu) {
 }
 
 const STYLE = `
-  @page { size: 58mm auto; margin: 0; }
+  /* Format laissé au pilote de l'imprimante : l'imposer (58mm) fait noircir la bande sur certains pilotes Windows */
+  @page { size: auto; margin: 0; }
   html, body { margin: 0; padding: 0; }
   /* Rouleau de 58 mm : la tête n'imprime que 48 mm environ, le ticket tient dans 46 mm */
   .ticket { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #000; width: 46mm; box-sizing: border-box; padding: 2mm 0 6mm 1mm; line-height: 1.3; overflow: hidden; }
